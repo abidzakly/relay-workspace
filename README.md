@@ -5,7 +5,7 @@ Relay is a workspace for developers who live in GitLab. It gathers your merge re
 - **Merge requests and reviews**: an inbox sorted by what needs you, a diff reader with comments and approval, and a reviewer's desk across any GitLab project, live through webhooks where they exist.
 - **Releases**: version merge request, merge, tag, build and hand-off to QA, with the built-in engine or your own release script.
 - **Notion, if you want it**: a board of your cards next to their merge requests, a check for cards and MRs that disagree, KPI and sprint views.
-- **Agents and devices**: coding-agent sessions on your cards in their own worktrees, and a test bench that puts your app on a phone next to its Figma frames.
+- **Agents and devices**: coding-agent sessions on your cards in their own worktrees, that can read the real API endpoints from Postrack, and a test bench that puts your app on a phone next to its Figma frames.
 
 Everything you do not use can be switched off. Nothing is hosted: there are no accounts, and your tokens never leave your machine except to talk to the services you connected.
 
@@ -31,7 +31,7 @@ Open http://127.0.0.1:3000 (use `127.0.0.1`, not `localhost`). Then:
 2. In **Settings > Connections**, enter your GitLab host and username. In **Settings > Repos**, add a repo with a project access token (scope `api`).
 3. Look around with dry-run on (it is on at first start): every write is only recorded in **Audit**. Switch it off in **Settings > General > Safety & engine** when you are ready.
 
-Keep `MASTER_KEY` safe: without it, saved tokens cannot be read. On Windows, see [the guide](docs/GUIDE.md#9-windows) (WSL is recommended). Docker is optional: see [Reference > Docker](docs/REFERENCE.md#docker).
+Keep `MASTER_KEY` safe: without it, saved tokens cannot be read. On Windows, see [the guide](docs/GUIDE.md#10-windows) (WSL is recommended). Docker is optional: see [Reference > Docker](docs/REFERENCE.md#docker).
 
 ## How it stays safe
 
@@ -41,7 +41,7 @@ Report security problems privately, as described in [SECURITY.md](SECURITY.md). 
 
 ## Documentation
 
-- [Guide](docs/GUIDE.md): first start, every feature, Reviews, the release scripts, the Figma bridge, Docker, Windows.
+- [Guide](docs/GUIDE.md): first start, every feature, Reviews, the release scripts, the Figma bridge, Postrack, Docker, Windows.
 - [Reference](docs/REFERENCE.md): tokens, webhooks, Google Drive, Web Push, environment variables, backups, troubleshooting.
 - [Editions](editions/README.md): presets that set a team's defaults.
 - [Contributing](CONTRIBUTING.md).

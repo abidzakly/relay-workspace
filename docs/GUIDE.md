@@ -50,6 +50,7 @@ A freelancer without KPIs might switch off KPI and Sprints. KPI presets (points 
 | Code Review          | `/review`            | Read the diff of an MR or two branches; comment on lines, approve                                 |
 | Reviews              | `/reviews`           | MRs in any project where you are a reviewer or were mentioned (section 5)                         |
 | Cockpit              | `/cockpit`           | Coding-agent sessions on your cards, each in its own git worktree                                 |
+| Postrack             | Start card dialog    | The agent reads the real API endpoints of your Postrack workspace (section 8)                     |
 | Test Bench           | `/test-bench/<repo>` | Your app on a phone next to its Figma frames (section 7)                                          |
 | Release              | `/release`           | Version MR, merge, tag, build: the native engine, or the release scripts (section 6)              |
 | Builds               | `/builds`            | Flutter builds and uploads                                                                        |
@@ -136,7 +137,29 @@ To use another command for the bridge, set `FIGMA_BRIDGE_CMD` in `.env`.
 
 For the phone mirror, run once: `pnpm --filter @relay/server device:setup` (it fetches the pinned scrcpy server), then plug in an Android phone with USB debugging on.
 
-## 8. Docker and the host agent
+## 8. Postrack: API endpoints for the agent
+
+Postrack is an API workspace: endpoints with their headers, params, body, auth and example responses, mocks, and environments. When a card is backend integration work (call an endpoint, map its response), the agent should read the real endpoint instead of guessing it. This works like the Figma link, for APIs.
+
+Turn it on under **Settings > General > Features > Postrack**. It is off by default.
+
+**Connect** where you need it: the **Start card** dialog, the Cockpit's **New session** dialog, or **Settings > Connections > Postrack**. Paste the MCP address from Postrack's Integrations page (it ends in `/api/mcp/connect`), then:
+
+- **Connect with Postrack** (recommended): a Postrack window opens, you sign in and allow access, and the window closes. The agents then see only what your account can see. Relay registers itself with Postrack and keeps the tokens encrypted; it refreshes them by itself.
+- **Use an API key instead**: for a Postrack server that sets `MCP_API_KEY`. The key is checked before it is saved. Without `MCP_API_KEY_USER` on the server, that key is a service account with access to every workspace.
+
+**What the agent gets.** In **Start card** (and in each row of the bulk start), open **API endpoints from Postrack**, pick the Postrack workspace (remembered per Relay workspace) and search for the endpoints the card works with, 20 at most. The agent gets:
+
+- each picked endpoint in full, as `postrack-<method>-<name>.json`, and the project's environments as `postrack-environments.json` (secret values are masked by Postrack). Like the Figma files, they stay with the card until its MR is merged.
+- with Claude, the Postrack tools (`mcp__postrack__*`), so it can look up any other endpoint while it works. A plain Claude session in the Cockpit gets them too, unless you switch them off in **New session**. Cursor gets the files only.
+
+The Postrack credential never reaches the agent. Each Claude session talks to a small proxy that calls Relay with a token of its own, valid only while that session runs, and Relay calls Postrack.
+
+**Reading or writing.** Agents only read Postrack. Tick **Agent may update Postrack** when you start one for backend work: it may then add or fix endpoints, example responses, folders and environment variables after the code is done, and each change asks you first in the session. Without it the write tools are not offered, and the agent lists what Postrack needs in its final report. Every write an agent makes is in the Audit log (tool and ids, never the body). Postrack has no delete tools.
+
+A config export never carries the Postrack sign-in or key: connect again after an import.
+
+## 9. Docker and the host agent
 
 You do not need Docker: `pnpm start` is the simplest way to run it. If you run the dashboard in Docker, the container cannot use your Mac's tools, so a small **host agent** does that work on the Mac:
 
@@ -153,7 +176,7 @@ The agent runs, on the Mac:
 
 It listens on `127.0.0.1:3002` only and refuses any request without the token. See [REFERENCE.md](REFERENCE.md#docker) for ngrok and Tailscale.
 
-## 9. Windows
+## 10. Windows
 
 Relay runs on macOS, Linux and Windows. On Windows there are two ways:
 
@@ -177,11 +200,11 @@ Install the WSL-side tools there too: git, `glab`, `jq` and Flutter for releases
 
 Workspace and clone folders accept `~/…` on every system, and full paths such as `C:\Users\you\Work\app` on native Windows.
 
-## 10. When something goes wrong
+## 11. When something goes wrong
 
 - **A feature is missing from the menu.** It is switched off: Settings > General > Features.
 - **A Reviews row says Polled.** Read its "Why?". It links to the webhook that would make it live.
 - **A release asks for values.** Fill them in once; they are kept in Settings > Repos > Release scripts.
 - **Settings > Release scripts lists tools as "Not installed".** Install them (section 1) and reload.
-- **A page says it cannot run here.** You are on Windows without WSL: see section 9.
+- **A page says it cannot run here.** You are on Windows without WSL: see section 10.
 - **Anything else.** The Troubleshooting section of [REFERENCE.md](REFERENCE.md#troubleshooting), and the Audit page for what was really sent.
