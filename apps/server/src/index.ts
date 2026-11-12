@@ -50,6 +50,8 @@ import { ReviewDeckService } from './services/deck/reviewDeck';
 import { LocalCockpitHost } from './services/cockpit/localHost';
 import { RemoteCockpitHost } from './services/cockpit/remoteHost';
 import { WorkspaceService } from './services/cockpit/workspaces';
+import { PostrackAgentTools } from './services/postrack/agentTools';
+import { PostrackService } from './services/postrack/postrackService';
 import { CockpitSessionService } from './services/cockpit/sessionService';
 import { CleanupService } from './services/cleanup/cleanupService';
 import { recordAttachments } from './services/cockpit/attachmentStore';
@@ -273,6 +275,16 @@ async function main(): Promise<void> {
     prompts: () => store.getGlobalStored().aiPrompts,
   });
   const workspaces = new WorkspaceService({ store: app, config: store, host: cockpitHost, bus });
+  // Postrack: Relay holds the connection; each Claude session gets the tools through a loopback proxy with its own
+  // token. In Docker the session runs on the Mac, where the dashboard is published on loopback.
+  const postrack = new PostrackService({ config: store, log });
+  let liveSessionIds: () => Promise<string[]> = () => Promise.resolve([]);
+  const postrackTools = new PostrackAgentTools({
+    postrack,
+    audit,
+    relayUrl: `http://127.0.0.1:${env.DASHBOARD_PORT}`,
+    liveSessions: () => liveSessionIds(),
+  });
   const sessions = new CockpitSessionService({
     host: cockpitHost,
     workspaces,
@@ -282,7 +294,10 @@ async function main(): Promise<void> {
     ai,
     preferredAgent: () => store.getGlobalStored().agentPreference,
     agentModels: () => store.getGlobalStored().agentModels,
+    postrack: postrackTools,
   });
+  liveSessionIds = async () =>
+    (await sessions.list()).filter((x) => x.state !== 'exited').map((x) => x.id);
   // In Docker the bridge runs on the Mac, inside `pnpm agent`; the dashboard asks the agent for it.
   const figmaBridge = agent
     ? new RemoteFigmaBridge(agent)
@@ -311,6 +326,7 @@ async function main(): Promise<void> {
     }),
     figma,
     figmaSnapshots,
+    postrack,
     onAttachments: (a) => recordAttachments(app, a),
   });
   const decks = new ReviewDeckService({
@@ -432,6 +448,7 @@ async function main(): Promise<void> {
   const dashboard = await buildDashboardApp({
     reviewDesk,
     scripts,
+    postrack: { service: postrack, tools: postrackTools },
     cockpit: {
       testBench,
       testBenchFlow: benchFlow,
@@ -536,6 +553,7 @@ async function main(): Promise<void> {
       .then(() => reviewDesk.stop())
       .then(() => sessions.close())
       .then(() => figmaBridge.close())
+      .then(() => postrack.close())
       .then(() => webhooks.close())
       .then(() => notifier.close())
       .then(() => share.close())

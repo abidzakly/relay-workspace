@@ -16,6 +16,41 @@ export const RULESET_FILES = ['ruleset/ruleset.md', 'ruleset/agent-notion-gitlab
 const PROMPT_MAX = 50_000;
 const ATTACHMENTS_MAX = 10;
 
+const SOURCE_LABEL = {
+  card: 'from the card',
+  figma: 'from Figma',
+  postrack: 'from Postrack',
+  mine: 'from me',
+} as const;
+
+/**
+ * What the agent is told about Postrack: how to read the endpoint files, that the tools exist, and what it may change.
+ * Null when the session has neither. Exported for plain sessions' first prompt too.
+ */
+export function postrackSection(
+  hasFiles: boolean,
+  tools: { write: boolean } | null,
+): string | null {
+  if (!hasFiles && !tools) return null;
+  const lines: string[] = [];
+  if (hasFiles) {
+    lines.push(
+      `The Postrack files (postrack-*.json) are the endpoints this card works with, read live from the team's API workspace. They are the source of truth for the method, URL, headers, query and path parameters, body and auth, and their examples and mock config show real responses: take field names, types, nesting and nullability from them instead of guessing, and map the response models to them. \`{{variables}}\` in URLs and headers resolve through postrack-environments.json when it is there (secret values are masked: never hard-code them).`,
+    );
+  }
+  if (tools) {
+    lines.push(
+      `You have the Postrack tools (mcp__postrack__*). Before you assume the shape of any other endpoint this card touches, look it up: list_endpoints (search by name or URL) or get_workspace_tree, then get_endpoint. If an endpoint the card needs is not in Postrack, say so in the plan.`,
+    );
+    lines.push(
+      tools.write
+        ? `You may also update Postrack (create_endpoint, update_endpoint, create_folder, set_environment_variable…); every change asks me first. Do it only after the code is done and only where Postrack differs from what you built or found: a new or changed endpoint, an outdated example response. Name each Postrack change in the plan. Never put real secrets into Postrack.`
+        : `This session may only read Postrack. When Postrack is out of date or misses an endpoint, do not try to change it: list the changes it needs in your final report (endpoint, what to add or fix).`,
+    );
+  }
+  return lines.join('\n');
+}
+
 export interface CardStartBody {
   markdown: string;
   truncated: boolean;
@@ -38,9 +73,15 @@ export function cardStartPrompt(card: {
   /** The user's own instructions, typed in the Start dialog. */
   extraPrompt?: string | null;
   /** Absolute paths on this machine: images from the card and files the user attached. */
-  attachments?: readonly { path: string; source: 'card' | 'mine' | 'figma'; label: string }[];
+  attachments?: readonly {
+    path: string;
+    source: 'card' | 'mine' | 'figma' | 'postrack';
+    label: string;
+  }[];
   /** Attachments that could not be saved or downloaded. */
   failedAttachments?: readonly string[];
+  /** The session has the Postrack tools (`mcp__postrack__*`); `write` = it may also change Postrack. */
+  postrack?: { write: boolean } | null;
 }): string {
   const push = card.replaced
     ? `git push --force-with-lease -u origin ${card.branchName}`
@@ -63,13 +104,18 @@ ${extra}
   }
   if (files.length > 0) {
     sections.push(`Attachments saved on this machine. Open every one before you plan (images included); \`[image N]\` / \`[file N]\` in the card body refer to the card ones:
-${files.map((f) => `- ${f.path}  (${f.source === 'card' ? 'from the card' : f.source === 'figma' ? 'from Figma' : 'from me'}: ${f.label})`).join('\n')}`);
+${files.map((f) => `- ${f.path}  (${SOURCE_LABEL[f.source]}: ${f.label})`).join('\n')}`);
   }
   if (files.some((f) => f.source === 'figma')) {
     sections.push(`The Figma spec files (figma-*.json) hold the exact design values, read live from the Figma file. Take sizes, spacing, colours and typography from them, never by measuring the rendered images:
 - \`node\`: the design node and all its visible layers. Each has \`bounds\` (x, y, width, height) and \`styles\`: fills, strokes, strokeWeight, effects (shadows, blurs), cornerRadius / cornerRadii, opacity, autoLayout (direction, gap, alignment, sizing), padding, constraints, clipsContent. Text layers add \`characters\` and fontFamily, fontStyle, fontWeight, fontSize, lineHeight, letterSpacing, textAlignHorizontal / textAlignVertical, textDecoration. Colours are hex with a separate 0..1 \`opacity\`.
 - \`styles\` and \`variables\`: the file's named styles and design tokens. Map a value to the matching token or theme constant in this repository instead of hard-coding it when one exists.`);
   }
+  const postrack = postrackSection(
+    files.some((f) => f.source === 'postrack'),
+    card.postrack ?? null,
+  );
+  if (postrack) sections.push(postrack);
   if (failed.length > 0) {
     sections.push(`Attachments I could not get to you. Tell me in the plan that you have not seen them:
 ${failed.map((f) => `- ${f}`).join('\n')}`);

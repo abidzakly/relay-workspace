@@ -1,4 +1,4 @@
-import type { TestRunProfile } from '@relay/shared';
+import type { PostrackToolsProfile, TestRunProfile } from '@relay/shared';
 import {
   aiGeneratedByLabel,
   AgentModelsSchema,
@@ -44,6 +44,15 @@ export interface SessionServiceDeps {
   preferredAgent?: () => 'claude' | 'cursor';
   /** Settings' plan / execution models. Default: Opus 5.5 plans, Sonnet 5.5 (medium) executes. */
   agentModels?: () => AgentModels;
+  /**
+   * The Postrack tools for a new Claude session: a per-session token (null = Postrack off or not set up). `bind` ties
+   * the token to the session once it exists, `revoke` drops it when the start fails.
+   */
+  postrack?: {
+    profileFor(want: { write: boolean }): PostrackToolsProfile | null;
+    bind(token: string, sessionId: string): void;
+    revoke(token: string): void;
+  };
   /** Cursor's TUI needs a moment to draw before the first prompt (ms). Tests set 0. */
   cursorBootMs?: number;
   now?: () => number;
@@ -97,19 +106,31 @@ export class CockpitSessionService {
         parsed.execSwitch ??= cfg.execSwitch;
       }
     }
-    const s = await this.d.host.sessionStart(this.d.workspaces.ref(parsed.workspaceId), {
-      kind: parsed.kind,
-      deviceId: parsed.deviceId,
-      cols: parsed.cols,
-      rows: parsed.rows,
-      flavor: parsed.flavor,
-      mode: parsed.mode,
-      ios: parsed.ios,
-      model: parsed.model,
-      execModel: parsed.execModel,
-      execEffort: parsed.execEffort,
-      execSwitch: parsed.execSwitch,
-    });
+    const postrack =
+      parsed.kind === 'claude' && parsed.postrack !== false
+        ? (this.d.postrack?.profileFor({ write: parsed.postrack?.write ?? false }) ?? undefined)
+        : undefined;
+    let s: CockpitSession;
+    try {
+      s = await this.d.host.sessionStart(this.d.workspaces.ref(parsed.workspaceId), {
+        kind: parsed.kind,
+        deviceId: parsed.deviceId,
+        cols: parsed.cols,
+        rows: parsed.rows,
+        flavor: parsed.flavor,
+        mode: parsed.mode,
+        ios: parsed.ios,
+        model: parsed.model,
+        execModel: parsed.execModel,
+        execEffort: parsed.execEffort,
+        execSwitch: parsed.execSwitch,
+        postrack,
+      });
+    } catch (e) {
+      if (postrack) this.d.postrack?.revoke(postrack.token);
+      throw e;
+    }
+    if (postrack) this.d.postrack?.bind(postrack.token, s.id);
     this.changed(s.id);
     this.ensurePolling();
     return s;

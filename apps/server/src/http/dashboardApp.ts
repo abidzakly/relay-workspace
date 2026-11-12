@@ -4,6 +4,9 @@ import { registerSystemRoutes } from './routes/system';
 import { NO_PRESETS, type LoadedPresets } from '../config/presets';
 import type { ReviewDeskService } from '../services/reviewDesk';
 import { registerReviewsRoutes } from './routes/reviews';
+import { registerPostrackRoutes } from './routes/postrack';
+import type { PostrackAgentTools } from '../services/postrack/agentTools';
+import type { PostrackService } from '../services/postrack/postrackService';
 import Fastify, { type FastifyBaseLogger, type FastifyInstance } from 'fastify';
 import type { AuditWriter } from '../audit/auditLog';
 import type { SyncStatus } from '@relay/shared';
@@ -117,6 +120,8 @@ export interface DashboardAppOptions {
   reviewDesk?: ReviewDeskService;
   /** Release script settings (absent in tests = no routes). */
   scripts?: ScriptConfigService;
+  /** Postrack connection and the agents' Postrack tools (absent in tests = no routes). */
+  postrack?: { service: PostrackService; tools: PostrackAgentTools };
   /** SSE tuning (tests / ops); defaults in `http/sse.ts`. */
   sse?: { heartbeatMs?: number; maxClients?: number };
 }
@@ -256,6 +261,13 @@ export async function buildDashboardApp(opts: DashboardAppOptions): Promise<Fast
     registerMrActionRoutes(app, { actions: mrActions });
     if (opts.reviewDesk) registerReviewsRoutes(app, { desk: opts.reviewDesk, audit: opts.audit });
     if (opts.scripts) registerScriptRoutes(app, { scripts: opts.scripts, audit: opts.audit });
+    if (opts.postrack) {
+      registerPostrackRoutes(app, {
+        postrack: opts.postrack.service,
+        tools: opts.postrack.tools,
+        audit: opts.audit,
+      });
+    }
     registerSystemRoutes(app, opts.presets ?? NO_PRESETS);
     registerCardActionRoutes(app, { actions: cardActions });
     registerUndoRoutes(app, { undo, audit: opts.audit, cache: opts.cache });

@@ -11,6 +11,10 @@ import {
   type AgentEffort,
   type FlutterDevice,
   type FlutterRunMode,
+  POSTRACK_MCP_NAME,
+  POSTRACK_READ_TOOLS,
+  POSTRACK_WRITE_TOOLS,
+  type PostrackToolsProfile,
   type RunTargets,
   type SessionKind,
   type TestRunProfile,
@@ -109,6 +113,8 @@ export interface StartInput {
   rows: number;
   /** An AI device test; `claude` only. */
   testRun?: TestRunProfile | undefined;
+  /** `claude`, not a device test: the Postrack tools, proxied through Relay with this session's token. */
+  postrack?: PostrackToolsProfile | undefined;
   /** Resolved `flutter` target. Required for that kind; the host fills it before `start`. */
   flutter?: { flavor: string | null; mode: FlutterRunMode; ios: boolean } | undefined;
   /** Model the session starts on (planning). Unset = `CLAUDE_SESSION_MODEL` / `CURSOR_MODEL`. */
@@ -226,6 +232,40 @@ export function writeCursorTestRunDir(t: TestRunProfile): string {
   return dir;
 }
 
+/**
+ * The MCP config of a plain Claude session with Postrack (0600, in the OS temp dir): one stdio server, this repo's
+ * proxy, which calls Relay with the session's token. Passed without `--strict-mcp-config`, so the user's own MCP
+ * servers stay available. No Postrack credential is in it.
+ */
+export function writePostrackMcpConfig(p: PostrackToolsProfile): string {
+  const serverRoot = serverPackageRoot();
+  const file = join(tmpdir(), `cockpit-postrack-${randomUUID()}.json`);
+  const servers = {
+    [POSTRACK_MCP_NAME]: {
+      command: join(serverRoot, 'node_modules', '.bin', 'tsx'),
+      args: [join(serverRoot, 'src', 'agentTools', 'postrackMcp.ts')],
+      env: { POSTRACK_RELAY_URL: p.url, POSTRACK_SESSION_TOKEN: p.token },
+    },
+  };
+  writeFileSync(file, JSON.stringify({ mcpServers: servers }), { mode: 0o600 });
+  return file;
+}
+
+/**
+ * Flags for a Claude session with Postrack. Reads never ask (they change nothing). Writes are never pre-approved:
+ * without "Agent may update Postrack" they are blocked here and hidden by Relay; with it, each call asks the user.
+ */
+export function postrackArgs(config: string, write: boolean): string[] {
+  const tool = (n: string) => `mcp__${POSTRACK_MCP_NAME}__${n}`;
+  return [
+    '--mcp-config',
+    config,
+    '--allowedTools',
+    ...POSTRACK_READ_TOOLS.map(tool),
+    ...(write ? [] : ['--disallowedTools', ...POSTRACK_WRITE_TOOLS.map(tool)]),
+  ];
+}
+
 function testRunMcpServers(t: TestRunProfile): Record<string, unknown> {
   const serverRoot = serverPackageRoot();
   const tsx = join(serverRoot, 'node_modules', '.bin', 'tsx');
@@ -286,6 +326,8 @@ export function commandFor(
   cursorTestModel?: CursorTestModel,
   /** The model a plain agent session starts on (planning). */
   agentModel?: string,
+  /** A plain Claude session with the Postrack tools: its MCP config file and whether writes are allowed. */
+  postrack?: { config: string; write: boolean },
 ): { file: string; args: string[]; title: string } {
   switch (kind) {
     case 'claude':
@@ -331,6 +373,7 @@ export function commandFor(
           'plan',
           '--permission-prompt-tool',
           'stdio',
+          ...(postrack ? postrackArgs(postrack.config, postrack.write) : []),
         ],
         title: 'Claude',
       };
@@ -441,6 +484,11 @@ export class SessionManager {
     const cursorTest = i.testRun && i.kind === 'cursor' ? i.testRun : null;
     const mcpConfig =
       i.testRun && i.kind === 'claude' ? writeTestRunMcpConfig(i.testRun) : undefined;
+    // Postrack is for coding sessions; a device test keeps its own strict tool set.
+    const postrackConfig =
+      i.postrack && i.kind === 'claude' && !i.testRun
+        ? writePostrackMcpConfig(i.postrack)
+        : undefined;
     const cmd = commandFor(
       i.kind,
       i.cwd,
@@ -450,6 +498,9 @@ export class SessionManager {
       i.flutter,
       cursorTest?.cursorModel,
       i.model,
+      postrackConfig && i.postrack
+        ? { config: postrackConfig, write: i.postrack.write }
+        : undefined,
     );
     const cwd = cursorTest ? writeCursorTestRunDir(cursorTest) : i.cwd;
     let proc: NodePtyProcess;
@@ -476,6 +527,7 @@ export class SessionManager {
     } catch (e) {
       if (cursorTest) rmSync(cwd, { recursive: true, force: true });
       if (mcpConfig) rmSync(mcpConfig, { force: true });
+      if (postrackConfig) rmSync(postrackConfig, { force: true });
       throw new CockpitHostError(
         'spawn_failed',
         `${cmd.file} could not start: ${(e as Error).message}`,
@@ -522,8 +574,9 @@ export class SessionManager {
       s.proc = null;
       // The run token in the Cursor test dir dies with the session.
       if (cursorTest) rmSync(cwd, { recursive: true, force: true });
-      // So does the Claude one's MCP config.
+      // So does the Claude one's MCP config, and the Postrack one (its token dies with the session in Relay too).
       if (mcpConfig) rmSync(mcpConfig, { force: true });
+      if (postrackConfig) rmSync(postrackConfig, { force: true });
       this.setState(s, { state: 'exited', waiting: false, exitCode, lastOutputAt: this.now() });
       this.emit(s, { t: 'exit', exitCode });
     });

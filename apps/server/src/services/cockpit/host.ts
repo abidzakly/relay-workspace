@@ -1,4 +1,4 @@
-import type { AgentEffort, TestRunProfile } from '@relay/shared';
+import type { AgentEffort, PostrackToolsProfile, TestRunProfile } from '@relay/shared';
 import type { SquashResult, WsCommit } from './branchOps';
 import type {
   CockpitSession,
@@ -63,6 +63,8 @@ export interface SessionStartOpts {
   cols: number;
   rows: number;
   testRun?: TestRunProfile | undefined;
+  /** `claude`: the Postrack tools (Relay's loopback address and this session's token, no Postrack credential). */
+  postrack?: PostrackToolsProfile | undefined;
   /** `flutter`: `lib/main_<flavor>.dart`. Omitted lets the host pick the only entrypoint. */
   flavor?: string | undefined;
   mode?: FlutterRunMode | undefined;

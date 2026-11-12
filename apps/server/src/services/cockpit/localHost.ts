@@ -155,6 +155,7 @@ export class LocalCockpitHost implements CockpitHost {
       cols: opts.cols,
       rows: opts.rows,
       testRun: opts.testRun,
+      postrack: opts.postrack,
       flutter,
       model: opts.model,
       execModel: opts.execModel,

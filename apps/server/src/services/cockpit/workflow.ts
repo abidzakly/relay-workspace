@@ -5,6 +5,7 @@ import {
   type BaseSuggestResult,
   type CardContentPreview,
   type CardStartAttachment,
+  type CardStartPostrack,
   type DeckSource,
   type ExplainThreadResult,
   parseFigmaUrl,
@@ -14,6 +15,7 @@ import type { AppDb } from '../../db';
 import { cardBodies, mrs, reviewDecks } from '../../db/schema';
 import type { FigmaNodeSpec, FigmaService } from '../figma/figmaService';
 import type { FigmaSnapshotStore } from '../figma/snapshotStore';
+import { PostrackError, type PostrackService } from '../postrack/postrackService';
 import type { Logger } from '../../util/logger';
 import { ActionError } from '../actionError';
 import type { AiService } from '../ai/aiService';
@@ -75,6 +77,8 @@ export class CockpitWorkflowService {
       figma?: FigmaService;
       /** Each card's last Figma read, used while the bridge is down. */
       figmaSnapshots?: FigmaSnapshotStore;
+      /** Reads the Postrack endpoints picked for a card, so the agent maps the real request and response. */
+      postrack?: PostrackService;
       /** Called after files were saved for an agent, so cleanup knows what each attachment folder belongs to. */
       onAttachments?: (a: {
         group: string;
@@ -540,6 +544,61 @@ export class CockpitWorkflowService {
     };
   }
 
+  /**
+   * The picked Postrack endpoints (full detail) and their project's environments (secret values masked by Postrack),
+   * as files for the agent. A failure only drops that file: the prompt lists what is missing.
+   */
+  private async postrackFiles(
+    postrack: PostrackService,
+    pick: CardStartPostrack,
+  ): Promise<({ name: string; json: string; label: string } | { error: string })[]> {
+    const out: ({ name: string; json: string; label: string } | { error: string })[] = [];
+    const used = new Set<string>();
+    for (const id of pick.endpointIds) {
+      try {
+        const e = (await postrack.endpoint(id)) as {
+          name?: unknown;
+          method?: unknown;
+          url?: unknown;
+        };
+        const method = typeof e.method === 'string' ? e.method.toUpperCase() : 'REQ';
+        const title = typeof e.name === 'string' ? e.name : id;
+        const json = JSON.stringify(e, null, 1);
+        if (json.length > POSTRACK_FILE_MAX_BYTES) throw new Error('its detail is over 2 MB');
+        let name = `postrack-${method.toLowerCase()}-${slug(title)}.json`;
+        for (let n = 2; used.has(name); n++)
+          name = `postrack-${method.toLowerCase()}-${slug(title)}-${n}.json`;
+        used.add(name);
+        out.push({
+          name,
+          json,
+          label:
+            `Postrack endpoint ${method} ${typeof e.url === 'string' ? e.url : ''} (${title})`.replace(
+              /\s+/g,
+              ' ',
+            ),
+        });
+      } catch (err) {
+        out.push({ error: `Postrack endpoint ${id} (${(err as Error).message})` });
+      }
+    }
+    if (pick.projectId) {
+      try {
+        const json = JSON.stringify(await postrack.environments(pick.projectId), null, 1);
+        if (json.length > POSTRACK_FILE_MAX_BYTES) throw new Error('over 2 MB');
+        out.push({
+          name: 'postrack-environments.json',
+          json,
+          label:
+            'Postrack environments of the project: the values of {{variables}} (secrets masked)',
+        });
+      } catch (err) {
+        out.push({ error: `Postrack environments (${(err as Error).message})` });
+      }
+    }
+    return out;
+  }
+
   async cardStart(input: {
     cardId: string;
     workspaceId: string;
@@ -553,6 +612,8 @@ export class CockpitWorkflowService {
     attachments?: readonly CardStartAttachment[];
     /** Figma node links typed in the Start dialog, on top of the card's own. */
     figmaUrl?: string;
+    /** Postrack endpoints picked in the Start dialog, and whether the agent may update Postrack. */
+    postrack?: CardStartPostrack;
     /**
      * 'auto' (bulk start): when the workspace is busy (an agent runs there, or it has uncommitted changes), the card
      * gets a git worktree of its own instead, so several agents can work at once.
@@ -574,6 +635,14 @@ export class CockpitWorkflowService {
     }
     // Checked before anything changes on disk: a bad file must not leave a half-started card.
     const mine = (input.attachments ?? []).map((a, n) => ({ ...decodeAttachment(a), n: n + 1 }));
+    const wantPostrack = !!input.agent && !!input.postrack && this.d.postrack?.enabled() === true;
+    if (wantPostrack && !this.d.postrack?.configured()) {
+      // The dialog shows Connect and starts again; nothing has changed yet.
+      throw new PostrackError(
+        'postrack_not_connected',
+        'Connect Postrack first, or remove the picked endpoints.',
+      );
+    }
     let workspaceId = input.workspaceId;
     let started: { replaced: boolean; reused?: boolean };
     const existing = input.existing ?? (input.replace ? 'replace' : undefined);
@@ -616,7 +685,11 @@ export class CockpitWorkflowService {
       .update(`${card.id}:${Date.now()}`)
       .digest('hex')
       .slice(0, 16);
-    const attachments: { path: string; source: 'card' | 'mine' | 'figma'; label: string }[] = [];
+    const attachments: {
+      path: string;
+      source: 'card' | 'mine' | 'figma' | 'postrack';
+      label: string;
+    }[] = [];
     const failed: string[] = [];
     if (content && this.d.cardContent && content.assets.length > 0) {
       const dl = await this.d.cardContent.downloadAssets(content);
@@ -679,6 +752,25 @@ export class CockpitWorkflowService {
         failed.push(`${where} image (${(e as Error).message})`);
       }
     }
+    if (wantPostrack && input.postrack && this.d.postrack) {
+      for (const f of await this.postrackFiles(this.d.postrack, input.postrack)) {
+        if ('error' in f) {
+          failed.push(f.error);
+          continue;
+        }
+        try {
+          const { path } = await this.d.host.wsSaveAttachment(
+            ref,
+            group,
+            f.name,
+            Buffer.from(f.json).toString('base64'),
+          );
+          attachments.push({ path, source: 'postrack', label: f.label });
+        } catch (e) {
+          failed.push(`${f.label} (${(e as Error).message})`);
+        }
+      }
+    }
     for (const m of mine) {
       try {
         const { path } = await this.d.host.wsSaveAttachment(
@@ -705,7 +797,17 @@ export class CockpitWorkflowService {
       kind: input.agent,
       cols: 100,
       rows: 30,
+      ...(input.agent === 'claude' && input.postrack
+        ? { postrack: { write: input.postrack.write } }
+        : {}),
     });
+    // Claude sessions get the Postrack tools whenever Postrack is on and connected; Cursor only gets the files.
+    const postrackTools =
+      input.agent === 'claude' &&
+      this.d.postrack?.enabled() === true &&
+      this.d.postrack.configured()
+        ? { write: input.postrack?.write ?? false }
+        : null;
     // Cursor runs in its TUI, which needs a moment to draw before the first prompt.
     if (input.agent === 'cursor') await new Promise((r) => setTimeout(r, 2_500));
     await this.d.sessions.prompt(
@@ -723,6 +825,7 @@ export class CockpitWorkflowService {
         extraPrompt: input.extraPrompt ?? null,
         attachments,
         failedAttachments: failed,
+        postrack: postrackTools,
       }),
     );
     return { ...done, sessionId: s.id };
@@ -733,6 +836,16 @@ const PREVIEW_CHARS = 1_500;
 const FIGMA_NODES_MAX = 6;
 // The host agent takes 8 MB per request and the file travels as base64.
 const FIGMA_SPEC_MAX_BYTES = 5 * 1024 * 1024;
+const POSTRACK_FILE_MAX_BYTES = 2 * 1024 * 1024;
+
+/** A file-name-safe part: lower case, ASCII letters and digits joined by dashes, 48 characters at most. */
+const slug = (s: string): string =>
+  s
+    .toLowerCase()
+    .normalize('NFKD')
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 48) || 'endpoint';
 const ATTACHMENT_MAX_BYTES = 5 * 1024 * 1024;
 
 /** A user file from the Start dialog: real base64, at most 5 MB, a name safe to show and store. */

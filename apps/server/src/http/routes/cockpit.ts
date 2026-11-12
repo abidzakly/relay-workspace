@@ -3,6 +3,7 @@ import type { AiService } from '../../services/ai/aiService';
 import { AiError } from '../../services/ai/provider';
 import { CockpitHostError, type CockpitHost } from '../../services/cockpit/host';
 import {
+  CardStartPostrackSchema,
   DeckExplainRequestSchema,
   DeckGradeRequestSchema,
   DeckOpenRequestSchema,
@@ -79,6 +80,8 @@ const CardStartBody = z
     extraPrompt: z.string().max(8_000).optional(),
     /** Figma node links for the agent (space or newline separated), on top of the card's own. */
     figmaUrl: z.string().max(4_000).optional(),
+    /** Postrack endpoints for the agent, and whether it may update Postrack. */
+    postrack: CardStartPostrackSchema.optional(),
     /** Files for the agent to open (images included): base64, 5 MB each once decoded. */
     attachments: z
       .array(

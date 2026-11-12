@@ -4,8 +4,9 @@ import type { RepoPresets } from './presets';
 /**
  * Feature switches (Settings > General > Features). Each person turns off the parts of the dashboard they do not use:
  * a freelancer without KPIs, a reviewer who never releases. Everything is on by default except Reviews, which needs a
- * personal GitLab token first. A switched-off feature leaves the nav, the command palette and the workspace menu, its
- * page shows a "turned off" note, and its background work (the Reviews poll) stops. Data is kept.
+ * personal GitLab token first, and Postrack, which needs a Postrack account. A switched-off feature leaves the nav, the
+ * command palette and the workspace menu, its page shows a "turned off" note, and its background work (the Reviews
+ * poll) stops. Data is kept.
  */
 export const FEATURE_IDS = [
   'board',
@@ -13,6 +14,7 @@ export const FEATURE_IDS = [
   'codeReview',
   'reviews',
   'cockpit',
+  'postrack',
   'testBench',
   'release',
   'builds',
@@ -22,7 +24,7 @@ export const FEATURE_IDS = [
 ] as const;
 export type FeatureId = (typeof FEATURE_IDS)[number];
 
-const OFF_BY_DEFAULT: ReadonlySet<FeatureId> = new Set(['reviews']);
+const OFF_BY_DEFAULT: ReadonlySet<FeatureId> = new Set(['reviews', 'postrack']);
 
 export const FeaturesSchema = z.object(
   Object.fromEntries(
@@ -92,6 +94,14 @@ export const FEATURES: readonly FeatureInfo[] = [
     description: 'Coding agent sessions on your cards, in their own worktrees.',
     routes: ['/cockpit'],
     needsPosix: true,
+  },
+  {
+    id: 'postrack',
+    group: 'ship',
+    label: 'Postrack',
+    description:
+      'Agents read the endpoints, examples and environments of your Postrack API workspace. Needs a Postrack account.',
+    routes: [],
   },
   {
     id: 'testBench',

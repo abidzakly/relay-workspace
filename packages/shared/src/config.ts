@@ -265,6 +265,11 @@ const globalCommon = {
       poll: z.boolean().default(true),
     })
     .prefault({}),
+  /**
+   * Postrack (API workspace) MCP server the agents read endpoints from. The URL only: the API key and the OAuth
+   * tokens are encrypted secrets, never part of this JSON. Unset = not set up.
+   */
+  postrack: z.object({ url: HttpUrlSchema.optional() }).prefault({}),
 };
 
 function readyStatusInStatuses(n: { statuses: string[]; readyStatus: string }): boolean {
