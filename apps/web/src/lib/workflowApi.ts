@@ -1,5 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import type {
+  CardStartPostrackInput,
   BaseSuggestResult,
   CardContentPreview,
   CardStartAttachment,
@@ -121,6 +122,7 @@ export function useCardStart() {
       extraPrompt?: string;
       figmaUrl?: string;
       attachments?: CardStartAttachment[];
+      postrack?: CardStartPostrackInput;
     }
   >({
     mutationFn: (b) => post('/api/cockpit/card-start', b),

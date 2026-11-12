@@ -13,7 +13,10 @@ import { Input } from '@/components/ui/input';
 import { Select } from '@/components/ui/select';
 import { ApiError, describeError } from '@/lib/api';
 import { useApplyWrite, usePreviewWrite } from '@/lib/cardApi';
+import { useFeatures } from '@/lib/features';
+import { postrackNotConnected } from '@/lib/postrackApi';
 import { useSettings } from '@/lib/settingsApi';
+import { postrackRequest } from '@/postrack/PostrackBrief';
 import { useStateSnapshot } from '@/lib/stateApi';
 import { cn } from '@/lib/utils';
 import { GeneratedBy } from '@/components/GeneratedBy';
@@ -68,6 +71,7 @@ export function StartCardDialog({
   const [brief, setBrief] = useState<Brief>(EMPTY_BRIEF);
   const [encoding, setEncoding] = useState(false);
   const [encodeError, setEncodeError] = useState<string | null>(null);
+  const features = useFeatures();
   // Instructions and files belong to one card.
   useEffect(() => {
     setBrief(EMPTY_BRIEF);
@@ -120,10 +124,12 @@ export function StartCardDialog({
     setEncodeError(null);
     try {
       const attachments = await briefAttachments(brief.files);
+      const postrack = features.postrack ? postrackRequest(brief.postrack) : undefined;
       return {
         ...(brief.extraPrompt.trim() ? { extraPrompt: brief.extraPrompt.trim() } : {}),
         ...(brief.figmaUrl.trim() ? { figmaUrl: brief.figmaUrl.trim() } : {}),
         ...(attachments.length > 0 ? { attachments } : {}),
+        ...(postrack ? { postrack } : {}),
       };
     } catch (e) {
       setEncodeError(`Could not read a file: ${(e as Error).message}`);
@@ -339,7 +345,14 @@ export function StartCardDialog({
           )}
         </fieldset>
         {agent && (
-          <CardBrief cardId={card?.id ?? null} value={brief} onChange={setBrief} disabled={busy} />
+          <CardBrief
+            cardId={card?.id ?? null}
+            workspaceId={workspaceId}
+            agent={agent}
+            value={brief}
+            onChange={setBrief}
+            disabled={busy}
+          />
         )}
         <Button
           disabled={
@@ -357,6 +370,9 @@ export function StartCardDialog({
         {(preview.error || apply.error || (start.error && !treeDirty && !branchExists)) && (
           <p className="text-sm text-destructive">
             {describeError(preview.error ?? apply.error ?? start.error)}
+            {postrackNotConnected(start.error)
+              ? ' Connect it in the Postrack section above, then press Start again.'
+              : ''}
           </p>
         )}
         {encodeError && <p className="text-sm text-destructive">{encodeError}</p>}

@@ -8,6 +8,8 @@ import { describeError } from '@/lib/api';
 import { toBase64 } from '@/lib/base64';
 import { cn } from '@/lib/utils';
 import { useCardContent } from '@/lib/workflowApi';
+import { EMPTY_PICK, type PostrackPick } from '@/postrack/EndpointPicker';
+import { PostrackBrief } from '@/postrack/PostrackBrief';
 
 export const BRIEF_FILES_MAX = 10;
 export const BRIEF_FILE_MAX_BYTES = 5 * 1024 * 1024;
@@ -25,9 +27,16 @@ export interface Brief {
   /** Figma node links (space or newline separated), on top of the card's own. */
   figmaUrl: string;
   files: BriefFile[];
+  /** Postrack endpoints for the agent (only offered while the Postrack feature is on). */
+  postrack: PostrackPick;
 }
 
-export const EMPTY_BRIEF: Brief = { extraPrompt: '', figmaUrl: '', files: [] };
+export const EMPTY_BRIEF: Brief = {
+  extraPrompt: '',
+  figmaUrl: '',
+  files: [],
+  postrack: EMPTY_PICK,
+};
 
 /** Why the typed Figma links cannot be used, or null. A link must point at a node: a whole file is too big. */
 export function figmaLinkProblem(text: string): string | null {
@@ -65,11 +74,16 @@ const sizeLabel = (b: number) =>
  */
 export function CardBrief({
   cardId,
+  workspaceId,
+  agent,
   value,
   onChange,
   disabled,
 }: {
   cardId: string | null;
+  /** The Relay workspace: the Postrack workspace picked for it is remembered. */
+  workspaceId: string;
+  agent: 'claude' | 'cursor';
   value: Brief;
   onChange: (b: Brief) => void;
   disabled?: boolean;
@@ -248,6 +262,14 @@ export function CardBrief({
           </span>
         )}
       </label>
+
+      <PostrackBrief
+        relayWorkspaceId={workspaceId}
+        agent={agent}
+        value={value.postrack}
+        onChange={(postrack) => onChange({ ...value, postrack })}
+        disabled={disabled}
+      />
 
       <div
         onDragOver={(e) => {

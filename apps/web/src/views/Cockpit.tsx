@@ -28,6 +28,12 @@ import { RunView } from '@/cockpit/RunView';
 import { AttentionPanel } from '@/cockpit/AttentionPanel';
 import { Helper, useFinishedSessionReward } from '@/cockpit/Helper';
 import { StartCardDialog } from '@/cockpit/StartCardDialog';
+import {
+  DEFAULT_SESSION_POSTRACK,
+  SessionPostrackOptions,
+  sessionPostrackRequest,
+  type SessionPostrack,
+} from '@/postrack/SessionPostrackOptions';
 import { WS_RING } from '@/cockpit/wsColors';
 import { RepoMark } from '@/components/RepoMark';
 import { PageTitle } from '@/components/PageTitle';
@@ -68,6 +74,7 @@ function NewSession({
   onStarted: (id: string, ws: string, kind: SessionKind) => void;
 }) {
   const start = useStartSession();
+  const [postrack, setPostrack] = useState<SessionPostrack>(DEFAULT_SESSION_POSTRACK);
   const [ws, setWs] = useState(initialWs ?? workspaces[0]?.id ?? '');
   useEffect(() => setWs(initialWs ?? workspaces[0]?.id ?? ''), [initialWs, workspaces]);
   const kinds: { kind: SessionKind; label: string; hint: string; icon: typeof Bot }[] = [
@@ -106,7 +113,11 @@ function NewSession({
               disabled={!ws || start.isPending}
               onClick={() =>
                 start.mutate(
-                  { workspaceId: ws, kind: k.kind },
+                  {
+                    workspaceId: ws,
+                    kind: k.kind,
+                    ...(k.kind === 'claude' ? { postrack: sessionPostrackRequest(postrack) } : {}),
+                  },
                   {
                     onSuccess: (s) => {
                       onStarted(s.id, ws, k.kind);
@@ -124,6 +135,11 @@ function NewSession({
             </Button>
           ))}
         </div>
+        <SessionPostrackOptions
+          value={postrack}
+          onChange={setPostrack}
+          disabled={start.isPending}
+        />
         {start.isPending && <Loader2 className="size-4 motion-safe:animate-spin" />}
         {start.error && <p className="text-sm text-destructive">{describeError(start.error)}</p>}
       </DialogContent>

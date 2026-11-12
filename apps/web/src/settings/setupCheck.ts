@@ -1,4 +1,5 @@
 import { useWorkspaces } from '@/lib/cockpitApi';
+import { usePostrackStatus } from '@/lib/postrackApi';
 import { useBrowserPush } from '@/lib/push';
 import { useDriveKey, useRepos, useSettings } from '@/lib/settingsApi';
 import { useUiStore } from '@/store/ui';
@@ -59,6 +60,8 @@ function useSetupItems(): { items: SetupItem[]; loading: boolean } {
   const driveKey = useDriveKey();
   const workspaces = useWorkspaces();
   const push = useBrowserPush();
+  const postrackOn = settings.data?.features.postrack === true;
+  const postrack = usePostrackStatus(postrackOn);
 
   const s = settings.data;
   const r = repos.data;
@@ -170,6 +173,18 @@ function useSetupItems(): { items: SetupItem[]; loading: boolean } {
         'optional',
         'A Cockpit workspace',
         'The Cockpit cannot open an agent, terminal or editor. Workspaces are per machine, never in an import.',
+      ),
+    );
+  }
+  // Only once the feature is on. A secret, so an import never brings it.
+  if (postrackOn && postrack.data && !postrack.data.authMode) {
+    items.push(
+      item(
+        'postrack',
+        'postrack',
+        'optional',
+        'Postrack connection',
+        'Agents cannot read your API endpoints. You can also connect from the Start card dialog.',
       ),
     );
   }

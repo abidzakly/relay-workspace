@@ -28,6 +28,7 @@ import { NotificationsCard } from '@/settings/NotificationsCard';
 import { NotionCard, toNotionDraft } from '@/settings/NotionCard';
 import { FeaturesCard } from '@/settings/FeaturesCard';
 import { ReposCard } from '@/settings/ReposCard';
+import { PostrackCard } from '@/settings/PostrackCard';
 import { ReviewerCard } from '@/settings/ReviewerCard';
 import { ScriptsCard } from '@/settings/ScriptsCard';
 import { SafetyCard } from '@/settings/SafetyCard';
@@ -61,6 +62,7 @@ function cards(s: GlobalConfigPublic): Record<string, ReactNode> {
     reviewer: <ReviewerCard settings={s} />,
     notion: <NotionCard key={`nt:${JSON.stringify(toNotionDraft(s))}`} settings={s} />,
     drive: <DriveCard key={`dr:${JSON.stringify(toDriveDraft(s))}`} settings={s} />,
+    postrack: <PostrackCard settings={s} />,
     ai: <AiCard settings={s} />,
     'ai-prompts': <AiPromptsCard settings={s} />,
     repos: <ReposCard settings={s} />,

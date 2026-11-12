@@ -20,6 +20,9 @@ import { useWorkspaces } from '@/lib/cockpitApi';
 import { emit } from '@/lib/reward/engine';
 import { useSettings } from '@/lib/settingsApi';
 import { useBases, useCardStart } from '@/lib/workflowApi';
+import { useFeatures } from '@/lib/features';
+import { EMPTY_PICK, type PostrackPick } from '@/postrack/EndpointPicker';
+import { PostrackBrief, postrackRequest } from '@/postrack/PostrackBrief';
 import { figmaLinkProblem } from './CardBrief';
 import { ExistingBranchPrompt, type ExistingBranchChoice } from './ExistingBranchPrompt';
 
@@ -41,6 +44,8 @@ interface Row {
   base: string;
   /** Figma node links for this card's agent, on top of the ones in the card. */
   figmaUrl: string;
+  /** Postrack endpoints for this card's agent. */
+  postrack: PostrackPick;
 }
 
 type Outcome =
@@ -78,6 +83,7 @@ function Body({ cards, onClose }: { cards: StateCard[]; onClose: () => void }) {
   const [rows, setRows] = useState<Row[]>([]);
   const [outcomes, setOutcomes] = useState<Record<string, Outcome>>({});
   const [running, setRunning] = useState(false);
+  const postrackOn = useFeatures().postrack;
   const preview = usePreviewWrite();
   const apply = useApplyWrite();
   const start = useCardStart();
@@ -108,6 +114,7 @@ function Body({ cards, onClose }: { cards: StateCard[]; onClose: () => void }) {
         agent: preferred,
         base: '',
         figmaUrl: '',
+        postrack: EMPTY_PICK,
       })),
     );
   }, [cards, workspaces, preferred, rows.length]);
@@ -144,6 +151,9 @@ function Body({ cards, onClose }: { cards: StateCard[]; onClose: () => void }) {
             worktree: 'auto',
             ...(existing ? { existing } : {}),
             ...(r.figmaUrl.trim() ? { figmaUrl: r.figmaUrl.trim() } : {}),
+            ...(postrackOn && postrackRequest(r.postrack)
+              ? { postrack: postrackRequest(r.postrack) }
+              : {}),
           });
         let res: Awaited<ReturnType<typeof startRow>>;
         try {
@@ -368,6 +378,13 @@ function BulkRow({
             />
             {figmaProblem && <span className="text-destructive">{figmaProblem}</span>}
           </label>
+          <PostrackBrief
+            relayWorkspaceId={row.workspaceId}
+            agent={row.agent}
+            value={row.postrack}
+            onChange={(postrack) => onChange({ postrack })}
+            disabled={locked}
+          />
         </div>
       )}
     </li>

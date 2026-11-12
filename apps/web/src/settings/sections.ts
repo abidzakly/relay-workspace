@@ -39,6 +39,7 @@ export const SETTINGS_SECTIONS: SettingsSection[] = [
       'release',
       'builds',
       'sprints',
+      'postrack',
     ],
   },
   {
@@ -103,6 +104,12 @@ export const SETTINGS_SECTIONS: SettingsSection[] = [
       'shared drive',
       'upload',
     ],
+  },
+  {
+    id: 'postrack',
+    group: 'connections',
+    title: 'Postrack',
+    keywords: ['postrack', 'api', 'mcp', 'endpoint', 'mock', 'environment', 'oauth', 'api key'],
   },
   {
     id: 'ai',

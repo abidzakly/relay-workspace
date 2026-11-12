@@ -37,6 +37,9 @@ const SprintHarbor = lazy(() =>
   import('@/views/SprintHarbor').then((m) => ({ default: m.SprintHarbor })),
 );
 const Settings = lazy(() => import('@/views/Settings').then((m) => ({ default: m.Settings })));
+const PostrackConnected = lazy(() =>
+  import('@/views/PostrackConnected').then((m) => ({ default: m.PostrackConnected })),
+);
 const ReviewDesk = lazy(() =>
   import('@/views/ReviewDesk').then((m) => ({ default: m.ReviewDesk })),
 );
@@ -71,6 +74,15 @@ function HomeIndex() {
 }
 
 export const router = createBrowserRouter([
+  // The Postrack sign-in popup's last page: no layout, it closes itself.
+  {
+    path: '/postrack/connected',
+    element: (
+      <Suspense fallback={null}>
+        <PostrackConnected />
+      </Suspense>
+    ),
+  },
   {
     path: '/',
     element: <Layout />,
