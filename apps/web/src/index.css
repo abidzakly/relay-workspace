@@ -675,7 +675,9 @@
   background: var(--muted);
   color: var(--foreground);
   font-weight: 500;
-  white-space: nowrap;
+  overflow-wrap: anywhere;
+  -webkit-box-decoration-break: clone;
+  box-decoration-break: clone;
 }
 .md .mention-me {
   background: color-mix(in oklab, var(--terracotta) 22%, transparent);

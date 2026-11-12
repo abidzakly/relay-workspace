@@ -570,9 +570,14 @@ export function Composer({
                       ) : (
                         <GitMerge className="size-4 shrink-0 text-muted-foreground" aria-hidden />
                       )}
-                      <span className="shrink-0 font-medium">{s.primary}</span>
+                      <span className="min-w-0 truncate font-medium" title={s.primary}>
+                        {s.primary}
+                      </span>
                       {s.secondary && (
-                        <span className="min-w-0 truncate text-xs text-muted-foreground">
+                        <span
+                          className="min-w-0 max-w-[45%] shrink-0 truncate text-xs text-muted-foreground"
+                          title={s.secondary}
+                        >
                           {s.secondary}
                         </span>
                       )}
