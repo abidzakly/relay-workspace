@@ -144,6 +144,14 @@ function ImportSummary({ preview }: { preview: ConfigImportPreview }) {
               : 'none in the file. The ones here stay'}
         </li>
       </ul>
+      {preview.defaulted.length > 0 && (
+        <Alert variant="warning">
+          <AlertTitle>Made by an older version</AlertTitle>
+          <AlertDescription>
+            Not in the file, so these take their defaults: {preview.defaulted.join(', ')}.
+          </AlertDescription>
+        </Alert>
+      )}
       {preview.reposWithoutToken.length > 0 && (
         <Alert variant="warning">
           <AlertTitle>New repos without a token</AlertTitle>

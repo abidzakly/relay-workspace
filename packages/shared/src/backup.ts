@@ -91,6 +91,8 @@ export const ConfigImportPreviewSchema = z.object({
   /** `ignored` = the file has sealed secrets and no passphrase was given. */
   secrets: z.enum(['none', 'ignored', 'restored']),
   secretCount: z.int().nonnegative(),
+  /** Fields the file lacks (made by an older version): they take their defaults. */
+  defaulted: z.array(z.string()).default([]),
 });
 export type ConfigImportPreview = z.infer<typeof ConfigImportPreviewSchema>;
 

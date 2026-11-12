@@ -194,21 +194,21 @@ function isPlainObject(v: unknown): v is Record<string, unknown> {
 type Issue = { code: 'custom'; path: (string | number)[]; message: string; input: unknown };
 
 /**
- * The schemas fill in defaults and drop unknown keys, which suits a settings form but not a backup: a partial file
- * would silently reset fields, and a stray `token` would silently vanish. So the file must match its parsed form.
+ * The schemas fill in defaults and drop unknown keys, which suits a settings form but not a backup: a stray `token`
+ * would silently vanish. So a key the file has must be one this version knows. A key the file lacks takes its default
+ * (an export made before the field existed), and is reported in the preview, so nothing is reset without being said.
  */
-function shapeIssues(raw: unknown, parsed: unknown, path: (string | number)[]): Issue[] {
+function shapeIssues(
+  raw: unknown,
+  parsed: unknown,
+  path: (string | number)[],
+  defaulted: string[],
+): Issue[] {
   if (!isPlainObject(raw) || !isPlainObject(parsed)) return [];
   const issues: Issue[] = [];
   for (const key of Object.keys(parsed)) {
-    if (parsed[key] !== undefined && !Object.hasOwn(raw, key)) {
-      issues.push({
-        code: 'custom',
-        path: [...path, key],
-        message: 'missing from the file: it was made by an older or edited export',
-        input: undefined,
-      });
-    }
+    if (parsed[key] !== undefined && !Object.hasOwn(raw, key))
+      defaulted.push([...path, key].join('.'));
   }
   for (const key of Object.keys(raw)) {
     if (!Object.hasOwn(parsed, key)) {
@@ -219,25 +219,32 @@ function shapeIssues(raw: unknown, parsed: unknown, path: (string | number)[]): 
         input: undefined,
       });
     } else {
-      issues.push(...shapeIssues(raw[key], parsed[key], [...path, key]));
+      issues.push(...shapeIssues(raw[key], parsed[key], [...path, key], defaulted));
     }
   }
   return issues;
 }
 
-function parseSection<T>(schema: z.ZodType<T>, raw: unknown, path: (string | number)[]): T {
+function parseSection<T>(
+  schema: z.ZodType<T>,
+  raw: unknown,
+  path: (string | number)[],
+  defaulted: string[],
+): T {
   const out = schema.safeParse(raw);
   if (!out.success) {
     throw new z.ZodError(
       out.error.issues.map((i) => ({ ...i, path: [...path, ...i.path] })) as z.core.$ZodIssue[],
     );
   }
-  const issues = shapeIssues(raw, out.data, path);
+  const issues = shapeIssues(raw, out.data, path, defaulted);
   if (issues.length > 0) throw new z.ZodError(issues as z.core.$ZodIssue[]);
   return out.data;
 }
 
 export interface ParsedConfigFile {
+  /** Fields the file lacks (an older export): they take their defaults. `settings.kpi`, `repos.0.qa`… */
+  defaulted: string[];
   /** The file's format: the current one, or a legacy one from before the rename. */
   format: string;
   exportedAt: number;
@@ -270,8 +277,11 @@ export function parseConfigFile(raw: unknown): ParsedConfigFile {
     );
   }
   const file = ConfigExportFileSchema.parse(raw);
-  const settings = parseSection(GlobalConfigStoredSchema, file.settings, ['settings']);
-  const repos = file.repos.map((r, i) => parseSection(RepoConfigStoredSchema, r, ['repos', i]));
+  const defaulted: string[] = [];
+  const settings = parseSection(GlobalConfigStoredSchema, file.settings, ['settings'], defaulted);
+  const repos = file.repos.map((r, i) =>
+    parseSection(RepoConfigStoredSchema, r, ['repos', i], defaulted),
+  );
   const ids = new Set<string>();
   for (const repo of repos) {
     if (ids.has(repo.id)) {
@@ -288,6 +298,7 @@ export function parseConfigFile(raw: unknown): ParsedConfigFile {
   }
   return {
     format: file.format,
+    defaulted,
     exportedAt: file.exportedAt,
     settings,
     repos,
@@ -332,6 +343,7 @@ export function previewImport(
     reposWithoutToken: [],
     secrets: !parsed.sealed ? 'none' : secrets ? 'restored' : 'ignored',
     secretCount: 0,
+    defaulted: parsed.defaulted,
   };
   if (secrets?.notionToken) preview.secretCount++;
   for (const repo of parsed.repos) {
