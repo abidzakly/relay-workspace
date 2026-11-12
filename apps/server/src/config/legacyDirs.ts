@@ -1,4 +1,4 @@
-import { existsSync, renameSync, symlinkSync } from 'node:fs';
+import { existsSync, readdirSync, renameSync, rmSync, symlinkSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import type { Logger } from '../util/logger';
@@ -7,7 +7,8 @@ import type { Logger } from '../util/logger';
  * The folders this app used before it was renamed to Relay, and where they live now:
  *   ~/.config/core-dashboard  -> ~/.config/relay   (scripts.env)
  *   ~/.core-dashboard         -> ~/.relay          (bot clones)
- * On start, each old folder is moved once, and only when the new one does not exist yet. A link is left at the old
+ * On start, each old folder is moved once, and only when the new one does not exist yet, or holds nothing but empty
+ * folders (Docker creates `~/.relay/clones` for its bind mount before this runs). A link is left at the old
  * path, so anything that still names it (a repo's saved local path, older copies of the release scripts) keeps
  * working. Nothing is ever deleted; a failure is logged and the app starts anyway.
  */
@@ -20,10 +21,24 @@ export function legacyDirMoves(env: NodeJS.ProcessEnv = process.env): [string, s
   ];
 }
 
+/** true when `dir` holds no files at any depth: only (nested) empty folders. */
+export function onlyEmptyFolders(dir: string): boolean {
+  try {
+    return readdirSync(dir, { withFileTypes: true }).every(
+      (e) => e.isDirectory() && !e.isSymbolicLink() && onlyEmptyFolders(join(dir, e.name)),
+    );
+  } catch {
+    return false;
+  }
+}
+
 export function moveLegacyDirs(log: Logger, moves = legacyDirMoves()): void {
   for (const [from, to] of moves) {
-    if (!existsSync(from) || existsSync(to)) continue;
+    if (!existsSync(from)) continue;
+    if (existsSync(to) && !onlyEmptyFolders(to)) continue;
     try {
+      // Only empty folders are removed here, never a file.
+      if (existsSync(to)) rmSync(to, { recursive: true });
       renameSync(from, to);
     } catch (err) {
       log.warn(
