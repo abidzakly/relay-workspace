@@ -1,0 +1,1732 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+# Values saved in Relay (Settings > Repos > Release scripts). A variable already set in the environment wins.
+_cd_env="${RELAY_SCRIPTS_ENV:-${CORE_DASHBOARD_SCRIPTS_ENV:-${XDG_CONFIG_HOME:-$HOME/.config}/relay/scripts.env}}"
+[[ -r "$_cd_env" ]] || _cd_env="${XDG_CONFIG_HOME:-$HOME/.config}/core-dashboard/scripts.env"
+# shellcheck source=/dev/null
+[[ -r "$_cd_env" ]] && . "$_cd_env"
+unset _cd_env
+
+# ============================================================
+# vu - Flutter pubspec.yaml version updater
+# ============================================================
+#
+# Usage:
+#
+#   vu staging
+#   vu prod
+#
+#   vu --staging
+#   vu --prod
+#
+# Short form:
+#
+#   vu staging -y
+#   vu prod -y
+#   vu prod --token "$GITLAB_TOKEN" -y
+#
+# Custom base branch (default: main/master):
+#
+#   vu staging --base develop -y
+#   vu prod -b release/2.2 -y
+#   VU_BASE_BRANCH=develop vu staging -y
+#
+# Manual version override:
+#
+#   vu staging                 (interactive: prompted, Enter accepts
+#                               the proposed version, or type your own)
+#   vu staging --version 1 -y  (staging: bare number = alpha number)
+#   vu prod --version 2.2.0+60 -y
+#
+# Missing or rejected data (interactive recovery):
+#
+#   vu never makes you re-run it just because something it needs
+#   is missing or wrong. It asks for it right there and retries
+#   the same step. Wrong answer -> it asks again. Pressing Enter
+#   at a prompt gives up on that step (and, where the step is
+#   essential, stops vu with an explanation).
+#
+#     GitLab token   glab/mrc fails with 401/403/404, "token",
+#                    "unauthorized", ... -> asks for a token
+#                    (not echoed), then retries. The token is
+#                    also handed to mrc (--token) from then on.
+#     Notion cards   post-release updates run via `vcheck`
+#                    (sources ~/.config/nts/env like nts). If
+#                    GitLab rejects the API, vcheck may ask for
+#                    a read_api token.
+#     Base branch    --base branch doesn't exist (or main/master
+#                    can't be detected) -> asks for the branch.
+#     Commit author  no saved reauthor profile -> asks for name
+#                    and email.
+#
+#   Prompts are read from the terminal (/dev/tty); with no
+#   terminal (e.g. cron) the step just fails/skips as before.
+#
+# Resuming an unfinished version update:
+#
+#   If an earlier run got as far as opening the MR but failed
+#   afterwards (e.g. the merge was rejected because of token
+#   permissions), just run vu again. Before doing anything else
+#   it asks GitLab for an OPEN merge request that:
+#
+#     - targets the base branch,
+#     - is assigned to you ($VU_ASSIGNEE, default: your glab user),
+#     - has a source branch like $VU_BRANCH_PREFIX<version> (default release/v),
+#     - has a title exactly equal to that source branch name.
+#
+#   If one is found, vu skips branch/commit/push/MR creation and
+#   continues from "wait for review" -> merge -> tag -> build ->
+#   Notion. The version and mode (staging/prod) are read from the
+#   branch name. Nothing is deleted or closed.
+#
+#   vu --fresh   skips this check and starts over (this replaces
+#   the old branch/MR, as vu used to do).
+#
+#   If the MR lookup itself fails, vu stops instead of starting
+#   fresh, since starting fresh would close the existing MR.
+#
+# Full automated flow (always -- regardless of which branch
+# you're on when you run vu):
+#
+#   0.  (Resume check, see above.)
+#   1.  Checkout the base branch (main/master by default, or
+#       whatever --base / $VU_BASE_BRANCH says, e.g. develop).
+#       Whatever branch you were on is left untouched; it's
+#       only used to get to the base branch.
+#   2.  Fetch + pull, verify local base == origin/base (HEAD)
+#   3.  Verify working tree is clean
+#   4.  Create version-update branch
+#   5.  Update pubspec.yaml
+#   6.  Commit as "v<version>"
+#   7.  Push branch to origin
+#   8.  Create a merge request via `mrc` (see mrc --help),
+#       targeting the base branch
+#   9.  Wait for you to review the MR. Press Enter (or type
+#       anything) in the terminal once you're happy with it.
+#   10. Merge the MR (glab mr merge)
+#   11. Checkout the base branch, delete the version-update branch
+#   12. Fetch + pull the base branch again
+#   13. Create + push a tag for the new version
+#   14. Build the app via the flutter run menu script (frm),
+#       auto-detecting main_staging.dart vs
+#       main_development.dart and picking the flavor/action
+#       for the given mode (see "Post-merge build" below).
+#   15. Run `vcheck` on the base branch to list merged MRs in
+#       this release and mark linked Notion cards "Ready to
+#       Test" (see "Post-build Notion (vcheck)" below).
+#
+#   --token is passed through to mrc when opening the MR
+#   (see mrc --help).
+#
+#   Base branch:
+#     --base / --from / -b <branch>   (or $VU_BASE_BRANCH)
+#     Must exist locally or on origin. The version is read from
+#     this branch's pubspec.yaml, the version-update branch is
+#     created from it, the MR targets it (passed to mrc as
+#     --target when --base is used), and the release is tagged
+#     on it. Without it, vu auto-detects main/master as before.
+#
+#   Commit author (same rules as reauthor):
+#     VU_COMMIT_NAME + VU_COMMIT_EMAIL when set, else
+#     a remote on one of REAUTHOR_WORK_HOSTS -> "self"
+#     otherwise -> "personal"
+#   Profiles live in ~/.config/reauthor/identities (reauthor --list).
+#   vu sets this repo's local user.name / user.email before commit.
+#
+# Post-merge build (step 14 above):
+#
+#   Flavor file detection (checked in lib/):
+#     lib/main_staging.dart      -> flavor flag -s (staging)
+#     lib/main_development.dart -> flavor flag -d (development)
+#     If both or neither exist, vu skips the build step and
+#     tells you to run frm manually.
+#
+#   frm invocation per mode:
+#     staging -> frm -a  -<flavor-flag> -rel --   (build apk, release)
+#     prod    -> frm -a  -p -rel --               (build apk, release)
+#                frm -ab -p -rel --               (build appbundle, release)
+#   The trailing -- skips frm's "Extra flutter args" prompt, so vu also
+#   runs unattended (e.g. in the dashboard's PTY engine).
+#
+#   <flavor-flag> is whichever of -s / -d was detected above.
+#   Prod always builds against the "production" flavor (-p),
+#   regardless of which main_*.dart file exists -- the
+#   detection above is only used to pick the staging flavor.
+#
+# Post-build Notion (vcheck) (step 15 above):
+#
+#   After the build, vu runs your `vcheck` script (next to this
+#   one in ~/bin, then on PATH):
+#
+#     vcheck -b <base-branch>              # interactive: [a]ll / select / no
+#     vcheck -b <base-branch> --fix        # when vu is run with -y
+#
+#   vcheck sources ~/.config/nts/env before calling `nts`, lists
+#   every MR merged since the previous version-update merge on
+#   the base branch, and updates linked Notion cards. Pass
+#   --token from vu when set so GitLab MR lookups work.
+#
+#   Non-fatal: a vcheck failure is logged; the release (merge,
+#   tag, build) is already done. Run vcheck manually if needed.
+#
+#   --no-notion-scan   skips this step.
+#
+# Version examples:
+#
+#   2.1.1+51
+#       staging -> 2.1.1-alpha-1+51
+#       prod    -> 2.1.2+52
+#
+#   2.1.1-alpha-1+51
+#       staging -> 2.1.1-alpha-2+51
+#       prod    -> 2.1.2+52
+#
+#   2.1.1+20260801
+#       staging -> 2.1.1-alpha-1+20260801
+#       prod    -> 2.1.2+20260812
+#
+#   2.1.1+202608011507
+#       staging -> 2.1.1-alpha-1+202608011507
+#       prod    -> 2.1.2+202608121615
+#
+# ============================================================
+
+
+SCRIPT_NAME="$(basename "$0")"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PUBSPEC="pubspec.yaml"
+REAUTHOR_IDENTITIES="${XDG_CONFIG_HOME:-$HOME/.config}/reauthor/identities"
+
+MODE=""
+AUTO_YES=false
+PUSH_BRANCH=false
+API_TOKEN=""
+# MAIN_BRANCH is the *base* branch: main/master by default, or
+# whatever --base / $VU_BASE_BRANCH selects (e.g. develop).
+MAIN_BRANCH=""
+BASE_BRANCH="${VU_BASE_BRANCH:-}"
+CUSTOM_VERSION=""
+MERGED_AND_RELEASED=false
+
+# Resume support
+ASSIGNEE_USER="${VU_ASSIGNEE:-}"   # empty: the GitLab user glab is logged in as
+BRANCH_PREFIX="${VU_BRANCH_PREFIX:-release/v}"
+FRESH=false
+RESUMED=false
+MR_IID=""
+MR_URL=""
+RESUME_BRANCH=""
+
+# Post-build Notion via vcheck
+SCAN_NOTION=true
+
+# Interactive recovery state
+REPLY_VALUE=""
+GLAB_OUT=""
+GLAB_ERR=""
+GLAB_ALL=""
+MR_LINES=""
+
+
+# ============================================================
+# Helpers
+# ============================================================
+
+usage() {
+    cat <<EOF
+Usage:
+  $SCRIPT_NAME staging [--yes]
+  $SCRIPT_NAME prod [--yes]
+
+  $SCRIPT_NAME --staging [--yes]
+  $SCRIPT_NAME --prod [--yes]
+
+Options:
+  staging, --staging     Increment/create alpha version
+  prod, --prod           Create production version
+  --yes, -y              Skip confirmation
+      --base, --target, -b, -t <branch>
+                         Branch to start from and merge back into
+                         (default: main/master; e.g. develop or any
+                         custom branch). Also settable via
+                         \$VU_BASE_BRANCH
+      --version <ver>    Use this exact version instead of the computed
+                         one (staging: a bare number like "1" means
+                         alpha-1). Without it, an interactive run lets
+                         you edit the proposed version at a prompt.
+      --token <token>    GitLab API token for mrc (this repo's MR)
+      --fresh            Don't resume an open version-update MR; start over
+                         (this replaces the old branch/MR, as vu used to do)
+      --no-notion-scan   Don't run vcheck after the build to mark release
+                         MR Notion cards "Ready to Test"
+  --help, -h             Show this help
+
+Examples:
+  $SCRIPT_NAME staging
+  $SCRIPT_NAME prod
+  $SCRIPT_NAME --staging --yes
+  $SCRIPT_NAME --prod -y
+  $SCRIPT_NAME staging --base develop -y
+  $SCRIPT_NAME prod -b release/2.2 -y
+  $SCRIPT_NAME staging --version 1 -y       # -> X.Y.Z-alpha-1+<build>
+  $SCRIPT_NAME prod --version 2.2.0+60 -y
+  $SCRIPT_NAME prod --token glpat-xxx -y
+  $SCRIPT_NAME staging --fresh              # ignore any open version-update MR
+  $SCRIPT_NAME staging --no-notion-scan -y  # skip vcheck after build
+
+Regardless of which branch you're on when you run vu, it:
+  - first checks for an unfinished version-update MR (open, assigned
+    to you, titled exactly like its vu-format source branch) and
+    resumes it from the merge step if one exists,
+  - otherwise switches to the base branch (main/master, or --base)
+    and syncs it with origin,
+  - creates the version-update branch from there,
+  - pushes it and hands off to 'mrc' to open a merge request
+    targeting the base branch (see 'mrc --help'),
+  - waits for you to press Enter once you've reviewed the MR,
+  - merges the MR, cleans up the branch, tags the release, and
+    builds the app via 'frm' (flutter_launcher.sh).
+  - runs 'vcheck' on the base branch to mark linked Notion cards
+    from merged MRs "Ready to Test" (skip with --no-notion-scan).
+  - whenever something it needs is missing or rejected (GitLab token,
+    base branch, commit identity) it asks you for it and retries
+    that step instead of exiting.
+
+Commit identity: VU_COMMIT_NAME + VU_COMMIT_EMAIL when set; otherwise chosen from git remotes
+(same as reauthor): a remote on one of REAUTHOR_WORK_HOSTS -> self; else personal.
+EOF
+}
+
+
+# Work hosts: comma list in REAUTHOR_WORK_HOSTS (e.g. gitlab.example.com). A remote on one of them -> "self".
+any_remote_on_work_host() {
+    local url host
+    [[ -n "${REAUTHOR_WORK_HOSTS:-}" ]] || return 1
+    while IFS= read -r url; do
+        [[ -n "$url" ]] || continue
+        IFS=',' read -ra _hosts <<< "$REAUTHOR_WORK_HOSTS"
+        for host in "${_hosts[@]}"; do
+            host="${host// /}"
+            [[ -n "$host" && "$url" == *"$host"* ]] && return 0
+        done
+    done < <(git remote -v 2>/dev/null | awk '{print $2}' | sort -u)
+    return 1
+}
+
+
+default_identity_label() {
+    if any_remote_on_work_host; then
+        echo self
+    else
+        echo personal
+    fi
+}
+
+
+load_identity_profile() {
+    local label="$1" line="" name email
+
+    # Set by Relay (or by hand): no profile file needed, nothing to ask.
+    if [[ -n "${VU_COMMIT_NAME:-}" && -n "${VU_COMMIT_EMAIL:-}" ]]; then
+        COMMIT_IDENTITY_LABEL="env"
+        COMMIT_AUTHOR_NAME="$VU_COMMIT_NAME"
+        COMMIT_AUTHOR_EMAIL="$VU_COMMIT_EMAIL"
+        return 0
+    fi
+
+    if [[ -f "$REAUTHOR_IDENTITIES" ]]; then
+        line="$(grep "^${label}|" "$REAUTHOR_IDENTITIES" || true)"
+    fi
+
+    if [[ -n "$line" ]]; then
+        IFS='|' read -r _ name email <<< "$line"
+    else
+        echo >&2
+        echo "No saved identity '$label' in $REAUTHOR_IDENTITIES (see 'reauthor --list')." >&2
+        ask_value "Commit author name (Enter to abort): " \
+            || die "No commit identity available."
+        name="$REPLY_VALUE"
+        ask_value "Commit author email (Enter to abort): " \
+            || die "No commit identity available."
+        email="$REPLY_VALUE"
+    fi
+
+    COMMIT_IDENTITY_LABEL="$label"
+    COMMIT_AUTHOR_NAME="$name"
+    COMMIT_AUTHOR_EMAIL="$email"
+}
+
+
+apply_local_git_identity() {
+    git config --local user.name "$COMMIT_AUTHOR_NAME"
+    git config --local user.email "$COMMIT_AUTHOR_EMAIL"
+}
+
+
+log() {
+    printf '\n==> %s\n' "$1"
+}
+
+
+die() {
+    printf '\nERROR: %s\n\n' "$1" >&2
+    exit 1
+}
+
+
+validate_version() {
+    # X.Y.Z, optional -prerelease, optional +build
+    [[ "$1" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?(\+[0-9A-Za-z.-]+)?$ ]]
+}
+
+
+resolve_version_input() {
+    # Turns what you typed into a full version string.
+    #
+    #   staging + bare number (e.g. "1")
+    #       -> alpha number shortcut:  <release>-alpha-1[+<build>]
+    #   anything else
+    #       -> taken as the full version, verbatim
+    local input="$1"
+
+    if [[ "$MODE" == "staging" && "$input" =~ ^[0-9]+$ ]]; then
+        if [[ -n "$BUILD_NUMBER" ]]; then
+            echo "${RELEASE_VERSION}-alpha-${input}+${BUILD_NUMBER}"
+        else
+            echo "${RELEASE_VERSION}-alpha-${input}"
+        fi
+    else
+        echo "$input"
+    fi
+}
+
+
+find_sibling_bin() {
+    # Look for a named script next to this one first, then on PATH.
+    local name="$1"
+    if [[ -x "$SCRIPT_DIR/$name" ]]; then
+        echo "$SCRIPT_DIR/$name"
+    elif command -v "$name" >/dev/null 2>&1; then
+        command -v "$name"
+    fi
+}
+
+
+# ------------------------------------------------------------
+# Interactive recovery
+#
+# When something vu needs is missing or rejected (a token, an
+# ID, a branch, ...), vu asks for it right there and retries
+# the same step instead of exiting. Wrong input -> asked again.
+# Pressing Enter at a prompt gives up on that step.
+#
+# Prompts read from /dev/tty (not stdin), so they also work
+# inside loops that read from a here-string.
+# ------------------------------------------------------------
+
+ask_value() {
+    # $1 = prompt. Sets REPLY_VALUE. Returns 1 if left empty
+    # (or there is no terminal to ask on).
+    { : </dev/tty; } 2>/dev/null || return 1
+    printf '%s' "$1" >&2
+    IFS= read -r REPLY_VALUE </dev/tty || { echo >&2; return 1; }
+    [[ -n "$REPLY_VALUE" ]]
+}
+
+
+ask_secret() {
+    # Same as ask_value, but the input is not echoed.
+    { : </dev/tty; } 2>/dev/null || return 1
+    printf '%s' "$1" >&2
+    IFS= read -rs REPLY_VALUE </dev/tty || { echo >&2; return 1; }
+    echo >&2
+    [[ -n "$REPLY_VALUE" ]]
+}
+
+
+is_gitlab_auth_error() {
+    # Does this glab output look like a credentials problem?
+    grep -qiE '(^|[^0-9])(401|403|404)([^0-9]|$)|unauthori[sz]ed|unauthenticated|forbidden|authenticat|token|permission|insufficient|scope' <<< "$1"
+}
+
+
+run_glab() {
+    # Runs `glab <args>`. On an auth-looking failure (401/403/404,
+    # missing/invalid token, ...) it asks for a GitLab token and
+    # runs the command again, until it works or you give up.
+    #
+    # Sets GLAB_OUT (stdout), GLAB_ERR (stderr), GLAB_ALL (both).
+    # Returns 0 on success; non-zero on a failure that isn't about
+    # credentials, or when you press Enter at the token prompt.
+    # Must not be called inside $( ) (the new token has to stick).
+    local errf rc
+
+    while true; do
+        if [[ -n "$API_TOKEN" ]]; then
+            export GITLAB_TOKEN="$API_TOKEN"
+        fi
+
+        errf="$(mktemp)"
+        if GLAB_OUT="$(glab "$@" 2>"$errf" </dev/null)"; then rc=0; else rc=$?; fi
+        GLAB_ERR="$(cat "$errf")"
+        rm -f "$errf"
+        GLAB_ALL="$GLAB_OUT"$'\n'"$GLAB_ERR"
+
+        [[ "$rc" -eq 0 ]] && return 0
+
+        is_gitlab_auth_error "$GLAB_ALL" || return "$rc"
+
+        echo >&2
+        echo "GitLab rejected the request (missing, invalid or under-privileged token?):" >&2
+        printf '%s\n' "$GLAB_ALL" | awk 'NF' | tail -n 4 | sed 's/^/   /' >&2
+
+        if [[ -n "$API_TOKEN" ]]; then
+            ask_secret "Enter a different GitLab token (Enter to give up): " || return "$rc"
+        else
+            ask_secret "Enter your GitLab token (Enter to give up): " || return "$rc"
+        fi
+        API_TOKEN="$REPLY_VALUE"
+    done
+}
+
+
+run_release_notion_vcheck() {
+    # Delegates release Notion updates to vcheck (sources
+    # ~/.config/nts/env). Never fails the overall run.
+    if [[ "$SCAN_NOTION" != true ]]; then
+        return 0
+    fi
+
+    local vcheck_bin args=() rc
+
+    vcheck_bin="$(find_sibling_bin vcheck || true)"
+    if [[ -z "$vcheck_bin" ]]; then
+        log "vcheck not found (looked in $SCRIPT_DIR and PATH); skipping Notion updates."
+        echo "Run manually, e.g.: vcheck -b $MAIN_BRANCH"
+        return 0
+    fi
+
+    args=(-b "$MAIN_BRANCH")
+    if [[ -n "$API_TOKEN" ]]; then
+        args+=(--token "$API_TOKEN")
+    fi
+    if [[ "$AUTO_YES" == true ]]; then
+        args+=(--fix)
+    fi
+
+    log "Running vcheck for release Notion cards"
+    echo "Command: vcheck ${args[*]}"
+
+    set +e
+    "$vcheck_bin" "${args[@]}"
+    rc=$?
+    set -e
+
+    if [[ "$rc" -ne 0 ]]; then
+        log "vcheck exited with status $rc (release itself already completed)."
+        echo "Fix Notion/GitLab setup or run manually: vcheck -b $MAIN_BRANCH"
+        return 0
+    fi
+
+    return 0
+}
+
+
+branch_exists() {
+    # True if the branch exists locally or on origin.
+    local branch="$1"
+    git show-ref --verify --quiet "refs/heads/$branch" \
+        || GIT_TERMINAL_PROMPT=0 git ls-remote --exit-code --heads origin "$branch" >/dev/null 2>&1
+}
+
+
+detect_main_branch() {
+    # Prefer whichever of main/master actually exists locally or
+    # on origin; fall back to origin's HEAD symbolic ref.
+    local branch
+
+    for branch in main master; do
+        if git show-ref --verify --quiet "refs/heads/$branch" \
+            || GIT_TERMINAL_PROMPT=0 git ls-remote --exit-code --heads origin "$branch" >/dev/null 2>&1; then
+            echo "$branch"
+            return 0
+        fi
+    done
+
+    branch="$(
+        GIT_TERMINAL_PROMPT=0 git ls-remote --symref origin HEAD 2>/dev/null \
+            | sed -nE 's#^ref:[[:space:]]+refs/heads/([^[:space:]]+)[[:space:]]+HEAD$#\1#p'
+    )"
+
+    if [[ -n "$branch" ]]; then
+        echo "$branch"
+        return 0
+    fi
+
+    return 1
+}
+
+
+sync_main_branch() {
+    # Checkout $MAIN_BRANCH (the base branch), fetch + pull, and
+    # verify the local branch is exactly in sync with
+    # origin/$MAIN_BRANCH (HEAD).
+    log "Checking out $MAIN_BRANCH"
+
+    if ! checkout_output="$(GIT_TERMINAL_PROMPT=0 git checkout "$MAIN_BRANCH" 2>&1)"; then
+        die "Could not checkout $MAIN_BRANCH.
+
+Git said:
+$checkout_output"
+    fi
+
+    log "Fetching origin"
+
+    if ! fetch_output="$(GIT_TERMINAL_PROMPT=0 git fetch origin 2>&1)"; then
+        die "Could not fetch from origin.
+
+This usually means git is stuck on authentication (SSH
+passphrase / HTTPS credentials) or the network/VPN is
+blocking the connection.
+
+Git said:
+$fetch_output"
+    fi
+
+    log "Pulling $MAIN_BRANCH (fast-forward only)"
+
+    if ! pull_output="$(GIT_TERMINAL_PROMPT=0 git pull --ff-only origin "$MAIN_BRANCH" 2>&1)"; then
+        die "Could not fast-forward $MAIN_BRANCH to origin/$MAIN_BRANCH.
+
+This usually means your local $MAIN_BRANCH has diverged from
+origin (e.g. local commits not on origin). Resolve that
+manually, then re-run $SCRIPT_NAME.
+
+Git said:
+$pull_output"
+    fi
+
+    log "Verifying $MAIN_BRANCH matches origin/$MAIN_BRANCH"
+
+    local local_sha remote_sha
+    local_sha="$(git rev-parse "$MAIN_BRANCH")"
+    remote_sha="$(git rev-parse "origin/$MAIN_BRANCH")"
+
+    if [[ "$local_sha" != "$remote_sha" ]]; then
+        die "Local $MAIN_BRANCH ($local_sha) does not match origin/$MAIN_BRANCH ($remote_sha) after pull.
+
+Resolve this manually, then re-run $SCRIPT_NAME."
+    fi
+
+    log "$MAIN_BRANCH is up to date with origin ($local_sha)"
+}
+
+
+detect_flavor_flag() {
+    # Look at lib/ to decide whether this project's staging
+    # entrypoint is main_staging.dart or main_development.dart.
+    # Echoes "<flavor-name> <flutter_launcher.sh-flag>", or
+    # returns non-zero if it can't tell (both or neither exist).
+    local has_staging=false has_development=false
+
+    [[ -f "lib/main_staging.dart" ]] && has_staging=true
+    [[ -f "lib/main_development.dart" ]] && has_development=true
+
+    if [[ "$has_staging" == true && "$has_development" == false ]]; then
+        echo "staging -s"
+        return 0
+    fi
+
+    if [[ "$has_development" == true && "$has_staging" == false ]]; then
+        echo "development -d"
+        return 0
+    fi
+
+    return 1
+}
+
+
+run_post_merge_build() {
+    # Builds the app via frm (flutter_launcher.sh) once the MR
+    # has been merged and the release has been tagged.
+    #
+    # "frm" is typically a shell alias/function in your
+    # interactive shell, which a script can't see. So we look
+    # for the real executable (flutter-run-menu) first, then
+    # fall back to frm / flutter_launcher.sh if they happen
+    # to exist as actual files on PATH.
+    local frm_bin name
+    frm_bin=""
+
+    for name in flutter-run-menu frm flutter_launcher.sh; do
+        frm_bin="$(find_sibling_bin "$name" || true)"
+        [[ -n "$frm_bin" ]] && break
+    done
+
+    if [[ -z "$frm_bin" ]]; then
+        log "flutter-run-menu / frm / flutter_launcher.sh not found (looked in $SCRIPT_DIR and PATH); skipping build."
+        echo "Run it manually, e.g.: frm -a -s -rel"
+        return 0
+    fi
+
+    if [[ "$MODE" == "staging" ]]; then
+
+        local detected flavor_name flavor_flag
+        if ! detected="$(detect_flavor_flag)"; then
+            log "Could not determine whether this project uses main_staging.dart or main_development.dart."
+            echo "Both or neither exist in lib/ -- skipping automatic build."
+            echo "Run frm manually, e.g.: frm -a -s -rel  (or -d for development)"
+            return 0
+        fi
+
+        read -r flavor_name flavor_flag <<< "$detected"
+
+        log "Detected staging entrypoint: main_${flavor_name}.dart -> building with $flavor_flag"
+        log "Building APK (release) via frm"
+
+        "$frm_bin" -a "$flavor_flag" -rel --
+
+    else
+
+        log "Building APK (release) via frm"
+        "$frm_bin" -a -p -rel --
+
+        log "Building appbundle (release) via frm"
+        "$frm_bin" -ab -p -rel --
+
+    fi
+}
+
+
+find_open_version_mr() {
+    # Sets MR_LINES: one line per matching open MR, newest first:
+    #   <iid>\t<source_branch>\t<web_url>
+    # Returns 2 if the API query itself failed. Not run inside
+    # $( ), so run_glab can ask for a token.
+    local target_enc json
+
+    target_enc="$(python3 -c 'import sys, urllib.parse; print(urllib.parse.quote(sys.argv[1], safe=""))' "$MAIN_BRANCH")"
+
+    if ! run_glab api "projects/:id/merge_requests?state=opened&assignee_username=${ASSIGNEE_USER}&target_branch=${target_enc}&per_page=100"; then
+        printf '%s\n' "$GLAB_ALL" >&2
+        return 2
+    fi
+    json="$GLAB_OUT"
+
+    MR_LINES="$(python3 -c '
+import json, re, sys
+prefix = sys.argv[1]
+pat = re.compile("^" + re.escape(prefix) + r"\d+\.\d+\.\d+(-[0-9A-Za-z.-]+)?(\+[0-9A-Za-z.-]+)?$")
+for mr in json.load(sys.stdin):
+    sb = mr.get("source_branch", "")
+    if pat.match(sb) and mr.get("title") == sb:
+        print("%s\t%s\t%s" % (mr["iid"], sb, mr["web_url"]))
+' "$BRANCH_PREFIX" <<< "$json")"
+}
+
+
+finish_release() {
+    # Everything after the MR exists: wait for review, merge,
+    # clean up, tag, build, update Notion.
+    # $1 = what to hand to `glab mr merge` (MR IID or branch name)
+    local merge_ref="$1"
+
+    printf '\n'
+    printf '========================================\n'
+    printf 'Waiting for your review\n'
+    printf '========================================\n'
+    if [[ -n "$MR_URL" ]]; then
+        printf 'MR: %s\n' "$MR_URL"
+    fi
+    printf 'Review the MR. Once the changes look good,\n'
+    printf 'come back here and press Enter (or type anything)\n'
+    printf 'to merge it, tag the release, and build the app.\n'
+    printf '\n'
+    printf 'Press Enter to continue: '
+    read -r _
+
+    log "Merging MR ($merge_ref)"
+
+    if [[ -n "$API_TOKEN" ]]; then
+        export GITLAB_TOKEN="$API_TOKEN"
+    fi
+
+    if ! run_glab mr merge "$merge_ref" --yes; then
+        die "Could not merge MR for branch $BRANCH_NAME.
+
+glab said:
+$GLAB_ALL
+
+The branch and its MR are left as-is. Fix the cause (e.g. token
+permissions), then just re-run $SCRIPT_NAME: it will find this open
+MR and resume from the merge step."
+    fi
+
+    echo "$GLAB_ALL"
+
+    log "Checking out $MAIN_BRANCH"
+    git checkout "$MAIN_BRANCH"
+
+    log "Deleting local branch: $BRANCH_NAME"
+    git branch -D "$BRANCH_NAME" || true
+
+    sync_main_branch
+
+    TAG_NAME="v${COMMIT_VERSION}"
+
+    log "Tagging release: $TAG_NAME"
+
+    if git show-ref --verify --quiet "refs/tags/$TAG_NAME"; then
+        log "Local tag already exists, deleting: $TAG_NAME"
+        git tag -d "$TAG_NAME"
+    fi
+
+    git tag "$TAG_NAME"
+
+    log "Pushing tag: $TAG_NAME"
+
+    if ! tag_push_output="$(GIT_TERMINAL_PROMPT=0 git push origin "$TAG_NAME" 2>&1)"; then
+        die "Could not push tag $TAG_NAME to origin.
+
+Git said:
+$tag_push_output"
+    fi
+
+    run_post_merge_build
+    run_release_notion_vcheck
+
+    MERGED_AND_RELEASED=true
+}
+
+
+print_done_summary() {
+    echo
+    echo "========================================"
+    echo "Version update complete"
+    echo "========================================"
+    echo "Version : $NEW_VERSION"
+    echo "Branch  : $BRANCH_NAME"
+    echo "Base    : $MAIN_BRANCH"
+    echo "Pushed  : yes"
+
+    if [[ "$RESUMED" == true ]]; then
+        echo "Resumed : yes (MR !$MR_IID)"
+    fi
+
+    if [[ "$MERGED_AND_RELEASED" == true ]]; then
+        echo "Merged  : yes"
+        echo "Tag     : v${COMMIT_VERSION}"
+
+        if [[ "$SCAN_NOTION" == true ]]; then
+            echo "Notion  : vcheck -b $MAIN_BRANCH (see output above)"
+        fi
+    fi
+
+    echo "========================================"
+    echo
+}
+
+
+confirm() {
+    if [[ "$AUTO_YES" == true ]]; then
+        return
+    fi
+
+    printf '\nContinue? [Y/n] '
+    read -r answer
+
+    case "$answer" in
+        n|N|no|NO|No)
+            echo "Cancelled."
+
+            # ----------------------------------------------------
+            # Undo the branch we created: go back to the base
+            # branch and delete it.
+            # ----------------------------------------------------
+
+            log "Reverting to $MAIN_BRANCH"
+            git checkout "$MAIN_BRANCH"
+
+            log "Deleting branch: $BRANCH_NAME"
+            git branch -D "$BRANCH_NAME"
+
+            exit 0
+            ;;
+    esac
+}
+
+
+# ============================================================
+# Parse arguments
+# ============================================================
+
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        staging|--staging)
+            [[ -n "$MODE" ]] && die "Mode already specified."
+            MODE="staging"
+            ;;
+
+        prod|production|--prod|--production)
+            [[ -n "$MODE" ]] && die "Mode already specified."
+            MODE="prod"
+            ;;
+
+        --yes|-y)
+            AUTO_YES=true
+            ;;
+
+        --fresh)
+            FRESH=true
+            ;;
+
+        --no-notion-scan)
+            SCAN_NOTION=false
+            ;;
+
+        --token)
+            [[ $# -ge 2 ]] || die "$1 requires a value."
+            API_TOKEN="$2"
+            shift
+            ;;
+
+        --version|--set-version)
+            [[ $# -ge 2 ]] || die "$1 requires a value."
+            CUSTOM_VERSION="$2"
+            shift
+            ;;
+
+        --base|--from|--target|-b|-t)
+            [[ $# -ge 2 ]] || die "$1 requires a value."
+            BASE_BRANCH="$2"
+            shift
+            ;;
+
+        --help|-h)
+            usage
+            exit 0
+            ;;
+
+        *)
+            die "Unknown argument: $1. Run '$SCRIPT_NAME --help'."
+            ;;
+    esac
+
+    shift
+done
+
+
+# ============================================================
+# Validate git repository
+# ============================================================
+
+git rev-parse --is-inside-work-tree >/dev/null 2>&1 \
+    || die "Not inside a git repository."
+
+
+# ============================================================
+# Validate pubspec
+# ============================================================
+
+[[ -f "$PUBSPEC" ]] \
+    || die "Cannot find $PUBSPEC in the current directory."
+
+
+# ============================================================
+# Determine the base branch, then always switch to it
+#
+# The base branch is main/master by default, or whatever
+# --base / $VU_BASE_BRANCH names (e.g. develop, release/2.2).
+#
+# vu's automated flow (branch, commit, push, MR, wait, merge,
+# tag, build) always starts from a synced base branch,
+# regardless of which branch was checked out when vu was
+# invoked. The branch you started on is only used to get here
+# -- it is never pushed to and never touched otherwise.
+# ============================================================
+
+if [[ -n "$BASE_BRANCH" ]]; then
+    while ! branch_exists "$BASE_BRANCH"; do
+        echo >&2
+        echo "Base branch '$BASE_BRANCH' does not exist locally or on origin." >&2
+        ask_value "Enter the base branch to use (Enter to abort): " \
+            || die "No valid base branch."
+        BASE_BRANCH="$REPLY_VALUE"
+    done
+    MAIN_BRANCH="$BASE_BRANCH"
+else
+    if ! MAIN_BRANCH="$(detect_main_branch)"; then
+        while true; do
+            echo >&2
+            echo "Could not determine the main/master branch (checked local refs and origin)." >&2
+            ask_value "Enter the base branch to use (Enter to abort): " \
+                || die "No valid base branch."
+            if branch_exists "$REPLY_VALUE"; then
+                MAIN_BRANCH="$REPLY_VALUE"
+                BASE_BRANCH="$REPLY_VALUE"
+                break
+            fi
+            echo "Branch '$REPLY_VALUE' does not exist locally or on origin." >&2
+        done
+    fi
+fi
+
+STARTING_BRANCH="$(git branch --show-current)"
+
+[[ -n "$STARTING_BRANCH" ]] \
+    || die "Detached HEAD is not supported."
+
+
+# ----------------------------------------------------------
+# Working tree must be clean before we touch anything
+# (checkout/fetch/pull), otherwise local changes could be
+# silently carried onto a freshly synced base branch.
+# ----------------------------------------------------------
+
+if [[ -n "$(git status --porcelain)" ]]; then
+    die "Working tree is not clean. Commit or stash your changes first."
+fi
+
+
+# ============================================================
+# Resume an open version-update MR, if there is one
+#
+# Looks for an open MR that targets the base branch, is
+# assigned to you, and whose title == source branch == the
+# vu branch format. If found, skip straight to review/merge/
+# tag/build instead of creating (and clobbering) a new one.
+# ============================================================
+
+if [[ "$FRESH" != true ]] && command -v glab >/dev/null 2>&1; then
+
+    if [[ -n "$API_TOKEN" ]]; then
+        export GITLAB_TOKEN="$API_TOKEN"
+    fi
+
+    if [[ -z "$ASSIGNEE_USER" ]] && command -v jq >/dev/null 2>&1; then
+        ASSIGNEE_USER="$(glab api user 2>/dev/null | jq -r '.username // empty' 2>/dev/null || true)"
+    fi
+    export VU_ASSIGNEE="$ASSIGNEE_USER"   # mrc assigns the new MR to the same user
+    log "Checking for an open version-update MR (assignee: $ASSIGNEE_USER, target: $MAIN_BRANCH)"
+
+    if ! find_open_version_mr; then
+        die "Could not query open merge requests via glab, so vu can't tell
+whether an unfinished version update exists. Refusing to continue,
+because starting fresh would close that MR.
+
+Check your token/glab auth, or pass --fresh to skip this check."
+    fi
+
+    mr_lines="$MR_LINES"
+
+    if [[ -n "$mr_lines" ]]; then
+
+        IFS=$'\t' read -r MR_IID RESUME_BRANCH MR_URL <<< "$(head -n 1 <<< "$mr_lines")"
+
+        RESUME_VERSION="${RESUME_BRANCH#"$BRANCH_PREFIX"}"
+
+        if [[ "$RESUME_VERSION" == *-alpha* ]]; then
+            RESUME_MODE="staging"
+            RESUME_COMMIT_VERSION="${RESUME_VERSION%%+*}"
+        else
+            RESUME_MODE="prod"
+            RESUME_COMMIT_VERSION="$RESUME_VERSION"
+        fi
+
+        if [[ -n "$MODE" && "$MODE" != "$RESUME_MODE" ]]; then
+            die "There is an unfinished $RESUME_MODE update (MR !$MR_IID, v$RESUME_VERSION),
+but you asked for $MODE. Finish that one first (run $SCRIPT_NAME without
+changing the mode), or close the MR / use --fresh to discard it."
+        fi
+
+        if [[ "$(wc -l <<< "$mr_lines")" -gt 1 ]]; then
+            echo "Note: several matching open MRs found; using the newest."
+        fi
+
+        echo
+        echo "----------------------------------------"
+        echo "Unfinished version update found"
+        echo "----------------------------------------"
+        echo "MR      : !$MR_IID  $MR_URL"
+        echo "Branch  : $RESUME_BRANCH"
+        echo "Version : $RESUME_VERSION ($RESUME_MODE)"
+        echo "Resume  : review -> merge -> tag -> build -> Notion"
+        echo "----------------------------------------"
+
+        if [[ "$AUTO_YES" != true ]]; then
+            printf '\nResume this one? [Y/n] '
+            read -r answer
+            case "$answer" in
+                n|N|no|NO|No)
+                    echo "Cancelled. (Use --fresh to start over; that replaces the existing MR.)"
+                    exit 0
+                    ;;
+            esac
+        fi
+
+        MODE="$RESUME_MODE"
+        NEW_VERSION="$RESUME_VERSION"
+        COMMIT_VERSION="$RESUME_COMMIT_VERSION"
+        BRANCH_NAME="$RESUME_BRANCH"
+        PUSH_BRANCH=true
+        RESUMED=true
+
+        finish_release "$MR_IID"
+        print_done_summary
+        exit 0
+    fi
+fi
+
+
+# ============================================================
+# Ask for mode if not provided
+# ============================================================
+
+if [[ -z "$MODE" ]]; then
+    echo
+    echo "What kind of version update?"
+    echo
+    echo "  1) staging  (alpha)"
+    echo "  2) prod"
+    echo
+
+    read -rp "Choose [1/2]: " choice
+
+    case "$choice" in
+        1)
+            MODE="staging"
+            ;;
+        2)
+            MODE="prod"
+            ;;
+        *)
+            die "Invalid choice."
+            ;;
+    esac
+fi
+
+
+if [[ "$STARTING_BRANCH" != "$MAIN_BRANCH" ]]; then
+    log "Currently on '$STARTING_BRANCH', switching to $MAIN_BRANCH"
+fi
+
+sync_main_branch
+
+
+# ============================================================
+# Current branch (always the base branch at this point)
+# ============================================================
+
+CURRENT_BRANCH="$(git branch --show-current)"
+
+[[ -n "$CURRENT_BRANCH" ]] \
+    || die "Detached HEAD is not supported."
+
+
+# ============================================================
+# Read current version
+# ============================================================
+
+CURRENT_VERSION="$(
+    sed -nE \
+        's/^[[:space:]]*version:[[:space:]]*([^[:space:]#]+).*/\1/p' \
+        "$PUBSPEC" \
+        | head -n 1
+)"
+
+[[ -n "$CURRENT_VERSION" ]] \
+    || die "Could not find a 'version:' entry in $PUBSPEC."
+
+
+# Remove surrounding quotes if present.
+CURRENT_VERSION="${CURRENT_VERSION%\"}"
+CURRENT_VERSION="${CURRENT_VERSION#\"}"
+CURRENT_VERSION="${CURRENT_VERSION%\'}"
+CURRENT_VERSION="${CURRENT_VERSION#\'}"
+
+
+# ============================================================
+# Parse build number
+# ============================================================
+
+BASE_VERSION="$CURRENT_VERSION"
+BUILD_NUMBER=""
+
+if [[ "$CURRENT_VERSION" == *"+"* ]]; then
+    BASE_VERSION="${CURRENT_VERSION%%+*}"
+    BUILD_NUMBER="${CURRENT_VERSION#*+}"
+fi
+
+
+# ============================================================
+# Parse alpha version
+#
+# Supports:
+#
+#   2.1.1-alpha-1
+#   2.1.1-alpha.1
+#   2.1.1-alpha1
+#   2.1.1
+# ============================================================
+
+ALPHA_NUMBER=0
+RELEASE_VERSION="$BASE_VERSION"
+
+if [[ "$BASE_VERSION" =~ ^([0-9]+\.[0-9]+\.[0-9]+)-alpha[-.]?([0-9]+)$ ]]; then
+
+    RELEASE_VERSION="${BASH_REMATCH[1]}"
+    ALPHA_NUMBER="${BASH_REMATCH[2]}"
+
+elif [[ "$BASE_VERSION" =~ ^([0-9]+\.[0-9]+\.[0-9]+)-alpha$ ]]; then
+
+    RELEASE_VERSION="${BASH_REMATCH[1]}"
+    ALPHA_NUMBER=0
+
+elif [[ ! "$BASE_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+
+    die "Unsupported version format: $CURRENT_VERSION"
+
+fi
+
+
+# ============================================================
+# Parse semantic version
+# ============================================================
+
+IFS='.' read -r MAJOR MINOR PATCH <<< "$RELEASE_VERSION"
+
+
+# ============================================================
+# Calculate new version
+# ============================================================
+
+if [[ "$MODE" == "staging" ]]; then
+
+    # --------------------------------------------------------
+    # STAGING
+    #
+    # 2.1.1
+    #   -> 2.1.1-alpha-1
+    #
+    # 2.1.1-alpha-1
+    #   -> 2.1.1-alpha-2
+    #
+    # Build number stays unchanged.
+    # --------------------------------------------------------
+
+    NEW_ALPHA_NUMBER=$((ALPHA_NUMBER + 1))
+
+    if [[ -n "$BUILD_NUMBER" ]]; then
+        NEW_VERSION="${RELEASE_VERSION}-alpha-${NEW_ALPHA_NUMBER}+${BUILD_NUMBER}"
+    else
+        NEW_VERSION="${RELEASE_VERSION}-alpha-${NEW_ALPHA_NUMBER}"
+    fi
+
+else
+
+    # --------------------------------------------------------
+    # PRODUCTION
+    #
+    # 2.1.1
+    #   -> 2.1.2
+    #
+    # 2.1.1-alpha-3
+    #   -> 2.1.2
+    #
+    # Patch number increments.
+    # Alpha is removed.
+    # Build number is detected automatically.
+    # --------------------------------------------------------
+
+    NEW_PATCH=$((PATCH + 1))
+    NEW_RELEASE_VERSION="${MAJOR}.${MINOR}.${NEW_PATCH}"
+
+
+    # --------------------------------------------------------
+    # Detect build-number style
+    # --------------------------------------------------------
+
+    if [[ -z "$BUILD_NUMBER" ]]; then
+
+        # No build number existed.
+        #
+        # Example:
+        #   2.1.1
+        #   -> 2.1.2+1
+        #
+        NEW_BUILD_NUMBER="1"
+
+
+    elif [[ "$BUILD_NUMBER" =~ ^[0-9]{12}$ ]]; then
+
+        # ----------------------------------------------------
+        # Date + time format
+        #
+        # Example:
+        #   +202608011507
+        #
+        # Meaning:
+        #   2026-08-01 15:07
+        #
+        # Production:
+        #   use current date + current time
+        # ----------------------------------------------------
+
+        NEW_BUILD_NUMBER="$(date '+%Y%m%d%H%M')"
+
+
+    elif [[ "$BUILD_NUMBER" =~ ^[0-9]{8}$ ]]; then
+
+        # ----------------------------------------------------
+        # Date-only format
+        #
+        # Example:
+        #   +20260801
+        #
+        # Production:
+        #   use current date
+        # ----------------------------------------------------
+
+        NEW_BUILD_NUMBER="$(date '+%Y%m%d')"
+
+
+    elif [[ "$BUILD_NUMBER" =~ ^[0-9]+$ ]]; then
+
+        # ----------------------------------------------------
+        # Sequential format
+        #
+        # Example:
+        #   +51 -> +52
+        # ----------------------------------------------------
+
+        NEW_BUILD_NUMBER=$((BUILD_NUMBER + 1))
+
+
+    else
+
+        die "Unsupported build number format: +$BUILD_NUMBER"
+
+    fi
+
+
+    NEW_VERSION="${NEW_RELEASE_VERSION}+${NEW_BUILD_NUMBER}"
+
+fi
+
+
+# ============================================================
+# Determine commit version string
+#
+# Staging commits omit the build number, since the build
+# number doesn't change for staging bumps and isn't useful
+# in the commit message:
+#
+#   1.0.0-alpha-4+1  -> v1.0.0-alpha-4
+#
+# Production commits use the full version (including the
+# new build number):
+#
+#   2.1.2+52         -> v2.1.2+52
+# ============================================================
+
+if [[ "$MODE" == "staging" ]]; then
+    COMMIT_VERSION="${RELEASE_VERSION}-alpha-${NEW_ALPHA_NUMBER}"
+else
+    COMMIT_VERSION="$NEW_VERSION"
+fi
+
+
+# ============================================================
+# Optional manual override of the calculated version
+#
+#   --version <ver>   -> use it directly (works with -y)
+#   interactive run   -> shown a prompt; Enter accepts the
+#                        proposed version, or type your own
+#
+# Staging shortcut: typing just a number sets the alpha number
+# (e.g. "1" -> 2.1.1-alpha-1+51). Otherwise type the full
+# version, e.g. 2.1.1-alpha-1+51.
+#
+# This runs before the branch is created, because the branch
+# name, commit message, and tag are all derived from the
+# final version.
+# ============================================================
+
+if [[ -n "$CUSTOM_VERSION" ]]; then
+
+    NEW_VERSION="$(resolve_version_input "$CUSTOM_VERSION")"
+
+    validate_version "$NEW_VERSION" \
+        || die "Invalid version given via --version: $NEW_VERSION"
+
+elif [[ "$AUTO_YES" != true ]]; then
+
+    echo
+    echo "Base branch     : $MAIN_BRANCH"
+    echo "Current version : $CURRENT_VERSION"
+    echo "Proposed version: $NEW_VERSION"
+    echo
+
+    if [[ "$MODE" == "staging" ]]; then
+        echo "Tip: type just a number to set the alpha number (e.g. 1)."
+    fi
+
+    while true; do
+        printf 'Press Enter to accept, or type a different version: '
+        read -r version_input
+
+        if [[ -z "$version_input" ]]; then
+            break
+        fi
+
+        candidate="$(resolve_version_input "$version_input")"
+
+        if validate_version "$candidate"; then
+            NEW_VERSION="$candidate"
+            break
+        fi
+
+        echo "Invalid version: '$candidate' (expected e.g. 2.1.1-alpha-1+51)."
+    done
+
+fi
+
+[[ "$NEW_VERSION" != "$CURRENT_VERSION" ]] \
+    || die "New version is identical to the current version ($CURRENT_VERSION); nothing to update."
+
+
+# Recompute the commit/tag version from the final NEW_VERSION.
+# Staging omits the build number; prod uses the full version.
+if [[ "$MODE" == "staging" ]]; then
+    COMMIT_VERSION="${NEW_VERSION%%+*}"
+else
+    COMMIT_VERSION="$NEW_VERSION"
+fi
+
+
+# ============================================================
+# Create version-update branch off the base branch
+# ============================================================
+
+# --------------------------------------------------------
+# Branch naming
+#
+# Use the full NEW version, exactly as it will be written
+# to pubspec.yaml (including alpha suffix and build
+# number), so the branch name always matches the fetched
+# version.
+#
+# Examples:
+#
+#   2.1.1+51
+#       -> release/v2.1.2+52
+#
+#   1.0.0-alpha-3+1
+#       -> release/v1.0.0-alpha-4+1
+#
+# --------------------------------------------------------
+
+BRANCH_NAME="${BRANCH_PREFIX}${NEW_VERSION}"
+
+
+# --------------------------------------------------------
+# Check local branch
+#
+# If it already exists, delete it and start fresh rather
+# than failing.
+# --------------------------------------------------------
+
+log "Checking for existing local branch"
+
+if git show-ref --verify --quiet "refs/heads/$BRANCH_NAME"; then
+    log "Local branch already exists, deleting: $BRANCH_NAME"
+    git branch -D "$BRANCH_NAME"
+fi
+
+
+# --------------------------------------------------------
+# Check remote branch
+#
+# This contacts origin. GIT_TERMINAL_PROMPT=0 makes git
+# fail fast with an error instead of silently hanging on
+# a credential prompt (e.g. SSH passphrase or HTTPS
+# username/password) if the connection needs auth.
+#
+# If the branch already exists on origin (e.g. left over
+# from a previous run), delete it and start fresh rather
+# than failing.
+# --------------------------------------------------------
+
+log "Checking origin for existing remote branch (contacting $(git remote get-url origin 2>/dev/null || echo origin))"
+
+if ! remote_check_output="$(
+    GIT_TERMINAL_PROMPT=0 git ls-remote --heads origin "$BRANCH_NAME" 2>&1
+)"; then
+    die "Could not reach origin to check for an existing branch.
+
+This usually means git is stuck on authentication (SSH
+passphrase / HTTPS credentials) or the network/VPN is
+blocking the connection. Try running this manually to
+diagnose:
+
+  git ls-remote --heads origin
+
+Git said:
+$remote_check_output"
+fi
+
+if [[ -n "$remote_check_output" ]]; then
+    log "Remote branch already exists, deleting: $BRANCH_NAME"
+
+    if ! delete_output="$(
+        GIT_TERMINAL_PROMPT=0 git push origin --delete "$BRANCH_NAME" 2>&1
+    )"; then
+
+        # ------------------------------------------------
+        # Some servers (proxies/redirects, e.g. the
+        # "redirecting to .../.git/" case) can report a
+        # branch as present via ls-remote but then reject
+        # the delete because the ref is already gone by
+        # the time the delete request lands. Since our
+        # actual goal here is just "make sure this branch
+        # doesn't exist on origin", treat that specific
+        # error as success rather than failing the run.
+        # ------------------------------------------------
+
+        if [[ "$delete_output" == *"remote ref does not exist"* ]]; then
+            log "Remote branch was already gone, continuing"
+        else
+            die "Could not delete existing remote branch: $BRANCH_NAME
+
+Git said:
+$delete_output"
+        fi
+    fi
+fi
+
+
+log "Creating branch: $BRANCH_NAME"
+
+git checkout -b "$BRANCH_NAME"
+
+PUSH_BRANCH=true
+
+
+# ============================================================
+# Commit identity (reauthor profiles, auto from remotes)
+# ============================================================
+
+load_identity_profile "$(default_identity_label)"
+
+
+# ============================================================
+# Show proposed change
+# ============================================================
+
+echo
+echo "----------------------------------------"
+echo "Version update"
+echo "----------------------------------------"
+echo "Branch : $BRANCH_NAME"
+echo "Base   : $MAIN_BRANCH"
+echo "Mode   : $MODE"
+echo "Author : $COMMIT_AUTHOR_NAME <$COMMIT_AUTHOR_EMAIL> ($COMMIT_IDENTITY_LABEL)"
+echo "From   : $CURRENT_VERSION"
+echo "To     : $NEW_VERSION"
+echo "Commit : v$COMMIT_VERSION"
+
+if [[ "$PUSH_BRANCH" == true ]]; then
+    echo "Push   : yes"
+else
+    echo "Push   : no"
+fi
+
+if [[ -n "$API_TOKEN" ]]; then
+    echo "MR token: (from --token)"
+fi
+
+if [[ "$SCAN_NOTION" == true ]]; then
+    echo "Notion : vcheck -b $MAIN_BRANCH after build (use -y for --fix)"
+else
+    echo "Notion : disabled (--no-notion-scan)"
+fi
+
+echo "----------------------------------------"
+
+
+# ============================================================
+# Confirmation
+# ============================================================
+
+confirm
+
+
+# ============================================================
+# Update pubspec.yaml
+# ============================================================
+
+log "Updating $PUBSPEC"
+
+python3 - "$PUBSPEC" "$CURRENT_VERSION" "$NEW_VERSION" <<'PY'
+import re
+import sys
+
+pubspec = sys.argv[1]
+old_version = sys.argv[2]
+new_version = sys.argv[3]
+
+with open(pubspec, "r", encoding="utf-8") as f:
+    content = f.read()
+
+pattern = (
+    r'^(\s*version:\s*)'
+    + r'["\']?'
+    + re.escape(old_version)
+    + r'["\']?'
+    + r'(\s*(?:#.*)?)$'
+)
+
+updated, count = re.subn(
+    pattern,
+    lambda match: (
+        f"{match.group(1)}"
+        f"{new_version}"
+        f"{match.group(2)}"
+    ),
+    content,
+    count=1,
+    flags=re.MULTILINE,
+)
+
+if count != 1:
+    raise SystemExit(
+        f"Could not replace version "
+        f"'{old_version}' in {pubspec}"
+    )
+
+with open(pubspec, "w", encoding="utf-8") as f:
+    f.write(updated)
+PY
+
+
+# ============================================================
+# Verify version change
+# ============================================================
+
+ACTUAL_VERSION="$(
+    sed -nE \
+        's/^[[:space:]]*version:[[:space:]]*([^[:space:]#]+).*/\1/p' \
+        "$PUBSPEC" \
+        | head -n 1
+)"
+
+ACTUAL_VERSION="${ACTUAL_VERSION%\"}"
+ACTUAL_VERSION="${ACTUAL_VERSION#\"}"
+ACTUAL_VERSION="${ACTUAL_VERSION%\'}"
+ACTUAL_VERSION="${ACTUAL_VERSION#\'}"
+
+
+if [[ "$ACTUAL_VERSION" != "$NEW_VERSION" ]]; then
+    die "Version verification failed.
+
+Expected:
+  $NEW_VERSION
+
+Actual:
+  $ACTUAL_VERSION"
+fi
+
+
+# ============================================================
+# Commit
+# ============================================================
+
+log "Committing as $COMMIT_IDENTITY_LABEL ($COMMIT_AUTHOR_NAME <$COMMIT_AUTHOR_EMAIL>)"
+
+apply_local_git_identity
+
+git add "$PUBSPEC"
+
+git commit -m "v${COMMIT_VERSION}"
+
+
+# ============================================================
+# Push (and open a merge request)
+# ============================================================
+
+if [[ "$PUSH_BRANCH" == true ]]; then
+
+    log "Pushing $BRANCH_NAME"
+
+    git push -u origin "$BRANCH_NAME"
+
+    # --------------------------------------------------------
+    # Hand off to `mrc` to open a merge request for the branch
+    # just pushed. mrc is a standalone script (usable outside
+    # of vu too); it will prompt for the target branch and an
+    # optional description if they weren't given as flags.
+    # See `mrc --help`.
+    #
+    # When a custom base branch was given via --base, it is
+    # passed to mrc as --target so the MR points at it instead
+    # of mrc's own default/prompt. (If your mrc uses a
+    # different flag name, change it below.)
+    # --------------------------------------------------------
+
+    MRC_BIN="$(find_sibling_bin mrc || true)"
+
+    if [[ -n "$MRC_BIN" ]]; then
+        log "Creating merge request"
+
+        while true; do
+            MRC_ARGS=(--source "$BRANCH_NAME")
+
+            MRC_ARGS+=(--target "$MAIN_BRANCH")
+
+            if [[ "$AUTO_YES" == true ]]; then
+                MRC_ARGS+=(--yes)
+            fi
+
+            if [[ -n "$API_TOKEN" ]]; then
+                MRC_ARGS+=(--token "$API_TOKEN")
+            fi
+
+            if "$MRC_BIN" "${MRC_ARGS[@]}"; then
+                break
+            fi
+
+            echo >&2
+            echo "mrc failed (see its output above)." >&2
+            ask_secret "Enter a GitLab token to retry mrc with (Enter to give up): " \
+                || die "mrc did not finish. Branch $BRANCH_NAME is pushed; if its MR already exists, re-run $SCRIPT_NAME to resume it."
+            API_TOKEN="$REPLY_VALUE"
+        done
+
+
+        # ------------------------------------------------------
+        # Wait for manual MR review, then merge + tag + build +
+        # Notion. Shared with the resume path (finish_release).
+        #
+        # This only runs once an MR was actually opened (i.e.
+        # mrc was found and ran), since there's nothing to
+        # merge otherwise.
+        # ------------------------------------------------------
+
+        finish_release "$BRANCH_NAME"
+
+    else
+        log "mrc not found (looked in $SCRIPT_DIR and PATH); skipping MR creation. Run 'mrc --source $BRANCH_NAME' manually, or see 'mrc --help'."
+        log "Since no MR was opened, the merge/tag/build/Notion steps are skipped too."
+        log "Once merged manually, tag with: git tag v${COMMIT_VERSION} && git push origin v${COMMIT_VERSION}"
+    fi
+
+fi
+
+
+# ============================================================
+# Done
+# ============================================================
+
+print_done_summary

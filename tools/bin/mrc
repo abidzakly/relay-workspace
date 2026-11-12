@@ -1,0 +1,372 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+# Values saved in Relay (Settings > Repos > Release scripts). A variable already set in the environment wins.
+_cd_env="${RELAY_SCRIPTS_ENV:-${CORE_DASHBOARD_SCRIPTS_ENV:-${XDG_CONFIG_HOME:-$HOME/.config}/relay/scripts.env}}"
+[[ -r "$_cd_env" ]] || _cd_env="${XDG_CONFIG_HOME:-$HOME/.config}/core-dashboard/scripts.env"
+# shellcheck source=/dev/null
+[[ -r "$_cd_env" ]] && . "$_cd_env"
+unset _cd_env
+
+# ============================================================
+# mrc - Create a GitLab merge request via glab
+# ============================================================
+#
+# Usage:
+#
+#   mrc
+#   mrc --target main
+#   mrc --source my-branch --target develop
+#   mrc --target main --yes
+#   mrc --target main --force-push
+#   mrc --target main --token "$GITLAB_TOKEN" -y
+#
+# Behaviour:
+#
+#   - Source branch defaults to the current branch.
+#   - Target branch is required; if not passed via --target
+#     it will be prompted for.
+#   - Title defaults to the source branch name, exactly
+#     (this matches vu's branch-naming convention, where the
+#     branch name already communicates the change).
+#   - Description is prompted for if not passed via
+#     --description; empty is allowed.
+#   - Assignee defaults to $MRC_ASSIGNEE / $VU_ASSIGNEE, else yourself.
+#   - Reviewer defaults to $MRC_REVIEWER, else none.
+#   - If the source branch has no upstream yet, it is pushed
+#     to origin first.
+#   - --force-push will force-push (--force-with-lease) the
+#     source branch to origin before creating the MR.
+#   - "Delete source branch when merge request is accepted"
+#     is always enabled on the created MR.
+#   - --token sets GITLAB_TOKEN for this run (overrides glab
+#     keyring/config). Use when the stored token is for another
+#     project and API calls return 404.
+#
+# ============================================================
+
+
+SCRIPT_NAME="$(basename "$0")"
+
+SOURCE_BRANCH=""
+TARGET_BRANCH=""
+TITLE=""
+DESCRIPTION=""
+DESCRIPTION_SET=false
+ASSIGNEE="${MRC_ASSIGNEE:-${VU_ASSIGNEE:-}}"
+REVIEWER="${MRC_REVIEWER:-}"
+AUTO_YES=false
+FORCE_PUSH=false
+API_TOKEN=""
+
+
+# ============================================================
+# Helpers
+# ============================================================
+
+usage() {
+    cat <<EOF
+Usage:
+  $SCRIPT_NAME [options]
+
+Create a GitLab merge request for a branch using glab.
+
+Options:
+  -s, --source <branch>       Source branch (default: current branch)
+  -t, --target <branch>       Target/base branch (prompted for if omitted)
+  -T, --title <text>          MR title (default: source branch name, verbatim)
+  -d, --description <text>    MR description (prompted for if omitted; empty allowed)
+  -a, --assignee <user>       Assignee username (default: $MRC_ASSIGNEE, else yourself)
+  -r, --reviewer <user>       Reviewer username (default: $MRC_REVIEWER, else none)
+  -f, --force-push            Force-push source branch to origin before creating MR
+                              (uses --force-with-lease for safety)
+  -y, --yes                   Skip confirmation prompts (target/description
+                               are still required if not passed as flags)
+      --token <token>         GitLab API token for this run (exported as
+                               GITLAB_TOKEN; overrides keyring/config)
+  -h, --help                  Show this help
+
+Notes:
+  "Delete source branch when merge request is accepted" is always
+  enabled on the created MR.
+
+Examples:
+  $SCRIPT_NAME
+  $SCRIPT_NAME --target main
+  $SCRIPT_NAME --source feature/x --target develop --yes
+  $SCRIPT_NAME -t main -d "" -y
+  $SCRIPT_NAME -t main --force-push
+  $SCRIPT_NAME -t develop -f -y
+  $SCRIPT_NAME -t main --token glpat-xxx -y
+EOF
+}
+
+
+log() {
+    printf '\n==> %s\n' "$1"
+}
+
+
+die() {
+    printf '\nERROR: %s\n\n' "$1" >&2
+    exit 1
+}
+
+
+# ============================================================
+# Parse arguments
+# ============================================================
+
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        -s|--source)
+            [[ $# -ge 2 ]] || die "$1 requires a value."
+            SOURCE_BRANCH="$2"
+            shift 2
+            ;;
+
+        -t|--target)
+            [[ $# -ge 2 ]] || die "$1 requires a value."
+            TARGET_BRANCH="$2"
+            shift 2
+            ;;
+
+        -T|--title)
+            [[ $# -ge 2 ]] || die "$1 requires a value."
+            TITLE="$2"
+            shift 2
+            ;;
+
+        -d|--description)
+            [[ $# -ge 2 ]] || die "$1 requires a value."
+            DESCRIPTION="$2"
+            DESCRIPTION_SET=true
+            shift 2
+            ;;
+
+        -a|--assignee)
+            [[ $# -ge 2 ]] || die "$1 requires a value."
+            ASSIGNEE="$2"
+            shift 2
+            ;;
+
+        -r|--reviewer)
+            [[ $# -ge 2 ]] || die "$1 requires a value."
+            REVIEWER="$2"
+            shift 2
+            ;;
+
+        -f|--force-push)
+            FORCE_PUSH=true
+            shift
+            ;;
+
+        -y|--yes)
+            AUTO_YES=true
+            shift
+            ;;
+
+        --token)
+            [[ $# -ge 2 ]] || die "$1 requires a value."
+            API_TOKEN="$2"
+            shift 2
+            ;;
+
+        -h|--help)
+            usage
+            exit 0
+            ;;
+
+        *)
+            die "Unknown argument: $1. Run '$SCRIPT_NAME --help'."
+            ;;
+    esac
+done
+
+
+# ============================================================
+# Validate environment
+# ============================================================
+
+command -v glab >/dev/null 2>&1 \
+    || die "glab CLI not found. Install it from https://gitlab.com/gitlab-org/cli"
+
+git rev-parse --is-inside-work-tree >/dev/null 2>&1 \
+    || die "Not inside a git repository."
+
+if [[ -n "$API_TOKEN" ]]; then
+    export GITLAB_TOKEN="$API_TOKEN"
+fi
+
+if ! glab auth status >/dev/null 2>&1; then
+    if [[ -n "$API_TOKEN" ]]; then
+        die "glab rejected --token. Check the token scopes and that it belongs to this project."
+    fi
+    die "glab is not authenticated. Run 'glab auth login' or pass --token."
+fi
+
+
+# ============================================================
+# Source branch
+# ============================================================
+
+if [[ -z "$SOURCE_BRANCH" ]]; then
+    SOURCE_BRANCH="$(git branch --show-current)"
+    [[ -n "$SOURCE_BRANCH" ]] \
+        || die "Detached HEAD is not supported; pass --source explicitly."
+fi
+
+git show-ref --verify --quiet "refs/heads/$SOURCE_BRANCH" \
+    || die "Local branch not found: $SOURCE_BRANCH"
+
+
+# ============================================================
+# Title (defaults to the branch name, exactly)
+# ============================================================
+
+if [[ -z "$TITLE" ]]; then
+    TITLE="$SOURCE_BRANCH"
+fi
+
+
+# ============================================================
+# Target branch (required; prompt if not supplied)
+# ============================================================
+
+if [[ -z "$TARGET_BRANCH" ]]; then
+    printf '\nTarget branch: '
+    read -r TARGET_BRANCH
+
+    [[ -n "$TARGET_BRANCH" ]] \
+        || die "Target branch is required."
+fi
+
+
+# ============================================================
+# Description (prompt if not supplied; empty is fine)
+# ============================================================
+
+if [[ "$DESCRIPTION_SET" == false ]]; then
+    printf 'Description (optional, press Enter to leave empty): '
+    read -r DESCRIPTION
+fi
+
+
+# ============================================================
+# Ensure the source branch exists on origin
+# ============================================================
+
+CURRENT_CHECKED_OUT="$(git branch --show-current)"
+
+if [[ "$CURRENT_CHECKED_OUT" == "$SOURCE_BRANCH" ]]; then
+    if [[ "$FORCE_PUSH" == true ]]; then
+        log "Force-pushing '$SOURCE_BRANCH' to origin (--force-with-lease)"
+
+        if ! push_output="$(GIT_TERMINAL_PROMPT=0 git push --force-with-lease origin "$SOURCE_BRANCH" 2>&1)"; then
+            die "Could not force-push $SOURCE_BRANCH to origin.
+
+Git said:
+$push_output"
+        fi
+
+    elif ! git rev-parse --abbrev-ref --symbolic-full-name '@{u}' >/dev/null 2>&1; then
+        log "Branch '$SOURCE_BRANCH' has no upstream yet, pushing to origin"
+
+        if ! push_output="$(GIT_TERMINAL_PROMPT=0 git push -u origin "$SOURCE_BRANCH" 2>&1)"; then
+            die "Could not push $SOURCE_BRANCH to origin.
+
+Git said:
+$push_output"
+        fi
+    fi
+
+elif ! GIT_TERMINAL_PROMPT=0 git ls-remote --exit-code --heads origin "$SOURCE_BRANCH" >/dev/null 2>&1; then
+
+    die "Branch '$SOURCE_BRANCH' does not exist on origin. Push it first, or check it out and re-run $SCRIPT_NAME."
+
+fi
+
+
+# ============================================================
+# Show proposed MR and confirm
+# ============================================================
+
+echo
+echo "----------------------------------------"
+echo "Merge request"
+echo "----------------------------------------"
+echo "Source      : $SOURCE_BRANCH"
+echo "Target      : $TARGET_BRANCH"
+echo "Title       : $TITLE"
+echo "Description : ${DESCRIPTION:-<empty>}"
+echo "Assignee    : $ASSIGNEE"
+echo "Reviewer    : $REVIEWER"
+echo "Force-push  : $FORCE_PUSH"
+if [[ -n "$API_TOKEN" ]]; then
+    echo "API token   : (from --token)"
+fi
+echo "Delete source branch on accept : true"
+echo "----------------------------------------"
+
+if [[ "$AUTO_YES" != true ]]; then
+    printf '\nCreate this MR? [Y/n] '
+    read -r answer
+
+    case "$answer" in
+        n|N|no|NO|No)
+            echo "Cancelled."
+            exit 0
+            ;;
+    esac
+fi
+
+
+# ============================================================
+# Create the MR
+# ============================================================
+
+log "Creating merge request via glab"
+
+GLAB_ARGS=(
+    mr create
+    --source-branch "$SOURCE_BRANCH"
+    --target-branch "$TARGET_BRANCH"
+    --title "$TITLE"
+    --description "$DESCRIPTION"
+    --remove-source-branch
+    --yes
+)
+
+# Empty assignee = the user glab is logged in as; empty reviewer = none.
+if [[ -z "$ASSIGNEE" ]] && command -v jq >/dev/null 2>&1; then
+    ASSIGNEE="$(glab api user 2>/dev/null | jq -r '.username // empty' 2>/dev/null || true)"
+fi
+[[ -n "$ASSIGNEE" ]] && GLAB_ARGS+=(--assignee "$ASSIGNEE")
+[[ -n "$REVIEWER" ]] && GLAB_ARGS+=(--reviewer "$REVIEWER")
+
+# --no-editor avoids glab dropping into $EDITOR when the
+# description is empty; older glab versions may not support
+# this flag, so fall back gracefully if it's rejected.
+if ! glab_output="$(glab "${GLAB_ARGS[@]}" --no-editor 2>&1)"; then
+    if [[ "$glab_output" == *"unknown flag"*"--no-editor"* ]]; then
+        if ! glab_output="$(glab "${GLAB_ARGS[@]}" 2>&1)"; then
+            die "Could not create MR.
+
+glab said:
+$glab_output"
+        fi
+    else
+        die "Could not create MR.
+
+glab said:
+$glab_output"
+    fi
+fi
+
+echo "$glab_output"
+
+echo
+echo "========================================"
+echo "Merge request created"
+echo "========================================"

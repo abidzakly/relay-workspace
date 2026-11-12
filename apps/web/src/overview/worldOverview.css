@@ -1,0 +1,217 @@
+/*
+ * Overview in the Living Workspace. The detailed CoreStage is the ambient canvas; panels sit only
+ * in the left rail, the right rail and the KPI dock, around a protected focal zone that keeps the ship clear.
+ * Surfaces are opaque enough that contrast never follows the scene: glass is an accent (a light blur), never what
+ * makes text readable, and it turns solid whenever blur is missing or the user asks for more contrast.
+ */
+/* Unlayered on purpose: it must outrank the cards' own background utilities. */
+.wo-root {
+  --wo-surface: var(--glass-bg);
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+}
+.wo-stage {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  animation: wo-fade-in 500ms ease-out both;
+}
+.wo-panels {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  display: grid;
+  gap: 0.75rem;
+  padding: 0.75rem;
+  /* below the page's floating back bar */
+  padding-top: 4.25rem;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  grid-template-columns: minmax(0, 1fr);
+  align-content: start;
+  /* the panels are interactive; the empty stage between them still takes the core's clicks */
+  pointer-events: none;
+  /* opacity only: once they are in, panels never move */
+  animation: wo-fade-in 360ms ease-out 380ms both;
+}
+.wo-panels > *,
+.wo-left > * {
+  pointer-events: auto;
+}
+.wo-panels .wo-focal {
+  pointer-events: none;
+}
+.wo-root .ov-panel,
+.wo-surface {
+  background: var(--wo-surface);
+  -webkit-backdrop-filter: var(--glass-blur);
+  backdrop-filter: var(--glass-blur);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius-surface);
+  box-shadow: var(--glass-shadow);
+}
+/* In the world the panels float, so they take back the side padding that the flat page version drops. */
+.wo-root .ov-panel {
+  padding-inline: 1rem;
+}
+/* the header's View settings popover must open over the rails below it */
+.wo-head {
+  position: relative;
+  z-index: 5;
+  padding: 0.6rem 0.9rem;
+}
+.wo-head h1 {
+  font-size: 1.25rem;
+}
+.wo-left {
+  display: grid;
+  gap: 0.75rem;
+  align-content: start;
+  min-width: 0;
+}
+.wo-notice:empty {
+  display: none;
+}
+/* in a rail the four release counts read as 2 × 2 */
+.wo-left .ov-facts {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+/* the KPI dock is a strip over the scene: label, state, number and ruler; the lines under it live on the KPI page */
+.wo-bottom .ov-kpi p {
+  display: none;
+}
+.wo-bottom .ov-kpi > div {
+  gap: 0.5rem;
+}
+.wo-bottom.ov-panel > div:last-child {
+  padding-block: 0.5rem 0.75rem;
+}
+
+/* off duty (Sick / Leave): the world is stowed, so the panels stay quiet */
+.wo-root[data-off-duty] .ov-panel {
+  box-shadow: none;
+}
+
+/* phones and tablets: a card-first 2D stack, P1 before P2, over a strongly dimmed stage */
+@media (max-width: 1023px) {
+  .wo-root {
+    --wo-surface: var(--card);
+  }
+  .wo-stage::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: color-mix(in oklch, var(--background) 72%, transparent);
+    pointer-events: none;
+  }
+  /* the rails dissolve so their blocks can be ordered by priority */
+  .wo-left {
+    display: contents;
+  }
+  .wo-head {
+    order: 0;
+  }
+  .wo-notice {
+    order: 1;
+  }
+  .wo-release {
+    order: 2;
+  }
+  .wo-right {
+    order: 3;
+    max-height: 32rem;
+  }
+  .wo-ready {
+    order: 3;
+  }
+  .wo-bottom {
+    order: 4;
+  }
+  .wo-presence {
+    order: 5;
+  }
+  .wo-progression {
+    order: 6;
+  }
+  .wo-focal {
+    display: none;
+  }
+}
+
+/* wide screens: rails on the sides, the KPI dock below, the ship in the protected middle */
+@media (min-width: 1024px) {
+  .wo-panels {
+    grid-template-columns: minmax(16rem, 20rem) minmax(12rem, 1fr) minmax(17rem, 22rem);
+    grid-template-rows: auto minmax(0, 1fr) auto;
+    grid-template-areas:
+      'head head head'
+      'left focal right'
+      'bottom bottom bottom';
+    height: 100%;
+    overflow: hidden;
+  }
+  .wo-head {
+    grid-area: head;
+  }
+  .wo-left {
+    grid-area: left;
+    min-height: 0;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    /* room for focus rings at the scroll edge */
+    padding: 2px;
+    margin: -2px;
+  }
+  .wo-focal {
+    grid-area: focal;
+  }
+  .wo-right {
+    grid-area: right;
+    min-height: 0;
+  }
+  .wo-bottom {
+    grid-area: bottom;
+    max-height: 36vh;
+    overflow-y: auto;
+  }
+  /* the dock is a strip: the KPI cards keep label, value, target or limit, and state */
+  .wo-bottom .ov-kpi-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+@media (min-width: 1280px) {
+  .wo-panels {
+    grid-template-columns: minmax(17rem, 21rem) minmax(16rem, 1fr) minmax(18rem, 23rem);
+  }
+  .wo-bottom .ov-kpi-grid {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+}
+
+/* solid surfaces where blur is missing, or when the user asks for more contrast or less transparency */
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  .wo-root {
+    --wo-surface: var(--card);
+  }
+}
+@media (prefers-contrast: more), (prefers-reduced-transparency: reduce) {
+  .wo-root {
+    --wo-surface: var(--card);
+  }
+}
+
+@keyframes wo-fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .wo-stage,
+  .wo-panels {
+    animation: none;
+  }
+}

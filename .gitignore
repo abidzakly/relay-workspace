@@ -1,0 +1,16 @@
+node_modules/
+dist/
+data/
+.env
+.env.*
+!.env.example
+*.log
+*.tsbuildinfo
+.DS_Store
+coverage/
+
+docker/tailscale/authkey
+
+# Private files that must never be committed (VPN profiles hold a private key)
+*.ovpn
+docker/vpn/

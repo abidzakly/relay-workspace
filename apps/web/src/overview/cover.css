@@ -1,0 +1,256 @@
+/*
+ * The Living Workspace Overview as a magazine cover (overview/Cover.tsx). The crystal fills the page; the percent is
+ * printed over it in ink (multiply on paper, screen at night); cover lines sit on the margins, which fade to paper so
+ * the type always reads, whatever the scene does behind it.
+ */
+.cv-root {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+}
+.cv-stage {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  animation: cv-fade 600ms ease-out both;
+}
+.cv-ink {
+  position: absolute;
+  z-index: 1;
+  left: 1.5vw;
+  bottom: 5.5rem;
+  font-size: min(27vw, 24rem);
+  line-height: 0.78;
+  font-weight: 600;
+  letter-spacing: -0.07em;
+  font-variant-numeric: tabular-nums;
+  color: var(--foreground);
+  opacity: 0.9;
+  mix-blend-mode: multiply;
+  pointer-events: none;
+  user-select: none;
+  animation: cv-print 900ms cubic-bezier(0.22, 1, 0.36, 1) 200ms both;
+}
+.dark .cv-ink {
+  mix-blend-mode: screen;
+  opacity: 0.75;
+}
+.cv-ink-pct {
+  font-size: 0.32em;
+  vertical-align: top;
+  letter-spacing: 0;
+  margin-left: 0.04em;
+}
+.cv-layer {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  display: grid;
+  gap: 1rem 2rem;
+  padding: 5.25rem 1.5rem 1rem;
+  grid-template-columns: minmax(0, 1fr);
+  align-content: start;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  pointer-events: none;
+  animation: cv-fade 500ms ease-out 350ms both;
+}
+.cv-layer > * {
+  pointer-events: auto;
+}
+.cv-mast {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: end;
+  gap: 1rem;
+  border-bottom: 3px double var(--foreground);
+  padding-bottom: 0.35rem;
+  pointer-events: none;
+}
+.cv-title {
+  text-align: center;
+  font-size: clamp(2.5rem, 7.5vw, 7rem);
+  line-height: 0.8;
+  font-weight: 600;
+  letter-spacing: -0.06em;
+  text-transform: uppercase;
+}
+.cv-meta {
+  font-family: var(--font-mono);
+  font-size: 0.6875rem;
+  line-height: 1.3;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--muted-foreground);
+}
+.cv-controls {
+  justify-self: end;
+}
+.cv-left,
+.cv-right {
+  display: grid;
+  gap: 1.25rem;
+  align-content: start;
+  min-width: 0;
+}
+.cv-line {
+  outline: none;
+  border-radius: 2px;
+}
+a.cv-line:hover > span:last-child,
+a.cv-line:focus-visible {
+  text-decoration: underline;
+  text-underline-offset: 6px;
+  text-decoration-thickness: 1px;
+}
+a.cv-line:focus-visible {
+  box-shadow: 0 0 0 2px var(--ring);
+}
+.cv-foot {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: end;
+  justify-content: space-between;
+  gap: 1rem;
+  border-top: 3px double var(--foreground);
+  padding-top: 0.6rem;
+}
+.cv-kpis {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.75rem 1.5rem;
+  flex: 1;
+  min-width: 0;
+  outline: none;
+}
+.cv-kpis:focus-visible {
+  box-shadow: 0 0 0 2px var(--ring);
+}
+
+/* phones and tablets: the cover lines stack over a paper-dimmed scene */
+@media (max-width: 1023px) {
+  .cv-stage::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: color-mix(in oklch, var(--background) 70%, transparent);
+    pointer-events: none;
+  }
+  .cv-ink {
+    bottom: auto;
+    top: 9rem;
+    font-size: 46vw;
+    opacity: 0.12;
+  }
+  .cv-controls {
+    justify-self: start;
+  }
+}
+
+/* wide: the cover proper, lines on both margins, the crystal clear in the middle */
+@media (min-width: 1024px) {
+  .cv-layer {
+    grid-template-columns: minmax(17rem, 23rem) minmax(0, 1fr) minmax(18rem, 24rem);
+    grid-template-rows: auto auto minmax(0, 1fr) auto;
+    grid-template-areas:
+      'mast mast mast'
+      'left . controls'
+      'left . right'
+      'foot foot foot';
+    height: 100%;
+    overflow: hidden;
+  }
+  /* the margins fade to paper, so the lines read over any scene */
+  .cv-layer::before,
+  .cv-layer::after {
+    content: '';
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    width: 30rem;
+    z-index: -1;
+    pointer-events: none;
+  }
+  .cv-layer::before {
+    left: 0;
+    background: linear-gradient(
+      90deg,
+      color-mix(in oklch, var(--background) 88%, transparent) 55%,
+      transparent
+    );
+  }
+  .cv-layer::after {
+    right: 0;
+    background: linear-gradient(
+      270deg,
+      color-mix(in oklch, var(--background) 88%, transparent) 55%,
+      transparent
+    );
+  }
+  .cv-mast {
+    grid-area: mast;
+  }
+  .cv-controls {
+    grid-area: controls;
+  }
+  .cv-left {
+    grid-area: left;
+    min-height: 0;
+    overflow-y: auto;
+    padding: 2px;
+  }
+  .cv-right {
+    grid-area: right;
+    min-height: 0;
+    overflow-y: auto;
+    padding: 2px;
+  }
+  .cv-foot {
+    grid-area: foot;
+    background: color-mix(in oklch, var(--background) 82%, transparent);
+  }
+  .cv-kpis {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+  .cv-ink {
+    left: 24rem;
+  }
+}
+@media (min-width: 1536px) {
+  .cv-ink {
+    left: 27rem;
+  }
+}
+
+@media (prefers-contrast: more), (prefers-reduced-transparency: reduce) {
+  .cv-ink {
+    opacity: 0.25;
+  }
+}
+
+@keyframes cv-fade {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+@keyframes cv-print {
+  from {
+    opacity: 0;
+    transform: translateY(0.08em);
+    filter: blur(12px);
+  }
+  to {
+    transform: none;
+    filter: none;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .cv-stage,
+  .cv-layer,
+  .cv-ink {
+    animation: none;
+  }
+}

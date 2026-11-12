@@ -1,0 +1,8 @@
+# Only GitLab webhook deliveries (POST /webhook/<repo-id>) reach the listener; everything else gets a 404 at ngrok's edge.
+on_http_request:
+  - expressions:
+      - "!(req.method == 'POST' && req.url.path.startsWith('/webhook/'))"
+    actions:
+      - type: custom-response
+        config:
+          status_code: 404

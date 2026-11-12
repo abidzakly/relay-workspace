@@ -1,0 +1,323 @@
+#!/bin/bash
+FLAVORS="development
+preproduction
+production
+preprod
+staging
+playground"
+
+BACK="<< back"
+NAME_FILE=".flutter_launcher_apk_name"
+
+usage() {
+  cat <<'EOF'
+Usage: flutter_launcher.sh [flags]
+
+Action     -r run          -a build apk        -i build ios
+           -ab build appbundle
+Flavor     -d development  -s staging          -p production
+           -pp preprod     -ppn preproduction   -pl playground
+Mode       -rel release    -dbg debug           -prof profile
+Other      -ios force iOS platform (only used with -r)
+           -fvm use `fvm flutter` (tanpa flag ini = tanpa fvm, tidak ditanya)
+           -n, --name <nama>   set nama file APK/AAB (disimpan per project di
+                               .flutter_launcher_apk_name, dipakai terus di
+                               build berikutnya sampai diganti/di-reset)
+           -nr, --reset-name   hapus nama tersimpan (kembali ke nama pubspec)
+           --  everything after this is passed straight through
+               as extra flutter args (skips the extra-args prompt)
+
+Flags are order-independent and can be combined freely, e.g.:
+
+    flutter-run-menu -r -s -dbg -fvm
+    # → fvm flutter run -t lib/main_staging.dart --flavor staging
+
+    flutter-run-menu -a -s -rel -n "Toko Saya"
+    # → APK dinamai "Toko Saya Staging v<versi>.apk", dan nama ini diingat
+    #   untuk build berikutnya di folder project ini
+
+    flutter-run-menu -r -d -dbg -fvm -- -d chrome --verbose
+    # → fvm flutter run -t lib/main_development.dart --flavor development -d chrome --verbose
+    # (no extra-args prompt, since -- was used)
+EOF
+}
+
+ACTION="" FLAVOR="" MODE="" IOS="" PREFIX_CHOICE=""
+NEW_APK_NAME="" RESET_NAME="false"
+EXTRA_ARGS=() POSTFIX_SET="false"
+FLAGS_USED="false"
+[ $# -gt 0 ] && FLAGS_USED="true"
+
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --)    shift; EXTRA_ARGS=("$@"); POSTFIX_SET="true"; break ;;
+    -r)    ACTION="run" ;;
+    -a)    ACTION="apk" ;;
+    -ab)   ACTION="appbundle" ;;
+    -i)    ACTION="ios-build"; IOS="true" ;;
+    -ios)  IOS="true" ;;
+    -d)    FLAVOR="development" ;;
+    -s)    FLAVOR="staging" ;;
+    -p)    FLAVOR="production" ;;
+    -pp)   FLAVOR="preprod" ;;
+    -ppn)  FLAVOR="preproduction" ;;
+    -pl)   FLAVOR="playground" ;;
+    -rel)  MODE="release" ;;
+    -dbg)  MODE="debug" ;;
+    -prof) MODE="profile" ;;
+    -fvm)  PREFIX_CHOICE="fvm" ;;
+    -n|--name)
+      if [ -z "$2" ] || [[ "$2" == -* ]]; then
+        echo "Flag $1 membutuhkan nilai, contoh: $1 \"Nama Aplikasi\""; exit 1
+      fi
+      NEW_APK_NAME="$2"; shift ;;
+    -nr|--reset-name) RESET_NAME="true" ;;
+    -h|--help) usage; exit 0 ;;
+    *) echo "Unknown flag: $1"; usage; exit 1 ;;
+  esac
+  shift
+done
+
+# --- Persist / reset custom APK name (per project folder) ---
+if [ "$RESET_NAME" = "true" ]; then
+  rm -f "$NAME_FILE"
+  echo "🗑️  Nama APK tersimpan dihapus (kembali ke nama dari pubspec.yaml)."
+fi
+# Tambahkan file nama ke .git/info/exclude (lokal, tidak ikut ter-commit,
+# tidak perlu mengubah .gitignore). Aman dijalankan berulang (idempoten).
+git_exclude_name_file() {
+  git rev-parse --is-inside-work-tree >/dev/null 2>&1 || return 0
+  local exclude_file prefix pattern
+  exclude_file=$(git rev-parse --git-path info/exclude 2>/dev/null) || return 0
+  prefix=$(git rev-parse --show-prefix 2>/dev/null)   # path cwd relatif ke root repo
+  pattern="/${prefix}${NAME_FILE}"
+  mkdir -p "$(dirname "$exclude_file")"
+  if ! grep -qxF "$pattern" "$exclude_file" 2>/dev/null; then
+    printf "%s\n" "$pattern" >> "$exclude_file"
+    echo "🙈 Ditambahkan ke git exclude: $pattern"
+  fi
+}
+
+if [ -n "$NEW_APK_NAME" ]; then
+  # buang karakter yang tidak aman untuk nama file
+  NEW_APK_NAME="${NEW_APK_NAME//\//-}"
+  printf "%s\n" "$NEW_APK_NAME" > "$NAME_FILE"
+  echo "💾 Nama APK disimpan untuk project ini: \"$NEW_APK_NAME\" ($NAME_FILE)"
+  git_exclude_name_file
+fi
+
+# pick "$1"=prompt "$2"=options(no back entry). Echoes choice, or exits
+# the whole script if you back out of the very first prompted step.
+pick() {
+  local prompt="$1" opts="$2" list choice
+  if [ ${#STACK[@]} -gt 0 ]; then
+    list=$(printf "%s\n%s" "$BACK" "$opts")
+  else
+    list="$opts"
+  fi
+  choice=$(printf "%s\n" "$list" | fzf --prompt="$prompt")
+  if [ -z "$choice" ]; then
+    [ ${#STACK[@]} -gt 0 ] && choice="$BACK" || exit 0
+  fi
+  echo "$choice"
+}
+
+STACK=()
+STATE="ACTION"
+
+while true; do
+  case "$STATE" in
+
+    ACTION)
+      if [ -n "$ACTION" ]; then STATE="FLAVOR"; continue; fi
+      choice=$(pick "Action > " "run (flutter run)
+build apk (flutter build apk)
+build appbundle (flutter build appbundle)
+build ios (flutter build ios)")
+      [ "$choice" = "$BACK" ] && exit 0
+      case "$choice" in
+        run*)             ACTION="run" ;;
+        "build apk"*)     ACTION="apk" ;;
+        "build appbundle"*) ACTION="appbundle" ;;
+        "build ios"*)     ACTION="ios-build" ;;
+      esac
+      STACK+=("ACTION"); STATE="FLAVOR" ;;
+
+    FLAVOR)
+      if [ -n "$FLAVOR" ]; then STATE="MODE"; continue; fi
+      choice=$(pick "Select flavor > " "$FLAVORS")
+      if [ "$choice" = "$BACK" ]; then STATE="${STACK[-1]}"; unset 'STACK[-1]'; continue; fi
+      FLAVOR="$choice"
+      STACK+=("FLAVOR"); STATE="MODE" ;;
+
+    MODE)
+      if [ -n "$MODE" ]; then STATE="PREFIX"; continue; fi
+      choice=$(pick "Mode > " "release
+debug
+profile")
+      if [ "$choice" = "$BACK" ]; then STATE="${STACK[-1]}"; unset 'STACK[-1]'; continue; fi
+      MODE="$choice"
+      STACK+=("MODE"); STATE="PREFIX" ;;
+
+    PREFIX)
+      # Pakai flag (selain/ dengan -fvm) → jangan tanya lagi soal fvm.
+      if [ -n "$PREFIX_CHOICE" ]; then STATE="EXTRA"; continue; fi
+      if [ "$FLAGS_USED" = "true" ]; then PREFIX_CHOICE="none"; STATE="EXTRA"; continue; fi
+      choice=$(pick "Prefix (fvm)? > " "none
+fvm")
+      if [ "$choice" = "$BACK" ]; then STATE="${STACK[-1]}"; unset 'STACK[-1]'; continue; fi
+      PREFIX_CHOICE="$choice"
+      STACK+=("PREFIX"); STATE="EXTRA" ;;
+
+    EXTRA)
+      if [ "$POSTFIX_SET" = "true" ]; then STATE="DONE"; continue; fi
+      echo -n "Extra flutter args (e.g. -d chrome --verbose), 'back' to go back, or Enter to skip: "
+      read -r input
+      if [ "$input" = "back" ]; then STATE="${STACK[-1]}"; unset 'STACK[-1]'; continue; fi
+      [ -n "$input" ] && read -r -a EXTRA_ARGS <<< "$input"
+      STATE="DONE" ;;
+
+    DONE) break ;;
+  esac
+done
+
+[ -z "$MODE" ] && MODE="release"
+IOS="${IOS:-false}"
+[ "$ACTION" = "ios-build" ] && IOS="true"
+[ -z "$PREFIX_CHOICE" ] && PREFIX_CHOICE="none"
+
+# Rule: iOS debug BUILD (not run, since simulator doesn't support --profile) appends --profile
+POSTFIX_EXTRA=""
+if [ "$IOS" = "true" ] && [ "$MODE" = "debug" ] && [ "$ACTION" != "run" ]; then
+  echo "ℹ️  iOS build + debug detected → appending --profile"
+  POSTFIX_EXTRA="--profile"
+fi
+
+FLUTTER_CMD=(flutter)
+[ "$PREFIX_CHOICE" = "fvm" ] && FLUTTER_CMD=(fvm flutter)
+
+TARGET="lib/main_${FLAVOR}.dart"
+case "$ACTION" in
+  run)
+    CMD=("${FLUTTER_CMD[@]}" run -t "$TARGET")
+    [ "$IOS" != "true" ] && CMD+=(--flavor "$FLAVOR")
+    ;;
+  apk)
+    CMD=("${FLUTTER_CMD[@]}" build apk -t "$TARGET" --flavor "$FLAVOR")
+    ;;
+  appbundle)
+    CMD=("${FLUTTER_CMD[@]}" build appbundle -t "$TARGET" --flavor "$FLAVOR")
+    ;;
+  ios-build)
+    CMD=("${FLUTTER_CMD[@]}" build ios -t "$TARGET")
+    ;;
+esac
+[ "$MODE" = "release" ] && CMD+=(--release)
+[ "$MODE" = "profile" ] && CMD+=(--profile)
+[ -n "$POSTFIX_EXTRA" ] && CMD+=($POSTFIX_EXTRA)
+[ ${#EXTRA_ARGS[@]} -gt 0 ] && CMD+=("${EXTRA_ARGS[@]}")
+
+# ---------------------------------------------------------------------------
+# Helpers for the post-build rename/duplicate/open-folder behavior
+# ---------------------------------------------------------------------------
+
+# Nama custom tersimpan (jika ada) menang atas nama dari pubspec.yaml.
+get_pretty_app_name() {
+  if [ -s "$NAME_FILE" ]; then
+    head -n1 "$NAME_FILE" | tr -d '\r'
+    return
+  fi
+  local raw
+  raw=$(grep -m1 '^name:' pubspec.yaml | sed 's/^name:[[:space:]]*//' | tr -d '"'"'"'\r')
+  raw="${raw//_/ }"
+  echo "$raw" | awk '{for(i=1;i<=NF;i++) $i=toupper(substr($i,1,1)) substr($i,2)} 1'
+}
+
+get_app_version() {
+  grep -m1 '^version:' pubspec.yaml | sed 's/^version:[[:space:]]*//' | tr -d '\r'
+}
+
+get_flavor_label() {
+  case "$1" in
+    development|staging) echo "Staging" ;;
+    preprod|preproduction) echo "Preprod" ;;
+    production) echo "Production" ;;
+    playground) echo "Playground" ;;
+    *) echo "$1" ;;
+  esac
+}
+
+open_folder() {
+  local dir="$1"
+  if command -v xdg-open >/dev/null 2>&1; then
+    xdg-open "$dir" >/dev/null 2>&1 &
+  elif command -v open >/dev/null 2>&1; then
+    open "$dir"
+  elif command -v explorer.exe >/dev/null 2>&1; then
+    if command -v wslpath >/dev/null 2>&1; then
+      explorer.exe "$(wslpath -w "$dir")" >/dev/null 2>&1
+    else
+      explorer.exe "$dir" >/dev/null 2>&1
+    fi
+  else
+    echo "⚠️  Don't know how to open a folder on this system: $dir"
+  fi
+}
+
+echo "▶️  Running: ${CMD[*]}"
+"${CMD[@]}"
+BUILD_STATUS=$?
+
+if [ $BUILD_STATUS -ne 0 ]; then
+  echo "❌ Build/run failed (exit $BUILD_STATUS), skipping post-build steps."
+  exit $BUILD_STATUS
+fi
+
+if [ "$ACTION" = "apk" ]; then
+  OUTPUT_DIR="build/app/outputs/flutter-apk"
+  SRC_APK="${OUTPUT_DIR}/app-${FLAVOR}-${MODE}.apk"
+
+  if [ -f "$SRC_APK" ]; then
+    APP_NAME=$(get_pretty_app_name)
+    FLAVOR_LABEL=$(get_flavor_label "$FLAVOR")
+    APP_VERSION=$(get_app_version)
+
+    NEW_NAME="${APP_NAME} ${FLAVOR_LABEL} v${APP_VERSION}.apk"
+    DEST_APK="${OUTPUT_DIR}/${NEW_NAME}"
+
+    cp "$SRC_APK" "$DEST_APK"
+    echo "📦 Duplicated: $SRC_APK"
+    echo "   → ${DEST_APK}"
+
+    open_folder "$OUTPUT_DIR"
+  else
+    echo "⚠️  Expected APK not found at $SRC_APK — skipping duplicate/rename."
+    echo "    (Check that flavor/mode match Flutter's actual output filename.)"
+  fi
+elif [ "$ACTION" = "appbundle" ]; then
+  # Flutter nests flavored bundles under a <flavor><Mode> folder, e.g. developmentRelease
+  MODE_CAP="$(tr '[:lower:]' '[:upper:]' <<< "${MODE:0:1}")${MODE:1}"
+  OUTPUT_DIR="build/app/outputs/bundle/${FLAVOR}${MODE_CAP}"
+  SRC_AAB="${OUTPUT_DIR}/app-${FLAVOR}-${MODE}.aab"
+
+  if [ -f "$SRC_AAB" ]; then
+    APP_NAME=$(get_pretty_app_name)
+    FLAVOR_LABEL=$(get_flavor_label "$FLAVOR")
+    APP_VERSION=$(get_app_version)
+
+    NEW_NAME="${APP_NAME} ${FLAVOR_LABEL} v${APP_VERSION}.aab"
+    DEST_AAB="${OUTPUT_DIR}/${NEW_NAME}"
+
+    cp "$SRC_AAB" "$DEST_AAB"
+    echo "📦 Duplicated: $SRC_AAB"
+    echo "   → ${DEST_AAB}"
+
+    open_folder "$OUTPUT_DIR"
+  else
+    echo "⚠️  Expected AAB not found at $SRC_AAB — skipping duplicate/rename."
+    echo "    (Check that flavor/mode match Flutter's actual output filename.)"
+  fi
+elif [ "$ACTION" = "ios-build" ]; then
+  IOS_OUTPUT_DIR="build/ios/iphoneos"
+  [ -d "$IOS_OUTPUT_DIR" ] && open_folder "$IOS_OUTPUT_DIR"
+fi

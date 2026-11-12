@@ -1,0 +1,14 @@
+**/node_modules
+**/dist
+**/coverage
+**/*.tsbuildinfo
+**/*.log
+.git
+.env
+.env.*
+data
+*.zip
+**/.DS_Store
+docker/tailscale
+*.ovpn
+docker/vpn

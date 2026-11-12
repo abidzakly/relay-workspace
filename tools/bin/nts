@@ -1,0 +1,1449 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+# Values saved in Relay (Settings > Repos > Release scripts). A variable already set in the environment wins.
+_cd_env="${RELAY_SCRIPTS_ENV:-${CORE_DASHBOARD_SCRIPTS_ENV:-${XDG_CONFIG_HOME:-$HOME/.config}/relay/scripts.env}}"
+[[ -r "$_cd_env" ]] || _cd_env="${XDG_CONFIG_HOME:-$HOME/.config}/core-dashboard/scripts.env"
+# shellcheck source=/dev/null
+[[ -r "$_cd_env" ]] && . "$_cd_env"
+unset _cd_env
+
+# ============================================================
+# Requires bash 4+ (for ${var,,} case-folding). macOS ships an
+# ancient bash 3.2 at /bin/bash for licensing reasons — install a
+# current one first, e.g.: brew install bash
+# ============================================================
+
+if (( BASH_VERSINFO[0] < 4 )); then
+    printf '\nERROR: %s\n\n' "This script requires bash 4.0 or newer (found ${BASH_VERSION}).
+
+Install a modern bash, for example:
+
+  brew install bash
+
+Then make sure it comes first in your PATH (check with: which bash)." >&2
+    exit 1
+fi
+
+# ============================================================
+# nts - Notion tasks: status updates + Ready to Test queue
+# ============================================================
+#
+# Subcommands (Ready to Test):
+#
+#   nts list [--qa-user-id <id>] [--product <name>] [--status <name>] [--json]
+#   nts show --page <id> [--json]
+#   nts sync-todos --page <id> --file <changes.json>
+#
+# changes.json: {"block-uuid": true, "other-block": false}
+#
+# ============================================================
+#
+# Usage:
+#
+#   nts
+#   nts --task "Implement authentication"
+#   nts --task "Implement authentication" --status "In Progress"
+#   nts --page <page-id> --status "Ready to Test"
+#   nts --page <page-id> --status "Complete" --yes
+#
+# Environment:
+#
+#   NOTION_TOKEN
+#       Notion API token.
+#
+#   NOTION_DATA_SOURCE_ID
+#       ID of the Notion data source containing your tasks.
+#
+# Optional:
+#
+#   NOTION_VERSION
+#       Notion API version. Defaults to 2025-09-03.
+#
+# Behaviour:
+#
+#   - If --page is supplied, that page is updated directly.
+#   - Otherwise --task searches the configured data source by title.
+#   - If neither is supplied, tasks are displayed and you can choose one.
+#   - The script discovers the Status property from the data-source schema.
+#   - Status options are resolved by their human-readable names.
+#   - You do NOT need to manually copy status option IDs.
+#   - Confirmation is requested unless --yes is supplied.
+#
+# Examples:
+#
+#   nts
+#   nts --task "Implement OAuth"
+#   nts --task "Implement OAuth" --status "In Progress"
+#   nts --task "Implement OAuth" --status "Ready to Test"
+#   nts --task "Implement OAuth" --status "Complete" --yes
+#   nts --page 12345678-... --status "Complete"
+#
+# ============================================================
+
+
+SCRIPT_NAME="$(basename "$0")"
+
+NOTION_TOKEN="${NOTION_TOKEN:-}"
+NOTION_DATA_SOURCE_ID="${NOTION_DATA_SOURCE_ID:-}"
+NOTION_VERSION="${NOTION_VERSION:-2025-09-03}"
+
+TASK_QUERY=""
+PAGE_ID=""
+STATUS=""
+AUTO_YES=false
+STATUS_PROPERTY_OVERRIDE="${NOTION_STATUS_PROPERTY:-}"
+
+# Ready to Test list / detail / to-do sync
+SUBCOMMAND=""
+NOTION_QA_USER_ID="${NOTION_QA_USER_ID:-}"
+NOTION_PRODUCT_DOMAIN="${NOTION_PRODUCT_DOMAIN:-}"
+NOTION_READY_STATUS="${NOTION_READY_STATUS:-Ready to Test}"
+NOTION_PRODUCT_PROPERTY="${NOTION_PRODUCT_PROPERTY:-Product domain}"
+NOTION_QA_PROPERTY="${NOTION_QA_PROPERTY:-QA}"
+SYNC_TODOS_FILE=""
+JSON_OUTPUT=false
+
+
+# ============================================================
+# Helpers
+# ============================================================
+
+usage() {
+    cat <<EOF
+Usage:
+  $SCRIPT_NAME [options]
+
+Notion task helper: update status, or Ready to Test list/detail/to-do sync.
+
+Subcommands:
+  list              Tasks matching Ready to Test filters (see env below).
+  show              Page body + to-do blocks (read-only metadata).
+  sync-todos        PATCH to-do checked state from a JSON map (--file).
+
+  (default)         Update task status (legacy behaviour).
+
+Options:
+  -t, --task <text>            Find a task by title.
+  -p, --page <id>               Update a specific Notion page directly.
+                                 Accepts a raw page ID, a dashed UUID, or a
+                                 full Notion page URL copied from the browser.
+  -s, --status <status>         New status, e.g. "In Progress".
+  -P, --status-property <name>  Name of the status/select property to update.
+                                 Only needed if the script can't auto-detect it
+                                 (e.g. multiple select-type properties exist).
+  -y, --yes                     Skip confirmation.
+  -h, --help                    Show this help.
+
+Environment:
+  NOTION_TOKEN             Notion API token.
+  NOTION_DATA_SOURCE_ID    Notion data source containing your tasks.
+  NOTION_VERSION           API version (default: $NOTION_VERSION).
+  NOTION_STATUS_PROPERTY   Same as --status-property.
+
+Ready to Test (list / show / sync-todos):
+  NOTION_QA_USER_ID        QA people-property user id (required for list).
+  NOTION_PRODUCT_DOMAIN    Optional product filter (select equals).
+  NOTION_READY_STATUS      Status filter (default: Ready to Test).
+  NOTION_PRODUCT_PROPERTY  Product select property name.
+  NOTION_QA_PROPERTY       QA people property name.
+
+Examples:
+  $SCRIPT_NAME
+  $SCRIPT_NAME --task "Implement OAuth"
+  $SCRIPT_NAME --task "Implement OAuth" --status "In Progress"
+  $SCRIPT_NAME --page 00000000-0000-0000-0000-000000000000 --status "Complete"
+  $SCRIPT_NAME --page "https://www.notion.so/workspace/Some-Title-00000000000000000000000000000000" --status "Done"
+  $SCRIPT_NAME -t "Fix login" -s "Ready to Test" -y
+  $SCRIPT_NAME list --qa-user-id 223d872b-... --product "Product A" --json
+  $SCRIPT_NAME show --page <page-id> --json
+  $SCRIPT_NAME sync-todos --page <page-id> --file todo-changes.json -y
+EOF
+}
+
+
+log() {
+    printf '\n==> %s\n' "$1"
+}
+
+
+die() {
+    printf '\nERROR: %s\n\n' "$1" >&2
+    exit 1
+}
+
+
+require_command() {
+    command -v "$1" >/dev/null 2>&1 \
+        || die "'$1' is required but was not found."
+}
+
+
+# ============================================================
+# Extract a page ID from a raw ID, a dashed UUID, or a full
+# Notion URL (e.g. https://www.notion.so/workspace/Some-Title-00000000000000000000000000000000?pvs=4)
+# ============================================================
+
+extract_page_id() {
+    local input="$1"
+
+    # Drop any URL fragment and query string first, so a view ID in
+    # ?v=... or a #block-anchor can't get mistaken for the page ID.
+    local path_part="${input%%#*}"
+    path_part="${path_part%%\?*}"
+    path_part="${path_part%/}"
+
+    # Only the last path segment can contain the page ID.
+    local last_segment="${path_part##*/}"
+
+    local hex
+
+    # Case 1: the whole segment is itself a bare or dashed UUID
+    # (covers `--page <id>` with no URL at all).
+    local candidate="${last_segment//-/}"
+    if [[ "$candidate" =~ ^[0-9a-fA-F]{32}$ ]]; then
+        hex="$candidate"
+    else
+        # Case 2: a URL slug like "Some-Title-<32hexid>". Notion
+        # appends the ID as the final dash-separated token (with no
+        # internal dashes), so splitting on the last "-" isolates it
+        # cleanly — even if the title itself ends in hex-looking
+        # letters (e.g. "...Title" ending in a "e", "a", "d", etc).
+        local last_token="${last_segment##*-}"
+        if [[ "$last_token" =~ ^[0-9a-fA-F]{32}$ ]]; then
+            hex="$last_token"
+        else
+            return 1
+        fi
+    fi
+
+    printf '%s' "${hex:0:8}-${hex:8:4}-${hex:12:4}-${hex:16:4}-${hex:20:12}"
+}
+
+
+# ============================================================
+# Notion API helper
+# ============================================================
+
+notion_request() {
+    local method="$1"
+    local endpoint="$2"
+    local body="${3:-}"
+
+    local url="https://api.notion.com/v1${endpoint}"
+
+    local args=(
+        -sS
+        -X "$method"
+        "$url"
+        -H "Authorization: Bearer $NOTION_TOKEN"
+        -H "Notion-Version: $NOTION_VERSION"
+        -H "Content-Type: application/json"
+    )
+
+    if [[ -n "$body" ]]; then
+        args+=(-d "$body")
+    fi
+
+    curl "${args[@]}"
+}
+
+
+# ============================================================
+# Query a data source, following pagination
+# ============================================================
+#
+# Notion caps each query response at 100 results (has_more /
+# next_cursor). Without following the cursor, anything past the
+# first page is silently invisible to search/listing. This walks
+# every page and returns a single combined {"results": [...]}
+# object, matching the shape callers already expect.
+#
+# On an API error at any page, the raw error response is returned
+# as-is so the existing '.object == "error"' checks still work.
+
+notion_query_all_pages() {
+    local endpoint="$1"
+    local body="${2:-{}}"
+
+    local page_dir
+    page_dir="$(mktemp -d)"
+    # shellcheck disable=SC2064
+    trap "rm -rf '$page_dir'" RETURN
+
+    local next_cursor="" has_more="true" page_num=0
+    local page_body page_response
+
+    while [[ "$has_more" == "true" ]]; do
+        page_num=$((page_num + 1))
+
+        if [[ -n "$next_cursor" ]]; then
+            page_body="$(jq --arg cursor "$next_cursor" '. + {start_cursor: $cursor}' <<< "$body")"
+        else
+            page_body="$body"
+        fi
+
+        page_response="$(notion_request POST "$endpoint" "$page_body")"
+
+        if echo "$page_response" | jq -e '.object == "error"' >/dev/null 2>&1; then
+            printf '%s' "$page_response"
+            return 0
+        fi
+
+        echo "$page_response" | jq -c '.results' > "$page_dir/page_${page_num}.json"
+
+        has_more="$(echo "$page_response" | jq -r '.has_more // false')"
+        next_cursor="$(echo "$page_response" | jq -r '.next_cursor // empty')"
+    done
+
+    jq -s '{results: map(.[]) }' "$page_dir"/page_*.json
+}
+# ============================================================
+# Ready to Test: shared schema helpers
+# ============================================================
+
+find_title_property_name() {
+    echo "$SCHEMA_RESPONSE" |
+        jq -r '
+            .properties
+            | to_entries[]
+            | select(.value.type == "title")
+            | .key
+        ' |
+        head -n 1
+}
+
+
+resolve_status_property_for_filter() {
+    local preferred="${1:-Status}"
+    local name type
+
+    type="$(
+        echo "$SCHEMA_RESPONSE" |
+            jq -r --arg n "$preferred" '.properties[$n].type // empty'
+    )"
+
+    if [[ "$type" == "status" || "$type" == "select" ]]; then
+        printf '%s\t%s' "$preferred" "$type"
+        return 0
+    fi
+
+    name="$(
+        echo "$SCHEMA_RESPONSE" |
+            jq -r '
+                .properties
+                | to_entries[]
+                | select(.value.type == "status")
+                | .key
+            ' |
+            head -n 1
+    )"
+    if [[ -n "$name" ]]; then
+        printf '%s\tstatus' "$name"
+        return 0
+    fi
+
+    name="$(
+        echo "$SCHEMA_RESPONSE" |
+            jq -r '
+                .properties
+                | to_entries[]
+                | select(.value.type == "select")
+                | select(.key | ascii_downcase == "status")
+                | .key
+            ' |
+            head -n 1
+    )"
+    if [[ -n "$name" ]]; then
+        printf '%s\tselect' "$name"
+        return 0
+    fi
+
+    return 1
+}
+
+
+build_ready_to_test_query_body() {
+    local status_prop="$1"
+    local status_type="$2"
+    local status_name="$3"
+    local qa_prop="$4"
+    local qa_user="$5"
+    local product_prop="$6"
+    local product_name="$7"
+
+    if [[ -n "$product_name" ]]; then
+        jq -n \
+            --arg sp "$status_prop" \
+            --arg st "$status_type" \
+            --arg sn "$status_name" \
+            --arg qp "$qa_prop" \
+            --arg qu "$qa_user" \
+            --arg pp "$product_prop" \
+            --arg pn "$product_name" \
+            '{
+                filter: {
+                    and: [
+                        { property: $sp, ($st): { equals: $sn } },
+                        { property: $qp, people: { contains: $qu } },
+                        { property: $pp, select: { equals: $pn } }
+                    ]
+                }
+            }'
+    else
+        jq -n \
+            --arg sp "$status_prop" \
+            --arg st "$status_type" \
+            --arg sn "$status_name" \
+            --arg qp "$qa_prop" \
+            --arg qu "$qa_user" \
+            '{
+                filter: {
+                    and: [
+                        { property: $sp, ($st): { equals: $sn } },
+                        { property: $qp, people: { contains: $qu } }
+                    ]
+                }
+            }'
+    fi
+}
+
+
+notion_list_block_children() {
+    local block_id="$1"
+    local cursor="" has_more="true" path response
+
+    while [[ "$has_more" == "true" ]]; do
+        if [[ -n "$cursor" ]]; then
+            path="/blocks/${block_id}/children?page_size=100&start_cursor=${cursor}"
+        else
+            path="/blocks/${block_id}/children?page_size=100"
+        fi
+
+        response="$(notion_request GET "$path")"
+
+        if echo "$response" | jq -e '.object == "error"' >/dev/null 2>&1; then
+            printf '%s' "$response"
+            return 1
+        fi
+
+        echo "$response" | jq -c '.results[]?'
+
+        has_more="$(echo "$response" | jq -r '.has_more // false')"
+        cursor="$(echo "$response" | jq -r '.next_cursor // empty')"
+    done
+}
+
+
+collect_page_blocks_json() {
+    local page_id="$1"
+    local block
+
+    while IFS= read -r block; do
+        [[ -n "$block" ]] || continue
+        echo "$block"
+        local id type has_children
+        id="$(echo "$block" | jq -r '.id')"
+        type="$(echo "$block" | jq -r '.type')"
+        has_children="$(echo "$block" | jq -r '.has_children // false')"
+
+        if [[ "$has_children" == "true" && "$type" != "child_page" && "$type" != "child_database" ]]; then
+            collect_page_blocks_json "$id"
+        fi
+    done < <(notion_list_block_children "$page_id")
+}
+
+
+load_schema_or_die() {
+    log "Reading Notion data-source schema"
+
+    SCHEMA_RESPONSE="$(
+        notion_request GET "/data_sources/$NOTION_DATA_SOURCE_ID"
+    )"
+
+    if echo "$SCHEMA_RESPONSE" | jq -e '.object == "error"' >/dev/null 2>&1; then
+        ERROR_CODE="$(echo "$SCHEMA_RESPONSE" | jq -r '.code // "unknown"')"
+        ERROR_MESSAGE="$(echo "$SCHEMA_RESPONSE" | jq -r '.message // "Unknown Notion API error"')"
+
+        die "Could not retrieve data source.
+
+Code:
+$ERROR_CODE
+
+Message:
+$ERROR_MESSAGE"
+    fi
+}
+
+
+cmd_ready_to_test_list() {
+    [[ -n "$NOTION_QA_USER_ID" ]] \
+        || die "NOTION_QA_USER_ID (or --qa-user-id) is required for 'nts list'."
+
+    load_schema_or_die
+
+    local status_line status_prop status_type
+    status_line="$(resolve_status_property_for_filter "${STATUS_PROPERTY_OVERRIDE:-Status}")" \
+        || die "Could not resolve Status property for filtering."
+
+    status_prop="${status_line%%$'\t'*}"
+    status_type="${status_line#*$'\t'}"
+
+    local title_prop query_body query_response
+    title_prop="$(find_title_property_name)"
+    [[ -n "$title_prop" ]] || die "Could not find title property."
+
+    query_body="$(
+        build_ready_to_test_query_body \
+            "$status_prop" \
+            "$status_type" \
+            "$NOTION_READY_STATUS" \
+            "$NOTION_QA_PROPERTY" \
+            "$NOTION_QA_USER_ID" \
+            "$NOTION_PRODUCT_PROPERTY" \
+            "$NOTION_PRODUCT_DOMAIN"
+    )"
+
+    log "Querying Ready to Test tasks"
+
+    query_response="$(
+        notion_query_all_pages \
+            "/data_sources/$NOTION_DATA_SOURCE_ID/query" \
+            "$query_body"
+    )"
+
+    if echo "$query_response" | jq -e '.object == "error"' >/dev/null 2>&1; then
+        die "Could not query tasks: $(echo "$query_response" | jq -r '.message // .')"
+    fi
+
+    if [[ "$JSON_OUTPUT" == true ]]; then
+        echo "$query_response" |
+            jq \
+                --arg tp "$title_prop" \
+                --arg sp "$status_prop" \
+                --arg st "$status_type" \
+                --arg pp "$NOTION_PRODUCT_PROPERTY" '
+                {
+                    tasks: [
+                        .results[]
+                        | {
+                            page_id: .id,
+                            title: (
+                                .properties[$tp].title
+                                | map(.plain_text)
+                                | join("")
+                            ),
+                            status: (.properties[$sp][$st].name // ""),
+                            product_domain: (.properties[$pp].select.name // null)
+                        }
+                    ]
+                }
+            '
+        return 0
+    fi
+
+    echo
+    echo "Ready to Test"
+    echo
+
+    echo "$query_response" |
+        jq -r \
+            --arg tp "$title_prop" \
+            --arg sp "$status_prop" \
+            --arg st "$status_type" \
+            --arg pp "$NOTION_PRODUCT_PROPERTY" '
+            .results[]
+            | (
+                .properties[$tp].title
+                | map(.plain_text)
+                | join("")
+              ) as $title
+            | (
+                .properties[$sp][$st].name // "<none>"
+              ) as $status
+            | (
+                .properties[$pp].select.name // "-"
+              ) as $product
+            | "\(.id)\t\($title)\t\($status)\t\($product)"
+        ' |
+        while IFS=$'\t' read -r id title status product; do
+            printf "  %-36s  %-40s  [%s]  %s\n" "$id" "$title" "$status" "$product"
+        done
+}
+
+
+cmd_ready_to_test_show() {
+    [[ -n "$PAGE_ID" ]] || die "'nts show' requires --page <id>."
+
+    load_schema_or_die
+
+    local title_prop status_line status_prop status_type
+    title_prop="$(find_title_property_name)"
+    status_line="$(resolve_status_property_for_filter "${STATUS_PROPERTY_OVERRIDE:-Status}")" \
+        || die "Could not resolve Status property."
+
+    status_prop="${status_line%%$'\t'*}"
+    status_type="${status_line#*$'\t'}"
+
+    local page_response task_title task_status
+    page_response="$(notion_request GET "/pages/$PAGE_ID")"
+
+    if echo "$page_response" | jq -e '.object == "error"' >/dev/null 2>&1; then
+        die "Could not retrieve page: $(echo "$page_response" | jq -r '.message // .')"
+    fi
+
+    task_title="$(
+        echo "$page_response" |
+            jq -r --arg tp "$title_prop" '
+                .properties[$tp].title
+                | map(.plain_text)
+                | join("")
+            '
+    )"
+
+    task_status="$(
+        echo "$page_response" |
+            jq -r --arg sp "$status_prop" --arg st "$status_type" '
+                .properties[$sp][$st].name // "<none>"
+            '
+    )"
+
+    local blocks_json
+    blocks_json="$(
+        {
+            collect_page_blocks_json "$PAGE_ID"
+        } | jq -s '.'
+    )"
+
+    if [[ "$JSON_OUTPUT" == true ]]; then
+        jq -n \
+            --arg page_id "$PAGE_ID" \
+            --arg title "$task_title" \
+            --arg status "$task_status" \
+            --argjson blocks "$blocks_json" \
+            '{
+                page_id: $page_id,
+                title: $title,
+                status: $status,
+                blocks: $blocks,
+                todos: [
+                    $blocks[]
+                    | select(.type == "to_do")
+                    | {
+                        block_id: .id,
+                        text: (.to_do.rich_text | map(.plain_text) | join("")),
+                        checked: (.to_do.checked // false)
+                    }
+                ]
+            }'
+        return 0
+    fi
+
+    echo
+    echo "Ready to Test — $task_title"
+    echo "Page: $PAGE_ID"
+    echo "Status: $task_status"
+    echo
+    echo "To-do items:"
+    echo "$blocks_json" |
+        jq -r '
+            .[]
+            | select(.type == "to_do")
+            | "  [\((.to_do.checked // false) | if . then "x" else " " end)] \(.to_do.rich_text | map(.plain_text) | join(""))  (\(.id))"
+        '
+}
+
+
+cmd_ready_to_test_sync_todos() {
+    [[ -n "$PAGE_ID" ]] || die "'nts sync-todos' requires --page <id>."
+    [[ -n "$SYNC_TODOS_FILE" ]] || die "'nts sync-todos' requires --file <changes.json>."
+    [[ -f "$SYNC_TODOS_FILE" ]] || die "File not found: $SYNC_TODOS_FILE"
+
+    local count=0
+    while IFS=$'\t' read -r block_id checked; do
+        [[ -n "$block_id" ]] || continue
+
+        local body response
+        body="$(jq -n --arg c "$checked" '{to_do: {checked: ($c == "true")}}')"
+        response="$(notion_request PATCH "/blocks/$block_id" "$body")"
+
+        if echo "$response" | jq -e '.object == "error"' >/dev/null 2>&1; then
+            die "Failed to update block $block_id: $(echo "$response" | jq -r '.message // .')"
+        fi
+
+        count=$((count + 1))
+        echo "Updated $block_id -> checked=$checked"
+    done < <(
+        jq -r 'to_entries[] | [.key, (.value | tostring)] | @tsv' "$SYNC_TODOS_FILE"
+    )
+
+    echo
+    echo "Synced $count to-do block(s) on page $PAGE_ID"
+}
+
+
+# ============================================================
+# Parse arguments
+# ============================================================
+
+if [[ $# -gt 0 && "$1" =~ ^(list|show|sync-todos)$ ]]; then
+    SUBCOMMAND="$1"
+    shift
+fi
+
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --qa-user-id)
+            [[ $# -ge 2 ]] || die "$1 requires a value."
+            NOTION_QA_USER_ID="$2"
+            shift 2
+            ;;
+
+        --product)
+            [[ $# -ge 2 ]] || die "$1 requires a value."
+            NOTION_PRODUCT_DOMAIN="$2"
+            shift 2
+            ;;
+
+        --json)
+            JSON_OUTPUT=true
+            shift
+            ;;
+
+        --file)
+            [[ $# -ge 2 ]] || die "$1 requires a value."
+            SYNC_TODOS_FILE="$2"
+            shift 2
+            ;;
+
+        -t|--task)
+            [[ $# -ge 2 ]] || die "$1 requires a value."
+            TASK_QUERY="$2"
+            shift 2
+            ;;
+
+        -p|--page)
+            [[ $# -ge 2 ]] || die "$1 requires a value."
+            PAGE_ID="$2"
+            shift 2
+            ;;
+
+        -s|--status)
+            [[ $# -ge 2 ]] || die "$1 requires a value."
+            if [[ "$SUBCOMMAND" == "list" ]]; then
+                NOTION_READY_STATUS="$2"
+            else
+                STATUS="$2"
+            fi
+            shift 2
+            ;;
+
+        -P|--status-property)
+            [[ $# -ge 2 ]] || die "$1 requires a value."
+            STATUS_PROPERTY_OVERRIDE="$2"
+            shift 2
+            ;;
+
+        -y|--yes)
+            AUTO_YES=true
+            shift
+            ;;
+
+        -h|--help)
+            usage
+            exit 0
+            ;;
+
+        *)
+            die "Unknown argument: $1. Run '$SCRIPT_NAME --help'."
+            ;;
+    esac
+done
+
+
+# ============================================================
+# Resolve --page into a clean page ID
+# ============================================================
+#
+# Accepts a bare page ID, a dashed UUID, or a full Notion URL
+# copied from the browser (the page ID is pulled out of the URL
+# automatically). This lets you target an exact card directly,
+# sidestepping title search entirely — handy since task titles
+# aren't guaranteed unique.
+
+if [[ -n "$PAGE_ID" ]]; then
+    RESOLVED_PAGE_ID="$(extract_page_id "$PAGE_ID")" \
+        || die "Could not find a page ID in '--page $PAGE_ID'.
+
+Pass either a raw page ID, a dashed UUID, or a full Notion page URL,
+e.g.:
+
+  nts --page 00000000-0000-0000-0000-000000000000 --status \"In Progress\"
+  nts --page 'https://www.notion.so/workspace/Some-Title-00000000000000000000000000000000?pvs=4' --status \"In Progress\"
+"
+    PAGE_ID="$RESOLVED_PAGE_ID"
+fi
+
+
+# ============================================================
+# Validate environment
+# ============================================================
+
+require_command curl
+require_command jq
+
+[[ -n "$NOTION_TOKEN" ]] \
+    || die "NOTION_TOKEN is not set.
+
+Export your Notion token first, for example:
+
+  export NOTION_TOKEN='ntn_...'
+"
+
+[[ -n "$NOTION_DATA_SOURCE_ID" ]] \
+    || die "NOTION_DATA_SOURCE_ID is not set.
+
+Export the data source ID containing your tasks, for example:
+
+  export NOTION_DATA_SOURCE_ID='xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx'
+"
+
+
+# ============================================================
+# Validate token
+# ============================================================
+
+log "Checking Notion authentication"
+
+USER_RESPONSE="$(notion_request GET "/users/me")"
+
+if echo "$USER_RESPONSE" | jq -e '.object == "error"' >/dev/null 2>&1; then
+    ERROR_CODE="$(echo "$USER_RESPONSE" | jq -r '.code // "unknown"')"
+    ERROR_MESSAGE="$(echo "$USER_RESPONSE" | jq -r '.message // "Unknown Notion API error"')"
+
+    die "Notion authentication failed.
+
+Code:
+$ERROR_CODE
+
+Message:
+$ERROR_MESSAGE"
+fi
+
+NOTION_USER_NAME="$(
+    echo "$USER_RESPONSE" |
+        jq -r '
+            if .name then .name
+            elif .person.email then .person.email
+            else "authenticated user"
+            end
+        '
+)"
+
+echo "Authenticated as: $NOTION_USER_NAME"
+
+
+# ============================================================
+# Ready to Test subcommands
+# ============================================================
+
+if [[ -n "$SUBCOMMAND" ]]; then
+    case "$SUBCOMMAND" in
+        list)
+            cmd_ready_to_test_list
+            exit 0
+            ;;
+        show)
+            cmd_ready_to_test_show
+            exit 0
+            ;;
+        sync-todos)
+            cmd_ready_to_test_sync_todos
+            exit 0
+            ;;
+        *)
+            die "Unknown subcommand: $SUBCOMMAND"
+            ;;
+    esac
+fi
+
+
+# ============================================================
+# Retrieve data-source schema
+# ============================================================
+
+log "Reading Notion data-source schema"
+
+SCHEMA_RESPONSE="$(
+    notion_request GET "/data_sources/$NOTION_DATA_SOURCE_ID"
+)"
+
+if echo "$SCHEMA_RESPONSE" | jq -e '.object == "error"' >/dev/null 2>&1; then
+    ERROR_CODE="$(echo "$SCHEMA_RESPONSE" | jq -r '.code // "unknown"')"
+    ERROR_MESSAGE="$(echo "$SCHEMA_RESPONSE" | jq -r '.message // "Unknown Notion API error"')"
+
+    die "Could not retrieve data source.
+
+Code:
+$ERROR_CODE
+
+Message:
+$ERROR_MESSAGE
+
+Check that:
+
+  1. NOTION_DATA_SOURCE_ID is correct.
+  2. Your Notion integration has access to the data source.
+  3. Your token is valid."
+fi
+
+
+# ============================================================
+# Find the Status property
+# ============================================================
+#
+# Notion has two different property types that both render as
+# colored pills in the UI: the special "status" type (grouped into
+# To-do / In progress / Complete) and a plain "select" type. Many
+# databases use a select property literally named "Status" instead
+# of the dedicated status type, so both are supported here.
+
+if [[ -n "$STATUS_PROPERTY_OVERRIDE" ]]; then
+
+    STATUS_PROPERTY_NAME="$STATUS_PROPERTY_OVERRIDE"
+    STATUS_PROPERTY_TYPE="$(
+        echo "$SCHEMA_RESPONSE" |
+            jq -r --arg name "$STATUS_PROPERTY_NAME" '
+                .properties[$name].type // empty
+            '
+    )"
+
+    [[ "$STATUS_PROPERTY_TYPE" == "status" || "$STATUS_PROPERTY_TYPE" == "select" ]] \
+        || die "Property '$STATUS_PROPERTY_NAME' is not a status or select property (found type: '${STATUS_PROPERTY_TYPE:-none}')."
+
+else
+
+    # Prefer the dedicated "status" type if one exists.
+    STATUS_PROPERTY_NAME="$(
+        echo "$SCHEMA_RESPONSE" |
+            jq -r '
+                .properties
+                | to_entries[]
+                | select(.value.type == "status")
+                | .key
+            ' |
+            head -n 1
+    )"
+
+    if [[ -n "$STATUS_PROPERTY_NAME" ]]; then
+        STATUS_PROPERTY_TYPE="status"
+    else
+        # Fall back to a select property literally named "Status".
+        STATUS_PROPERTY_NAME="$(
+            echo "$SCHEMA_RESPONSE" |
+                jq -r '
+                    .properties
+                    | to_entries[]
+                    | select(.value.type == "select")
+                    | select(.key | ascii_downcase == "status")
+                    | .key
+                ' |
+                head -n 1
+        )"
+
+        if [[ -n "$STATUS_PROPERTY_NAME" ]]; then
+            STATUS_PROPERTY_TYPE="select"
+        fi
+    fi
+
+fi
+
+[[ -n "$STATUS_PROPERTY_NAME" ]] \
+    || die "Could not find a status or select property to update in this data source.
+
+Make sure your task database has a property of type 'Status' or a
+select property named 'Status', or pass --status-property <name>
+to specify it explicitly."
+
+STATUS_PROPERTY_ID="$(
+    echo "$SCHEMA_RESPONSE" |
+        jq -r --arg name "$STATUS_PROPERTY_NAME" '
+            .properties[$name].id // empty
+        '
+)"
+
+echo "Status property: $STATUS_PROPERTY_NAME (type: $STATUS_PROPERTY_TYPE)"
+echo "Status property ID: $STATUS_PROPERTY_ID"
+
+
+# ============================================================
+# Get available status options
+# ============================================================
+
+STATUS_OPTIONS="$(
+    echo "$SCHEMA_RESPONSE" |
+        jq -r --arg name "$STATUS_PROPERTY_NAME" --arg type "$STATUS_PROPERTY_TYPE" '
+            .properties[$name][$type].options[] |
+            [.id, .name] |
+            @tsv
+        '
+)"
+
+[[ -n "$STATUS_OPTIONS" ]] \
+    || die "No options were found in '$STATUS_PROPERTY_NAME'."
+
+
+# ============================================================
+# Resolve requested status
+# ============================================================
+
+# ============================================================
+# Resolve requested status
+# ============================================================
+#
+# Matching is case-insensitive and ignores whitespace, so
+# "next up", "Next up", "NEXTup" etc. all match "Next Up" — but
+# every character still has to be there, so "nexup" or "nxt up"
+# will not match.
+
+normalize_status() {
+    local s="$1"
+    s="${s,,}"
+    s="${s//[[:space:]]/}"
+    printf '%s' "$s"
+}
+
+# Looks up $1 against STATUS_OPTIONS. On a match, sets
+# RESOLVED_STATUS_ID and RESOLVED_STATUS_NAME (the canonical name
+# as it appears in Notion) and returns 0. Otherwise returns 1.
+resolve_status_option() {
+    local input="$1"
+    local wanted
+    wanted="$(normalize_status "$input")"
+
+    local id name
+    while IFS=$'\t' read -r id name; do
+        [[ -n "$name" ]] || continue
+
+        if [[ "$(normalize_status "$name")" == "$wanted" ]]; then
+            RESOLVED_STATUS_ID="$id"
+            RESOLVED_STATUS_NAME="$name"
+            return 0
+        fi
+    done <<< "$STATUS_OPTIONS"
+
+    return 1
+}
+
+if [[ -n "$STATUS" ]]; then
+
+    if resolve_status_option "$STATUS"; then
+        STATUS_OPTION_ID="$RESOLVED_STATUS_ID"
+        STATUS="$RESOLVED_STATUS_NAME"
+    else
+        echo
+        echo "Available statuses:"
+        echo "$STATUS_OPTIONS" | awk -F '\t' '{ printf "  - %s\n", $2 }'
+        echo
+
+        die "Unknown status: '$STATUS'."
+    fi
+
+else
+
+    echo
+    echo "Available statuses:"
+    echo "$STATUS_OPTIONS" |
+        awk -F '\t' '{ printf "  - %s\n", $2 }'
+    echo
+
+    printf 'New status: '
+    read -r STATUS
+
+    [[ -n "$STATUS" ]] \
+        || die "Status is required."
+
+    if resolve_status_option "$STATUS"; then
+        STATUS_OPTION_ID="$RESOLVED_STATUS_ID"
+        STATUS="$RESOLVED_STATUS_NAME"
+    else
+        die "Unknown status: '$STATUS'."
+    fi
+fi
+
+
+# ============================================================
+# Resolve page
+# ============================================================
+
+if [[ -z "$PAGE_ID" ]]; then
+
+    if [[ -z "$TASK_QUERY" ]]; then
+        log "Querying tasks"
+    else
+        log "Searching for task: $TASK_QUERY"
+    fi
+
+    # Notion's data-source query filters don't support a simple
+    # "title contains" search on a generic title property name, so
+    # we pull a broad query (following pagination — a board can
+    # easily have more than the 100-result single-page cap) and
+    # match titles locally instead. This is more predictable for a
+    # CLI regardless of schema layout.
+    QUERY_RESPONSE="$(
+        notion_query_all_pages \
+            "/data_sources/$NOTION_DATA_SOURCE_ID/query" \
+            '{}'
+    )"
+
+
+    if echo "$QUERY_RESPONSE" | jq -e '.object == "error"' >/dev/null 2>&1; then
+        ERROR_CODE="$(echo "$QUERY_RESPONSE" | jq -r '.code // "unknown"')"
+        ERROR_MESSAGE="$(echo "$QUERY_RESPONSE" | jq -r '.message // "Unknown Notion API error"')"
+
+        die "Could not query tasks.
+
+Code:
+$ERROR_CODE
+
+Message:
+$ERROR_MESSAGE"
+    fi
+
+
+    # --------------------------------------------------------
+    # Find title property
+    # --------------------------------------------------------
+
+    TITLE_PROPERTY_NAME="$(
+        echo "$SCHEMA_RESPONSE" |
+            jq -r '
+                .properties
+                | to_entries[]
+                | select(.value.type == "title")
+                | .key
+            ' |
+            head -n 1
+    )"
+
+    [[ -n "$TITLE_PROPERTY_NAME" ]] \
+        || die "Could not find the title property in this data source."
+
+
+    # --------------------------------------------------------
+    # Build task list
+    # --------------------------------------------------------
+
+    TASK_COUNT="$(
+        echo "$QUERY_RESPONSE" |
+            jq '.results | length'
+    )"
+
+    if [[ "$TASK_COUNT" -eq 0 ]]; then
+        die "No tasks were found."
+    fi
+
+
+    # --------------------------------------------------------
+    # If a task query was supplied, perform local title match
+    # --------------------------------------------------------
+
+    if [[ -n "$TASK_QUERY" ]]; then
+
+        MATCHES="$(
+            echo "$QUERY_RESPONSE" |
+                jq -r \
+                    --arg title_prop "$TITLE_PROPERTY_NAME" \
+                    --arg query "$TASK_QUERY" '
+                    .results[]
+                    |
+                    {
+                        id: .id,
+                        title: (
+                            .properties[$title_prop].title
+                            | map(.plain_text)
+                            | join("")
+                        )
+                    }
+                    |
+                    select(
+                        (.title | ascii_downcase)
+                        | contains($query | ascii_downcase)
+                    )
+                    |
+                    [.id, .title]
+                    |
+                    @tsv
+                '
+        )"
+
+        MATCH_COUNT="$(
+            if [[ -n "$MATCHES" ]]; then
+                echo "$MATCHES" | wc -l | tr -d ' '
+            else
+                echo "0"
+            fi
+        )"
+
+        if [[ "$MATCH_COUNT" -eq 0 ]]; then
+            die "No task matching '$TASK_QUERY' was found."
+        fi
+
+        if [[ "$MATCH_COUNT" -gt 1 ]]; then
+            echo
+            echo "Multiple tasks matched '$TASK_QUERY':"
+            echo
+
+            INDEX=1
+
+            while IFS=$'\t' read -r MATCH_ID MATCH_TITLE; do
+                printf "  %d) %s\n" "$INDEX" "$MATCH_TITLE"
+                printf "     %s\n" "$MATCH_ID"
+                INDEX=$((INDEX + 1))
+            done <<< "$MATCHES"
+
+            echo
+            printf 'Select task [1-%d]: ' "$MATCH_COUNT"
+            read -r SELECTION
+
+            [[ "$SELECTION" =~ ^[0-9]+$ ]] \
+                || die "Invalid selection."
+
+            [[ "$SELECTION" -ge 1 && "$SELECTION" -le "$MATCH_COUNT" ]] \
+                || die "Selection out of range."
+
+            PAGE_ID="$(
+                echo "$MATCHES" |
+                    sed -n "${SELECTION}p" |
+                    cut -f1
+            )"
+
+        else
+            PAGE_ID="$(echo "$MATCHES" | cut -f1)"
+        fi
+
+    else
+
+        # ----------------------------------------------------
+        # No task query: display all tasks and let user choose
+        # ----------------------------------------------------
+
+        echo
+        echo "Tasks:"
+        echo
+
+        TASKS="$(
+            echo "$QUERY_RESPONSE" |
+                jq -r \
+                    --arg title_prop "$TITLE_PROPERTY_NAME" \
+                    --arg status_prop "$STATUS_PROPERTY_NAME" \
+                    --arg status_type "$STATUS_PROPERTY_TYPE" '
+                    .results[]
+                    |
+                    {
+                        id: .id,
+                        title: (
+                            .properties[$title_prop].title
+                            | map(.plain_text)
+                            | join("")
+                        ),
+                        status: (
+                            .properties[$status_prop][$status_type].name // "<none>"
+                        )
+                    }
+                    |
+                    [.id, .title, .status]
+                    |
+                    @tsv
+                '
+        )"
+
+        INDEX=1
+
+        while IFS=$'\t' read -r TASK_ID TASK_TITLE TASK_STATUS; do
+            printf "  %d) %-50s [%s]\n" \
+                "$INDEX" \
+                "$TASK_TITLE" \
+                "$TASK_STATUS"
+
+            INDEX=$((INDEX + 1))
+        done <<< "$TASKS"
+
+        TASK_COUNT="$(echo "$TASKS" | wc -l | tr -d ' ')"
+
+        echo
+        printf 'Select task [1-%d]: ' "$TASK_COUNT"
+        read -r SELECTION
+
+        [[ "$SELECTION" =~ ^[0-9]+$ ]] \
+            || die "Invalid selection."
+
+        [[ "$SELECTION" -ge 1 && "$SELECTION" -le "$TASK_COUNT" ]] \
+            || die "Selection out of range."
+
+        PAGE_ID="$(
+            echo "$TASKS" |
+                sed -n "${SELECTION}p" |
+                cut -f1
+        )"
+    fi
+fi
+
+
+# ============================================================
+# Retrieve selected page
+# ============================================================
+
+PAGE_RESPONSE="$(
+    notion_request GET "/pages/$PAGE_ID"
+)"
+
+if echo "$PAGE_RESPONSE" | jq -e '.object == "error"' >/dev/null 2>&1; then
+    ERROR_CODE="$(echo "$PAGE_RESPONSE" | jq -r '.code // "unknown"')"
+    ERROR_MESSAGE="$(echo "$PAGE_RESPONSE" | jq -r '.message // "Unknown Notion API error"')"
+
+    die "Could not retrieve page.
+
+Code:
+$ERROR_CODE
+
+Message:
+$ERROR_MESSAGE"
+fi
+
+
+# ============================================================
+# Determine page title
+# ============================================================
+
+TITLE_PROPERTY_NAME="$(
+    echo "$SCHEMA_RESPONSE" |
+        jq -r '
+            .properties
+            | to_entries[]
+            | select(.value.type == "title")
+            | .key
+        ' |
+        head -n 1
+)"
+
+TASK_TITLE="$(
+    echo "$PAGE_RESPONSE" |
+        jq -r --arg prop "$TITLE_PROPERTY_NAME" '
+            .properties[$prop].title
+            | map(.plain_text)
+            | join("")
+        '
+)"
+
+CURRENT_STATUS="$(
+    echo "$PAGE_RESPONSE" |
+        jq -r --arg prop "$STATUS_PROPERTY_NAME" --arg type "$STATUS_PROPERTY_TYPE" '
+            .properties[$prop][$type].name // "<none>"
+        '
+)"
+
+
+# ============================================================
+# Check if anything actually changes
+# ============================================================
+
+if [[ "$CURRENT_STATUS" == "$STATUS" ]]; then
+    echo
+    echo "Task is already '$STATUS'. Nothing to change."
+    exit 0
+fi
+
+
+# ============================================================
+# Show proposed change
+# ============================================================
+
+echo
+echo "----------------------------------------"
+echo "Notion task update"
+echo "----------------------------------------"
+echo "Task        : $TASK_TITLE"
+echo "Page ID     : $PAGE_ID"
+echo "Property    : $STATUS_PROPERTY_NAME"
+echo "Current     : $CURRENT_STATUS"
+echo "New status  : $STATUS"
+echo "Option ID   : $STATUS_OPTION_ID"
+echo "----------------------------------------"
+
+
+# ============================================================
+# Confirmation
+# ============================================================
+
+if [[ "$AUTO_YES" != true ]]; then
+
+    printf '\nUpdate this task? [Y/n] '
+    read -r ANSWER
+
+    case "$ANSWER" in
+        n|N|no|NO|No)
+            echo "Cancelled."
+            exit 0
+            ;;
+    esac
+fi
+
+
+# ============================================================
+# Update page
+# ============================================================
+
+log "Updating Notion task"
+
+UPDATE_BODY="$(
+    jq -n \
+        --arg property "$STATUS_PROPERTY_NAME" \
+        --arg type "$STATUS_PROPERTY_TYPE" \
+        --arg option_id "$STATUS_OPTION_ID" \
+        '{
+            properties: {
+                ($property): {
+                    ($type): {
+                        id: $option_id
+                    }
+                }
+            }
+        }'
+)"
+
+UPDATE_RESPONSE="$(
+    notion_request PATCH \
+        "/pages/$PAGE_ID" \
+        "$UPDATE_BODY"
+)"
+
+if echo "$UPDATE_RESPONSE" | jq -e '.object == "error"' >/dev/null 2>&1; then
+    ERROR_CODE="$(echo "$UPDATE_RESPONSE" | jq -r '.code // "unknown"')"
+    ERROR_MESSAGE="$(echo "$UPDATE_RESPONSE" | jq -r '.message // "Unknown Notion API error"')"
+
+    die "Could not update Notion task.
+
+Code:
+$ERROR_CODE
+
+Message:
+$ERROR_MESSAGE"
+fi
+
+
+# ============================================================
+# Success
+# ============================================================
+
+echo
+echo "========================================"
+echo "Notion task updated"
+echo "========================================"
+echo "Task   : $TASK_TITLE"
+echo "Status : $CURRENT_STATUS -> $STATUS"
+echo "Page   : $PAGE_ID"
+echo "========================================"
+
+

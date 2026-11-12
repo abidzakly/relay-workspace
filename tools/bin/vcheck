@@ -1,0 +1,128 @@
+#!/usr/bin/env bash
+
+# Values saved in Relay (Settings > Repos > Release scripts). A variable already set in the environment wins.
+_cd_env="${RELAY_SCRIPTS_ENV:-${CORE_DASHBOARD_SCRIPTS_ENV:-${XDG_CONFIG_HOME:-$HOME/.config}/relay/scripts.env}}"
+[[ -r "$_cd_env" ]] || _cd_env="${XDG_CONFIG_HOME:-$HOME/.config}/core-dashboard/scripts.env"
+# shellcheck source=/dev/null
+[[ -r "$_cd_env" ]] && . "$_cd_env"
+unset _cd_env
+# vcheck — list MRs of the current release (since previous version-update merge)
+# and report each linked Notion card's status. Read-only unless --fix.
+#
+# Usage: vcheck [-b base-branch] [--token <gitlab-token>] [--fix] [--all]
+#   (on 401/404 it prompts for a token that can read the project's MRs)
+#   -b, --base <branch>  base branch (default: develop)
+#   --status <name>      status to set (default: Ready to Test)
+#   --fix                set cards not "Ready to Test" to "Ready to Test"
+#   --all                show cards already Ready to Test too (default: summary only)
+set -uo pipefail
+
+BASE="${VCHECK_BASE:-develop}"; FIX=false; ALL=false; TARGET="${NOTION_READY_STATUS:-Ready to Test}"; todo_links=(); todo_titles=()
+PREFIX="Merge branch '${VU_BRANCH_PREFIX:-release/v}"
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    -b|--base) BASE="$2"; shift 2;;
+    --token) export GITLAB_TOKEN="$2"; shift 2;;
+    --fix) FIX=true; shift;;
+    --status) TARGET="$2"; shift 2;;
+    --all) ALL=true; shift;;
+    -h|--help) sed -n '2,12p' "$0"; exit 0;;
+    *) echo "unknown arg: $1" >&2; exit 1;;
+  esac
+done
+
+# shellcheck disable=SC1090
+[[ -f ~/.config/nts/env ]] && source ~/.config/nts/env
+
+NTS="$(command -v nts || echo "$HOME/bin/nts")"
+git rev-parse --git-dir >/dev/null 2>&1 || { echo "not in a git repo" >&2; exit 1; }
+command -v glab >/dev/null || { echo "glab not found" >&2; exit 1; }
+
+git fetch origin "$BASE" -q 2>/dev/null || true
+REF="origin/$BASE"; git rev-parse -q --verify "$REF" >/dev/null || REF="$BASE"
+
+merges="$(git log --first-parent --merges --format='%H%x09%s' "$REF" | grep -F "$PREFIX" || true)"
+current="$(sed -n 1p <<<"$merges" | cut -f1)"
+prev="$(sed -n 2p <<<"$merges" | cut -f1)"
+subj="$(sed -n 1p <<<"$merges" | cut -f2)"
+[[ -n "$current" && -n "$prev" ]] || { echo "Could not find two version-update merges on $REF" >&2; exit 1; }
+echo "Release: $subj"
+echo "Range:   ${prev:0:8}..${current:0:8}"
+echo
+
+declare -a rows=()
+ready=0; notready=0; nolink=0; fixed=0; seen=""
+
+while IFS=$'\t' read -r sha s; do
+  [[ "$s" == *"$PREFIX"* ]] && continue
+  iid="$(git show -s --format=%B "$sha" | grep -oE 'merge request [^[:space:]]*![0-9]+' | grep -oE '[0-9]+$' | head -n1)"
+  [[ -n "$iid" ]] || continue
+  json=""
+  while true; do
+    json="$(glab api "projects/:id/merge_requests/${iid}" 2>/dev/null </dev/null)" && break
+    printf 'GitLab API rejected the request. Enter a token with read_api (Enter to skip): ' >&2
+    IFS= read -rs tok </dev/tty || tok=""; echo >&2
+    [[ -n "$tok" ]] || { json=""; break; }
+    export GITLAB_TOKEN="$tok"
+  done
+  [[ -n "$json" ]] || { echo "!$iid: cannot fetch MR"; continue; }
+  links="$(python3 -c '
+import json,re,sys
+d=json.load(sys.stdin).get("description") or ""
+s=set()
+for u in re.findall(r"https?://(?:[\w-]+\.)?notion\.(?:so|site|com)/[^\s<>\"\x27)\]]+",d):
+    u=u.rstrip(".,;:")
+    if u not in s: s.add(u); print(u)
+' <<<"$json")"
+  if [[ -z "$links" ]]; then echo "!$iid: no Notion link"; nolink=$((nolink+1)); continue; fi
+  while IFS= read -r link; do
+    [[ -n "$link" ]] || continue
+    case "$seen" in *"|$link|"*) continue;; esac
+    seen+="|$link|"
+    out="$("$NTS" show --page "$link" 2>&1)"
+    status="$(sed -n 's/^Status: *//p' <<<"$out" | head -n1)"
+    title="$(grep -v -E '^(==>|Authenticated|Page:|Status:|To-do|$|  )' <<<"$out" | head -n1)"
+    [[ -n "$status" ]] || status="?(unreadable)"
+    if [[ "$status" == "Ready to Test" ]]; then
+      ready=$((ready+1))
+      $ALL && echo "OK   !$iid  [$status]  $title"
+    else
+      notready=$((notready+1))
+      echo "TODO !$iid  [$status]  $title"
+      echo "       $link"
+      todo_links+=("$link"); todo_titles+=("$title")
+      if $FIX && [[ "$status" != \?* ]]; then
+        if "$NTS" --page "$link" --status "$TARGET" -y >/dev/null 2>&1; then
+          echo "       -> set to $TARGET"; fixed=$((fixed+1))
+        else echo "       -> update failed"; fi
+      fi
+    fi
+  done <<<"$links"
+done < <(git log --first-parent --merges --format='%H%x09%s' "${prev}..${current}")
+
+echo
+echo "Ready to Test: $ready | Not yet: $notready | MRs w/o link: $nolink | Fixed: $fixed"
+
+if ! $FIX && [[ ${#todo_links[@]} -gt 0 ]] && { : </dev/tty; } 2>/dev/null; then
+  printf 'Set %d card(s) to "%s"?  [a]ll / [s]elect one by one / [n]o (default n): ' "${#todo_links[@]}" "$TARGET"
+  IFS= read -r ans </dev/tty || ans=n
+  case "$ans" in
+    a|A|all|y|Y)  pick=all;;
+    s|S|select)   pick=ask;;
+    *)            pick=none;;
+  esac
+  if [[ $pick != none ]]; then
+    for i in "${!todo_links[@]}"; do
+      if [[ $pick == ask ]]; then
+        printf '  %s [y/N] ' "${todo_titles[$i]}"
+        IFS= read -r a </dev/tty || a=n
+        [[ "$a" =~ ^[yY] ]] || continue
+      fi
+      if "$NTS" --page "${todo_links[$i]}" --status "$TARGET" -y >/dev/null 2>&1; then
+        echo "  OK   ${todo_titles[$i]} -> $TARGET"; fixed=$((fixed+1))
+      else echo "  FAIL ${todo_titles[$i]}"; fi
+    done
+    echo "Updated: $fixed"
+  fi
+fi
+[[ $notready -eq 0 || $fixed -eq $notready ]]

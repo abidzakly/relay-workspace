@@ -1,0 +1,85 @@
+# Relay in Docker. Native install (`pnpm install && pnpm start`) is the default; use this when you prefer a container.
+#
+#   docker compose up -d --build                                  # the dashboard only
+#   docker compose --profile ngrok --profile tailscale up -d      # plus the public webhook URL and phone access
+#   open http://127.0.0.1:3000
+#
+# git, flutter and the release scripts run on the host with its own toolchain, through the host agent (`pnpm agent`).
+
+services:
+  app:
+    build: .
+    init: true
+    env_file:
+      - path: .env
+        required: true
+    environment:
+      # Pinned for the container layout; values in .env cannot override these.
+      NODE_ENV: production
+      DATA_DIR: /app/data
+      DASHBOARD_HOST: 127.0.0.1
+      DASHBOARD_PORT: 3000
+      WEBHOOK_HOST: 0.0.0.0
+      WEBHOOK_PORT: 3001
+      HOST_AGENT_URL: http://host.docker.internal:${HOST_AGENT_PORT:-3002}
+      # The bot clones are on the host's disk, at the same path here, so both sides name the same files.
+      CLONES_DIR: ${HOME}/.relay/clones
+    extra_hosts:
+      - host.docker.internal:host-gateway
+    # Bound to the host's loopback only: the dashboard must never be reachable from the LAN.
+    ports:
+      - 127.0.0.1:${DASHBOARD_PORT:-3000}:8080 # dashboard (via socat, see docker/app-entrypoint.sh)
+      - 127.0.0.1:${WEBHOOK_PORT:-3001}:3001 # webhook listener
+    volumes:
+      - ./data:/app/data
+      - ${HOME}/.relay/clones:${HOME}/.relay/clones
+    restart: unless-stopped
+
+  # Public URL for GitLab webhooks (profile `ngrok`): forwards NGROK_URL to the webhook listener (app:3001).
+  # Only port 3001 is exposed; the traffic policy lets POST /webhook/* through and returns 404 for everything else.
+  # Stop any ngrok agent on the host first: one domain cannot be served by two agents.
+  ngrok:
+    profiles: [ngrok]
+    image: ngrok/ngrok:3
+    command:
+      - http
+      - app:3001
+      - --url=${NGROK_URL:-}
+      - --traffic-policy-file=/etc/ngrok/policy.yml
+      - --log=stdout
+    environment:
+      NGROK_AUTHTOKEN: ${NGROK_AUTHTOKEN:-}
+    volumes:
+      - ./docker/ngrok/policy.yml:/etc/ngrok/policy.yml:ro
+    depends_on: [app]
+    restart: unless-stopped
+
+  # Phone access (profile `tailscale`): its own Tailscale node, so the host needs no Tailscale login.
+  # `serve` proxies https://<TS_HOSTNAME>.<tailnet>.ts.net to the dashboard (socat :8080 in the app container)
+  # and adds the Tailscale-User-Login header the server checks against DASHBOARD_TLS_USERS.
+  # Put an auth key in docker/tailscale/authkey (git-ignored) first.
+  # Never turn on Funnel here: it would put the dashboard on the public internet.
+  tailscale:
+    profiles: [tailscale]
+    image: tailscale/tailscale:stable
+    hostname: ${TS_HOSTNAME:-relay}
+    environment:
+      TS_HOSTNAME: ${TS_HOSTNAME:-relay}
+      TS_AUTHKEY: file:/run/secrets/ts_authkey
+      TS_STATE_DIR: /var/lib/tailscale
+      TS_USERSPACE: 'true'
+      TS_ACCEPT_DNS: 'false'
+      TS_SERVE_CONFIG: /config/serve.json
+    secrets: [ts_authkey]
+    volumes:
+      - tailscale-state:/var/lib/tailscale
+      - ./docker/tailscale/serve.json:/config/serve.json:ro
+    depends_on: [app]
+    restart: unless-stopped
+
+secrets:
+  ts_authkey:
+    file: ./docker/tailscale/authkey
+
+volumes:
+  tailscale-state:

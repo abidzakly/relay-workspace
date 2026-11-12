@@ -1,0 +1,11 @@
+packages:
+  - packages/*
+  - apps/*
+
+# pnpm >= 11 blocks dependency build scripts unless allowed here.
+allowBuilds:
+  esbuild: true
+  node-pty: true
+
+# `NODE_ENV=production node …` in package.json scripts works on Windows too (bash-like JS shell).
+shellEmulator: true

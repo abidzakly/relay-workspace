@@ -1,0 +1,765 @@
+/*
+ * Code Reviewer. Quiet surfaces, one accent per meaning:
+ *   green = added, red = removed, marigold = navigation/selection, amber = needs attention.
+ * Tints are mixed from the app tokens (index.css), so light and dark follow the theme for free.
+ */
+
+/* In the components layer, so Tailwind utilities on the same element (lg:hidden, gap-*) still win. */
+@layer components {
+  .rv-root {
+    --rv-mono: var(--font-mono);
+    --rv-gutter-w: 3.25rem;
+    --rv-top: 5.5rem;
+    --rv-line: 1.65;
+    --rv-add-bg: color-mix(in oklch, var(--success) 9%, transparent);
+    --rv-add-gutter: color-mix(in oklch, var(--success) 15%, transparent);
+    --rv-add-word: color-mix(in oklch, var(--success) 30%, transparent);
+    --rv-add-edge: color-mix(in oklch, var(--success) 70%, transparent);
+    --rv-del-bg: color-mix(in oklch, var(--destructive) 8%, transparent);
+    --rv-del-gutter: color-mix(in oklch, var(--destructive) 14%, transparent);
+    --rv-del-word: color-mix(in oklch, var(--destructive) 28%, transparent);
+    --rv-del-edge: color-mix(in oklch, var(--destructive) 65%, transparent);
+    --rv-hunk-bg: color-mix(in oklch, var(--primary) 5%, transparent);
+    --rv-surface: color-mix(in oklch, var(--card) 100%, transparent);
+    --rv-ease: cubic-bezier(0.32, 0.72, 0, 1);
+  }
+  @media (max-width: 767px) {
+    .rv-root {
+      --rv-gutter-w: 2.6rem;
+    }
+  }
+
+  /* ───────────── toolbar (sticky glass) ───────────── */
+  .rv-toolbar {
+    position: sticky;
+    top: 0;
+    z-index: 20;
+    display: grid;
+    gap: 0.5rem;
+    margin-inline: -0.25rem;
+    padding: 0.6rem 0.75rem 0.55rem;
+    border: 1px solid var(--glass-border);
+    border-radius: var(--radius-surface);
+    background: var(--glass-bg);
+    backdrop-filter: var(--glass-blur);
+    -webkit-backdrop-filter: var(--glass-blur);
+    box-shadow: var(--glass-shadow);
+  }
+
+  .rv-icon-btn {
+    display: inline-grid;
+    place-items: center;
+    width: 2.25rem;
+    height: 2.25rem;
+    flex-shrink: 0;
+    border-radius: 0.65rem;
+    color: var(--muted-foreground);
+    transition:
+      background-color 160ms ease,
+      color 160ms ease,
+      transform 120ms var(--rv-ease);
+  }
+  .rv-icon-btn:hover {
+    background: var(--accent);
+    color: var(--foreground);
+  }
+  .rv-icon-btn:active {
+    transform: scale(0.94);
+  }
+  .rv-icon-btn:focus-visible,
+  .rv-segment:focus-visible,
+  .rv-pill:focus-visible,
+  .rv-viewed:focus-visible,
+  .rv-rail-item:focus-visible,
+  .rv-file-toggle:focus-visible,
+  .rv-pick:focus-visible {
+    outline: 2px solid var(--ring);
+    outline-offset: 1px;
+  }
+  .rv-icon-btn-on {
+    color: var(--primary-ink);
+    background: color-mix(in oklch, var(--primary) 10%, transparent);
+  }
+
+  /* Segmented control: the selected segment is a raised chip that glides between states. */
+  .rv-segmented {
+    display: inline-flex;
+    gap: 2px;
+    padding: 3px;
+    border-radius: 0.7rem;
+    background: var(--muted);
+    box-shadow: inset 0 0 0 1px color-mix(in oklch, var(--border) 60%, transparent);
+  }
+  .rv-segment {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.4rem;
+    height: 1.85rem;
+    padding: 0 0.7rem;
+    border-radius: 0.5rem;
+    font-size: 0.8125rem;
+    font-weight: 500;
+    color: var(--muted-foreground);
+    white-space: nowrap;
+    transition:
+      background-color 200ms var(--rv-ease),
+      color 200ms ease,
+      box-shadow 200ms ease,
+      transform 120ms var(--rv-ease);
+  }
+  .rv-segment:hover {
+    color: var(--foreground);
+  }
+  .rv-segment:active {
+    transform: scale(0.97);
+  }
+  .rv-segment-on {
+    background: var(--background);
+    color: var(--foreground);
+    box-shadow:
+      0 1px 2px color-mix(in oklch, var(--foreground) 12%, transparent),
+      0 0 0 0.5px color-mix(in oklch, var(--foreground) 10%, transparent);
+  }
+  .rv-segmented-lg .rv-segment {
+    height: 2.25rem;
+    padding: 0 1rem;
+    font-size: 0.875rem;
+  }
+
+  .rv-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    height: 1.75rem;
+    padding: 0 0.7rem;
+    border-radius: 999px;
+    border: 1px solid var(--border);
+    background: var(--background);
+    font-size: 0.75rem;
+    font-weight: 500;
+    color: var(--muted-foreground);
+    transition:
+      background-color 150ms ease,
+      color 150ms ease,
+      transform 120ms var(--rv-ease);
+  }
+  .rv-pill:hover:not(:disabled) {
+    background: var(--accent);
+    color: var(--foreground);
+  }
+  .rv-pill:active:not(:disabled) {
+    transform: scale(0.96);
+  }
+  .rv-pill:disabled {
+    opacity: 0.5;
+  }
+
+  .rv-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.2rem;
+    height: 1.15rem;
+    padding: 0 0.4rem;
+    border-radius: 999px;
+    font-size: 0.6875rem;
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+    color: color-mix(in oklch, var(--warning) 80%, var(--foreground));
+    background: color-mix(in oklch, var(--warning) 16%, transparent);
+  }
+
+  .rv-kbd {
+    display: inline-block;
+    min-width: 1.1rem;
+    padding: 0 0.25rem;
+    border: 1px solid var(--border);
+    border-bottom-width: 2px;
+    border-radius: 0.3rem;
+    font-family: var(--rv-mono);
+    font-size: 0.6875rem;
+    line-height: 1.1rem;
+    text-align: center;
+    color: var(--foreground);
+    background: var(--background);
+  }
+
+  .rv-progress {
+    position: relative;
+    display: inline-block;
+    width: 4.5rem;
+    height: 0.3rem;
+    overflow: hidden;
+    border-radius: 999px;
+    background: var(--muted);
+  }
+  .rv-progress > span {
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    background: var(--success);
+    transform-origin: left;
+    transition: transform 500ms var(--rv-ease);
+  }
+
+  .rv-branch {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.25rem;
+    max-width: 18rem;
+    padding: 0.05rem 0.4rem;
+    border-radius: 0.375rem;
+    background: var(--muted);
+    color: var(--foreground);
+  }
+
+  .rv-card {
+    padding: 0.875rem 1rem;
+    border: 1px solid var(--border);
+    border-radius: 0.9rem;
+    background: var(--card);
+  }
+
+  /* ───────────── picker ───────────── */
+  .rv-pick {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 0.85rem 1rem;
+    border: 1px solid var(--border);
+    border-radius: 0.9rem;
+    background: var(--card);
+    color: var(--card-foreground);
+    transition:
+      transform 220ms var(--rv-ease),
+      box-shadow 220ms ease,
+      border-color 220ms ease,
+      background-color 220ms ease;
+  }
+  a.rv-pick:hover {
+    transform: translateY(-1px);
+    border-color: color-mix(in oklch, var(--primary) 35%, var(--border));
+    box-shadow: 0 10px 28px -18px color-mix(in oklch, var(--primary) 60%, transparent);
+  }
+  a.rv-pick:active {
+    transform: translateY(0) scale(0.995);
+  }
+
+  .rv-skeleton {
+    display: block;
+    border-radius: 0.375rem;
+    background: linear-gradient(
+      90deg,
+      var(--muted) 0%,
+      color-mix(in oklch, var(--muted) 55%, var(--background)) 50%,
+      var(--muted) 100%
+    );
+    background-size: 200% 100%;
+    animation: rv-shimmer 1.4s ease-in-out infinite;
+  }
+  @keyframes rv-shimmer {
+    from {
+      background-position: 100% 0;
+    }
+    to {
+      background-position: -100% 0;
+    }
+  }
+
+  /* ───────────── rail ───────────── */
+  .rv-rail {
+    position: sticky;
+    top: calc(var(--rv-top) + 0.75rem);
+    align-self: start;
+    max-height: calc(100dvh - var(--rv-top) - 1.5rem);
+    grid-template-rows: minmax(0, 1fr);
+  }
+  .rv-rail-item {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    width: 100%;
+    min-width: 0;
+    padding: 0.3rem 0.5rem;
+    border-radius: 0.5rem;
+    text-align: left;
+    color: var(--muted-foreground);
+    transition:
+      background-color 150ms ease,
+      color 150ms ease,
+      opacity 200ms ease;
+  }
+  .rv-rail-dir {
+    display: flex;
+    align-items: center;
+    gap: 0.3rem;
+    width: 100%;
+    min-width: 0;
+    padding: 0.35rem 0.5rem 0.15rem;
+    border-radius: 0.5rem;
+    text-align: left;
+    font-family: var(--font-mono, ui-monospace, monospace);
+    font-size: 11px;
+    color: color-mix(in oklch, var(--muted-foreground) 85%, transparent);
+  }
+  .rv-rail-dir:hover {
+    color: var(--foreground);
+  }
+  .rv-rail-dir:focus-visible,
+  .rv-rail-item:focus-visible {
+    outline: 2px solid var(--ring);
+    outline-offset: -2px;
+  }
+  .rv-rail-item:hover {
+    background: color-mix(in oklch, var(--accent) 70%, transparent);
+    color: var(--foreground);
+  }
+  .rv-rail-item-on {
+    background: var(--accent);
+    color: var(--foreground);
+    font-weight: 500;
+    box-shadow: inset 2px 0 0 var(--primary);
+  }
+
+  /* ───────────── file card ───────────── */
+  .rv-file {
+    border: 1px solid var(--border);
+    border-radius: 0.9rem;
+    background: var(--card);
+    scroll-margin-top: calc(var(--rv-top) + 0.75rem);
+    /* Clip rounded corners, but keep the sticky header working (overflow: clip does not create a scroller). */
+    overflow: clip;
+    box-shadow: 0 1px 2px color-mix(in oklch, var(--foreground) 4%, transparent);
+  }
+  .rv-file-header {
+    position: sticky;
+    top: var(--rv-top);
+    z-index: 5;
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    min-height: 2.75rem;
+    padding: 0.35rem 0.6rem 0.35rem 0.35rem;
+    background: color-mix(in oklch, var(--card) 88%, transparent);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    border-bottom: 1px solid var(--border);
+  }
+  .rv-file-toggle {
+    display: grid;
+    place-items: center;
+    width: 1.85rem;
+    height: 1.85rem;
+    flex-shrink: 0;
+    border-radius: 0.5rem;
+    color: var(--muted-foreground);
+    transition: background-color 150ms ease;
+  }
+  .rv-file-toggle:hover {
+    background: var(--accent);
+    color: var(--foreground);
+  }
+  .rv-viewed {
+    display: inline-flex;
+    flex-shrink: 0;
+    align-items: center;
+    gap: 0.35rem;
+    height: 1.85rem;
+    padding: 0 0.55rem;
+    border-radius: 0.5rem;
+    border: 1px solid transparent;
+    font-size: 0.75rem;
+    font-weight: 500;
+    color: var(--muted-foreground);
+    transition:
+      background-color 180ms ease,
+      color 180ms ease,
+      border-color 180ms ease,
+      transform 120ms var(--rv-ease);
+  }
+  .rv-viewed:hover {
+    border-color: var(--border);
+    color: var(--foreground);
+  }
+  .rv-viewed:active {
+    transform: scale(0.95);
+  }
+  .rv-viewed-on {
+    color: var(--success);
+    background: color-mix(in oklch, var(--success) 10%, transparent);
+  }
+  .rv-viewed-on svg {
+    animation: rv-pop 320ms var(--rv-ease);
+  }
+  .rv-file:has(.rv-viewed-on) .rv-file-header {
+    border-bottom-color: transparent;
+  }
+
+  /* Collapse: the row track animates; the body is unmounted after, so long diffs never cost layout when folded. */
+  .rv-collapse {
+    display: grid;
+    grid-template-rows: 1fr;
+    transition: grid-template-rows 280ms var(--rv-ease);
+  }
+  .rv-collapsed {
+    grid-template-rows: 0fr;
+  }
+
+  /* ───────────── diff lines ───────────── */
+  .rv-code-block {
+    font-family: var(--rv-mono);
+    font-size: 12.75px;
+    line-height: var(--rv-line);
+    font-variant-ligatures: none;
+    tab-size: 4;
+    color: var(--foreground);
+  }
+  .rv-nowrap {
+    overflow-x: auto;
+  }
+  .rv-nowrap .rv-code-inner {
+    width: max-content;
+    min-width: 100%;
+  }
+  .rv-nowrap .rv-code {
+    white-space: pre;
+  }
+  .rv-wrap .rv-code {
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+  }
+
+  .rv-row {
+    display: grid;
+  }
+  .rv-inline {
+    grid-template-columns: var(--rv-gutter-w) var(--rv-gutter-w) 1.25rem minmax(0, 1fr);
+  }
+  .rv-split {
+    grid-template-columns: var(--rv-gutter-w) minmax(0, 1fr) var(--rv-gutter-w) minmax(0, 1fr);
+  }
+  .rv-split > :nth-child(3) {
+    border-left: 1px solid var(--border);
+  }
+
+  .rv-gutter {
+    position: relative;
+    padding: 0 0.6rem 0 0.25rem;
+    text-align: right;
+    font-size: 11.5px;
+    font-variant-numeric: tabular-nums;
+    color: color-mix(in oklch, var(--muted-foreground) 70%, transparent);
+    user-select: none;
+    -webkit-user-select: none;
+  }
+  .rv-gutter-add {
+    background: var(--rv-add-gutter);
+    color: color-mix(in oklch, var(--success) 75%, var(--foreground));
+  }
+  .rv-gutter-del {
+    background: var(--rv-del-gutter);
+    color: color-mix(in oklch, var(--destructive) 75%, var(--foreground));
+  }
+  .rv-sign {
+    text-align: center;
+    user-select: none;
+    -webkit-user-select: none;
+    color: var(--muted-foreground);
+  }
+  .rv-code {
+    min-width: 0;
+    padding: 0 1rem 0 0.35rem;
+  }
+  .rv-split .rv-code {
+    padding-left: 0.6rem;
+  }
+
+  .rv-inline.rv-add,
+  .rv-code.rv-add {
+    background: var(--rv-add-bg);
+  }
+  .rv-inline.rv-del,
+  .rv-code.rv-del {
+    background: var(--rv-del-bg);
+  }
+  .rv-inline.rv-add .rv-sign {
+    color: var(--success);
+    box-shadow: inset 2px 0 0 var(--rv-add-edge);
+  }
+  .rv-inline.rv-del .rv-sign {
+    color: var(--destructive);
+    box-shadow: inset 2px 0 0 var(--rv-del-edge);
+  }
+  .rv-inline.rv-add .rv-sign,
+  .rv-inline.rv-add .rv-code,
+  .rv-inline.rv-del .rv-sign,
+  .rv-inline.rv-del .rv-code {
+    background: transparent;
+  }
+  .rv-split .rv-code.rv-add {
+    box-shadow: inset 2px 0 0 var(--rv-add-edge);
+  }
+  .rv-split .rv-code.rv-del {
+    box-shadow: inset 2px 0 0 var(--rv-del-edge);
+  }
+  /* The split view's +/− marker: drawn in the code cell, outside the selectable text. */
+  .rv-split-sign {
+    display: inline-block;
+    width: 1ch;
+    margin-right: 0.5ch;
+    user-select: none;
+    -webkit-user-select: none;
+    color: transparent;
+  }
+  .rv-split-sign-add {
+    color: var(--success);
+  }
+  .rv-split-sign-del {
+    color: var(--destructive);
+  }
+  /* A long file's not-yet-rendered rows, drawn as faint lines until they mount. */
+  .rv-chunk-rest {
+    background: repeating-linear-gradient(
+      to bottom,
+      transparent 0 20px,
+      color-mix(in oklch, var(--muted) 45%, transparent) 20px 21px
+    );
+  }
+  /* Files far off screen skip layout and paint until scrolled near. */
+  .rv-file {
+    content-visibility: auto;
+    contain-intrinsic-size: auto 240px;
+  }
+  .rv-empty {
+    background: repeating-linear-gradient(
+      -45deg,
+      transparent 0 6px,
+      color-mix(in oklch, var(--muted) 60%, transparent) 6px 7px
+    );
+  }
+
+  .rv-word-add {
+    background: var(--rv-add-word);
+    border-radius: 3px;
+    box-shadow: 0 0 0 1px var(--rv-add-word);
+  }
+  .rv-word-del {
+    background: var(--rv-del-word);
+    border-radius: 3px;
+    box-shadow: 0 0 0 1px var(--rv-del-word);
+    text-decoration: line-through;
+    text-decoration-color: color-mix(in oklch, var(--destructive) 45%, transparent);
+  }
+  .rv-eol {
+    margin-left: 0.4rem;
+    color: var(--destructive);
+    opacity: 0.6;
+    user-select: none;
+  }
+
+  /* Line hover: a faint wash, and the comment button slides into the gutter. */
+  .rv-row:hover {
+    background-image: linear-gradient(
+      color-mix(in oklch, var(--primary) 5%, transparent),
+      color-mix(in oklch, var(--primary) 5%, transparent)
+    );
+  }
+  .rv-add-comment {
+    position: absolute;
+    top: 50%;
+    left: 0.2rem;
+    display: grid;
+    place-items: center;
+    width: 1.35rem;
+    height: 1.35rem;
+    border-radius: 0.4rem;
+    color: var(--primary-foreground);
+    background: var(--primary);
+    box-shadow: 0 2px 8px -2px color-mix(in oklch, var(--primary) 70%, transparent);
+    opacity: 0;
+    transform: translate(-4px, -50%) scale(0.85);
+    transition:
+      opacity 140ms ease,
+      transform 180ms var(--rv-ease);
+  }
+  .rv-row:hover .rv-add-comment,
+  .rv-add-comment:focus-visible {
+    opacity: 1;
+    transform: translate(0, -50%) scale(1);
+  }
+  @media (pointer: coarse) {
+    .rv-add-comment {
+      opacity: 0.55;
+      transform: translate(0, -50%) scale(0.9);
+    }
+  }
+
+  .rv-hunk {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    padding: 0.3rem 1rem 0.3rem calc(var(--rv-gutter-w) - 1.5rem);
+    font-size: 11.5px;
+    color: var(--muted-foreground);
+    background: var(--rv-hunk-bg);
+    border-block: 1px solid color-mix(in oklch, var(--border) 60%, transparent);
+    scroll-margin-top: calc(var(--rv-top) + 3.5rem);
+    user-select: none;
+  }
+  .rv-hunk-group:first-child .rv-hunk {
+    border-top: 0;
+  }
+  .rv-hunk-dots {
+    font-size: 1rem;
+    line-height: 1;
+    color: var(--primary-ink);
+  }
+  .rv-hunk-section {
+    color: color-mix(in oklch, var(--muted-foreground) 80%, transparent);
+  }
+
+  /* ───────────── threads ───────────── */
+  .rv-thread-slot {
+    padding: 0.6rem 1rem 0.75rem calc(var(--rv-gutter-w) + 0.5rem);
+    background: color-mix(in oklch, var(--muted) 45%, transparent);
+    border-block: 1px solid color-mix(in oklch, var(--border) 70%, transparent);
+    font-family:
+      ui-sans-serif,
+      system-ui,
+      -apple-system,
+      'Segoe UI',
+      Roboto,
+      sans-serif;
+    white-space: normal;
+  }
+  @media (max-width: 767px) {
+    .rv-thread-slot {
+      padding-left: 0.6rem;
+      padding-right: 0.6rem;
+    }
+  }
+  .rv-thread {
+    max-width: 52rem;
+    padding: 0.75rem 0.9rem;
+    border: 1px solid var(--border);
+    border-radius: 0.8rem;
+    background: var(--card);
+    box-shadow: 0 4px 16px -12px color-mix(in oklch, var(--foreground) 35%, transparent);
+    scroll-margin-top: calc(var(--rv-top) + 3.5rem);
+    animation: rv-rise 260ms var(--rv-ease);
+  }
+  .rv-thread-resolved {
+    background: color-mix(in oklch, var(--card) 70%, transparent);
+    box-shadow: none;
+  }
+  button.rv-thread {
+    transition: background-color 150ms ease;
+  }
+  button.rv-thread:hover {
+    background: var(--card);
+  }
+
+  .rv-done {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    padding: 1.25rem;
+    border-radius: 0.9rem;
+    color: var(--success);
+    font-weight: 500;
+    background: color-mix(in oklch, var(--success) 8%, transparent);
+    animation: rv-pop 420ms var(--rv-ease);
+  }
+
+  /* ───────────── bottom navigation (thumb reach on phones, one glance on desktop) ───────────── */
+  .rv-navbar {
+    position: sticky;
+    bottom: max(0.75rem, env(safe-area-inset-bottom));
+    z-index: 20;
+    align-self: center;
+    display: flex;
+    align-items: center;
+    gap: 0.35rem;
+    max-width: 100%;
+    padding: 0.3rem;
+    border: 1px solid color-mix(in oklch, var(--border) 70%, transparent);
+    border-radius: 999px;
+    background: color-mix(in oklch, var(--background) 80%, transparent);
+    backdrop-filter: saturate(1.6) blur(18px);
+    -webkit-backdrop-filter: saturate(1.6) blur(18px);
+    box-shadow: 0 10px 30px -14px color-mix(in oklch, var(--foreground) 35%, transparent);
+    animation: rv-rise 300ms var(--rv-ease);
+  }
+  .rv-navbar .rv-icon-btn {
+    border-radius: 999px;
+  }
+  .rv-navbar-group {
+    display: flex;
+    align-items: center;
+    gap: 0.1rem;
+    padding-inline: 0.15rem;
+  }
+  .rv-navbar-group + .rv-navbar-group {
+    border-left: 1px solid color-mix(in oklch, var(--border) 80%, transparent);
+  }
+  .rv-navbar-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    height: 2.25rem;
+    padding-inline: 0.75rem;
+    border-radius: 999px;
+    font-size: 0.8rem;
+    font-weight: 500;
+    color: var(--muted-foreground);
+    transition:
+      background-color 150ms,
+      color 150ms;
+  }
+  .rv-navbar-chip:hover {
+    color: var(--foreground);
+    background: color-mix(in oklch, var(--foreground) 6%, transparent);
+  }
+  .rv-navbar-chip:focus-visible {
+    outline: 2px solid var(--ring);
+    outline-offset: 1px;
+  }
+
+  @keyframes rv-rise {
+    from {
+      opacity: 0;
+      transform: translateY(4px);
+    }
+  }
+  @keyframes rv-pop {
+    0% {
+      transform: scale(0.85);
+      opacity: 0.4;
+    }
+    60% {
+      transform: scale(1.06);
+      opacity: 1;
+    }
+  }
+
+  /* Syntax colors: shiki emits light colors inline and the dark ones as `--shiki-dark`. */
+  .dark .rv-code span[style] {
+    color: var(--shiki-dark) !important;
+  }
+
+  ::view-transition-old(root),
+  ::view-transition-new(root) {
+    animation-duration: 220ms;
+    animation-timing-function: var(--rv-ease, ease);
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .rv-root *,
+    .rv-pick,
+    .rv-skeleton {
+      animation: none !important;
+      transition: none !important;
+    }
+  }
+}

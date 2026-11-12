@@ -1,0 +1,355 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+# Values saved in Relay (Settings > Repos > Release scripts). A variable already set in the environment wins.
+_cd_env="${RELAY_SCRIPTS_ENV:-${CORE_DASHBOARD_SCRIPTS_ENV:-${XDG_CONFIG_HOME:-$HOME/.config}/relay/scripts.env}}"
+[[ -r "$_cd_env" ]] || _cd_env="${XDG_CONFIG_HOME:-$HOME/.config}/core-dashboard/scripts.env"
+# shellcheck source=/dev/null
+[[ -r "$_cd_env" ]] && . "$_cd_env"
+unset _cd_env
+
+########################################
+# reauthor
+#
+# Rewrites the author + committer of every commit on the current branch
+# to a chosen identity, then sets that identity as this repo's local
+# git config (user.name / user.email).
+#
+# Default identity is chosen from git remotes (no fzf):
+#   a remote on one of REAUTHOR_WORK_HOSTS -> identity "self"
+#   otherwise -> identity "personal"
+# Override with --identity, --name/--email, or --pick (fzf).
+########################################
+
+CONFIG_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/reauthor"
+IDENTITIES_FILE="$CONFIG_DIR/identities"
+
+usage() {
+cat <<EOF
+Usage:
+    reauthor                              Auto identity from remotes (see below)
+    reauthor --identity LABEL             Use a saved identity
+    reauthor --name NAME --email EMAIL    Use an ad-hoc identity
+    reauthor --pick                       Pick a saved identity via fzf
+    reauthor --add LABEL NAME EMAIL       Save an identity for later use
+    reauthor --list                       List saved identities
+    reauthor -h | --help                  Show this help
+
+Options:
+    --name NAME          New author/committer name
+    --email EMAIL        New author/committer email
+    --identity LABEL     Use a saved identity from $IDENTITIES_FILE
+    --pick               Choose a saved identity with fzf (overrides remote auto)
+    --add LABEL NAME EMAIL   Save a new identity (does not rewrite anything)
+    --list               List saved identities and exit
+    --base REF            Only rewrite commits in REF..current-branch
+                           (default: auto-detect against origin/main,
+                           origin/master, main, or master, whichever is
+                           found and is an ancestor of this branch)
+    --whole-history        Rewrite the ENTIRE branch history back to the
+                           root commit, including any shared/base commits.
+                           Required if no base can be auto-detected and
+                           you don't pass --base.
+    --yes                Skip the confirmation prompt
+    -h, --help            Show this help
+
+Saved identities are stored one per line as: LABEL|NAME|EMAIL
+File: $IDENTITIES_FILE
+
+Default identity (when you omit --identity, --name/--email, and --pick):
+    If any git remote is on one of REAUTHOR_WORK_HOSTS -> "self"
+    Otherwise -> "personal"
+    Run 'reauthor --list' to see name/email for each label.
+
+Examples:
+    reauthor
+    reauthor --yes
+    reauthor --identity work
+    reauthor --name "Jane Doe" --email jane@work.example
+    reauthor --add work "Jane Doe" jane@work.example --yes
+EOF
+}
+
+mkdir -p "$CONFIG_DIR"
+touch "$IDENTITIES_FILE"
+
+########################################
+# Helpers
+########################################
+
+list_identities() {
+    if [[ ! -s "$IDENTITIES_FILE" ]]; then
+        echo "No saved identities yet. Add one with:"
+        echo "  reauthor --add <label> \"<name>\" <email>"
+        return
+    fi
+    awk -F'|' '{printf "%-12s %s <%s>\n", $1, $2, $3}' "$IDENTITIES_FILE"
+}
+
+add_identity() {
+    local label="$1" name="$2" email="$3"
+    if [[ "$label" == *"|"* || "$name" == *"|"* || "$email" == *"|"* ]]; then
+        echo "Label, name, and email cannot contain '|'." >&2
+        exit 1
+    fi
+    if grep -q "^${label}|" "$IDENTITIES_FILE" 2>/dev/null; then
+        # Identity already exists — drop the old line, we'll append the new one below.
+        grep -v "^${label}|" "$IDENTITIES_FILE" > "$IDENTITIES_FILE.tmp" || true
+        mv "$IDENTITIES_FILE.tmp" "$IDENTITIES_FILE"
+    fi
+    echo "${label}|${name}|${email}" >> "$IDENTITIES_FILE"
+    echo "Saved identity '$label': $name <$email>"
+}
+
+lookup_identity() {
+    local label="$1"
+    local line
+    line=$(grep "^${label}|" "$IDENTITIES_FILE" || true)
+    if [[ -z "$line" ]]; then
+        echo "No saved identity named '$label'." >&2
+        echo "Run 'reauthor --list' to see what's available." >&2
+        exit 1
+    fi
+    IFS='|' read -r _ NAME EMAIL <<< "$line"
+}
+
+pick_identity_fzf() {
+    if ! command -v fzf >/dev/null 2>&1; then
+        echo "fzf is not installed. Install it, or use --name/--email/--identity instead." >&2
+        exit 1
+    fi
+    if [[ ! -s "$IDENTITIES_FILE" ]]; then
+        echo "No saved identities yet. Add one with:" >&2
+        echo "  reauthor --add <label> \"<name>\" <email>" >&2
+        exit 1
+    fi
+
+    local selection
+    selection=$(awk -F'|' '{printf "%-12s %s <%s>\n", $1, $2, $3}' "$IDENTITIES_FILE" \
+        | fzf --prompt="Author identity > " --height=40% --reverse)
+
+    if [[ -z "$selection" ]]; then
+        echo "No identity selected. Aborting."
+        exit 1
+    fi
+
+    local label
+    label=$(awk '{print $1}' <<< "$selection")
+    lookup_identity "$label"
+}
+
+# Work hosts: comma list in REAUTHOR_WORK_HOSTS (e.g. gitlab.example.com). A remote on one of them -> "self".
+any_remote_on_work_host() {
+    local url host
+    [[ -n "${REAUTHOR_WORK_HOSTS:-}" ]] || return 1
+    while IFS= read -r url; do
+        [[ -n "$url" ]] || continue
+        IFS=',' read -ra _hosts <<< "$REAUTHOR_WORK_HOSTS"
+        for host in "${_hosts[@]}"; do
+            host="${host// /}"
+            [[ -n "$host" && "$url" == *"$host"* ]] && return 0
+        done
+    done < <(git remote -v 2>/dev/null | awk '{print $2}' | sort -u)
+    return 1
+}
+
+default_identity_label() {
+    if any_remote_on_work_host; then
+        echo self
+    else
+        echo personal
+    fi
+}
+
+resolve_identity_auto() {
+    local label
+    label=$(default_identity_label)
+    lookup_identity "$label"
+}
+
+########################################
+# Parse args
+########################################
+
+NAME=""
+EMAIL=""
+IDENTITY=""
+USE_PICK=false
+AUTO_IDENTITY_LABEL=""
+ASSUME_YES=false
+BASE=""
+WHOLE_HISTORY=false
+
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --name)
+            NAME="$2"; shift 2 ;;
+        --email)
+            EMAIL="$2"; shift 2 ;;
+        --identity)
+            IDENTITY="$2"; shift 2 ;;
+        --pick)
+            USE_PICK=true; shift ;;
+        --add)
+            add_identity "$2" "$3" "$4"
+            exit 0 ;;
+        --list)
+            list_identities
+            exit 0 ;;
+        --base)
+            BASE="$2"; shift 2 ;;
+        --whole-history)
+            WHOLE_HISTORY=true; shift ;;
+        --yes)
+            ASSUME_YES=true; shift ;;
+        -h|--help)
+            usage; exit 0 ;;
+        *)
+            echo "Unknown option: $1"
+            usage
+            exit 1 ;;
+    esac
+done
+
+########################################
+# Sanity checks (needed before auto identity)
+########################################
+
+if ! git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+    echo "Not inside a git repository." >&2
+    exit 1
+fi
+
+########################################
+# Resolve identity
+########################################
+
+if [[ -n "$IDENTITY" ]]; then
+    lookup_identity "$IDENTITY"
+elif [[ -n "$NAME" && -n "$EMAIL" ]]; then
+    : # already set
+elif [[ -n "$NAME" || -n "$EMAIL" ]]; then
+    echo "Provide both --name and --email, or use --identity." >&2
+    exit 1
+elif [[ "$USE_PICK" == true ]]; then
+    pick_identity_fzf
+else
+    AUTO_IDENTITY_LABEL=$(default_identity_label)
+    resolve_identity_auto
+fi
+
+
+BRANCH=$(git branch --show-current)
+if [[ -z "$BRANCH" ]]; then
+    echo "Detached HEAD — checkout a branch first." >&2
+    exit 1
+fi
+
+if [[ -n "$(git status --porcelain)" ]]; then
+    echo "Working tree has uncommitted changes. Commit or stash first." >&2
+    exit 1
+fi
+
+########################################
+# Determine rewrite range
+########################################
+
+if [[ -z "$BASE" && "$WHOLE_HISTORY" == false ]]; then
+    for candidate in origin/main origin/master main master; do
+        if git rev-parse --verify -q "$candidate" >/dev/null \
+           && git merge-base --is-ancestor "$candidate" "$BRANCH" 2>/dev/null; then
+            BASE="$candidate"
+            break
+        fi
+    done
+fi
+
+if [[ -z "$BASE" && "$WHOLE_HISTORY" == false ]]; then
+    echo "Could not auto-detect a base branch (tried origin/main," >&2
+    echo "origin/master, main, master)." >&2
+    echo "Pass --base <ref> to rewrite only commits after that ref," >&2
+    echo "or --whole-history to rewrite this branch's entire history." >&2
+    exit 1
+fi
+
+if [[ "$WHOLE_HISTORY" == true ]]; then
+    RANGE="$BRANCH"
+    RANGE_DESC="the ENTIRE history of '$BRANCH' (from the root commit)"
+else
+    RANGE="$BASE..$BRANCH"
+    RANGE_DESC="commits in '$BASE..$BRANCH' (i.e. commits unique to this branch)"
+fi
+
+COMMIT_COUNT=$(git rev-list --count "$RANGE" 2>/dev/null || echo 0)
+
+if [[ "$COMMIT_COUNT" -eq 0 ]]; then
+    echo "No commits found in range ($RANGE_DESC). Nothing to rewrite."
+    exit 0
+fi
+
+########################################
+# Confirm
+########################################
+
+echo "Branch:    $BRANCH"
+[[ "$WHOLE_HISTORY" == false ]] && echo "Base:      $BASE"
+if [[ -n "$AUTO_IDENTITY_LABEL" ]]; then
+    echo "Identity:  $AUTO_IDENTITY_LABEL (auto from remotes)"
+fi
+echo "New name:  $NAME"
+echo "New email: $EMAIL"
+echo
+echo "This will rewrite $RANGE_DESC ($COMMIT_COUNT commit(s))."
+echo "Current authors in that range:"
+git log --format='  %an <%ae>' "$RANGE" | sort -u
+echo
+echo "All commit hashes in this range will change. It will then set"
+echo "this repo's local git config to the identity above."
+
+if ! $ASSUME_YES; then
+    read -r -p "Proceed? [y/N] " CONFIRM
+    if [[ ! "$CONFIRM" =~ ^[Yy]$ ]]; then
+        echo "Aborted."
+        exit 1
+    fi
+fi
+
+########################################
+# Rewrite history
+########################################
+
+echo
+echo "Rewriting history..."
+
+export FILTER_BRANCH_SQUELCH_WARNING=1
+export NEW_NAME="$NAME"
+export NEW_EMAIL="$EMAIL"
+
+git filter-branch -f --env-filter '
+    export GIT_AUTHOR_NAME="$NEW_NAME"
+    export GIT_AUTHOR_EMAIL="$NEW_EMAIL"
+    export GIT_COMMITTER_NAME="$NEW_NAME"
+    export GIT_COMMITTER_EMAIL="$NEW_EMAIL"
+' -- "$RANGE"
+
+# filter-branch leaves a backup under refs/original/ — drop it so the
+# rewritten history is the only version and future filter-branch runs
+# on this branch don't complain about existing backups.
+git update-ref -d "refs/original/refs/heads/$BRANCH" 2>/dev/null || true
+
+########################################
+# Set local config
+########################################
+
+git config --local user.name "$NAME"
+git config --local user.email "$EMAIL"
+
+echo
+echo "==============================================="
+echo "Done."
+echo "  Branch '$BRANCH' rewritten."
+echo "  Local git config set to: $NAME <$EMAIL>"
+echo
+echo "Note: history was rewritten, so if this branch was already"
+echo "pushed anywhere, you'll need to force-push (with lease)."

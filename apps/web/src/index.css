@@ -1,0 +1,1076 @@
+@import 'tailwindcss';
+@import 'tw-animate-css';
+
+@custom-variant dark (&:is(.dark *));
+
+/*
+ * Paper & Ink. Two states: Wake (light, warm paper) and Dream (dark, night ink).
+ * Monochrome first: ink is the one "accent", and colour only ever carries a state or a category.
+ * Every text and background pair here meets WCAG AA.
+ *   --primary = the ink fill (bg-primary)   --primary-ink = ink as text and focus ring (text-primary-ink)
+ *   --moss, --terracotta = state fills only   --success, --emphasis = their inks
+ */
+:root {
+  --radius: 0.1875rem;
+  --background: #ecebe6; /* Paper */
+  --foreground: #121212; /* Ink */
+  --card: #f4f2ee;
+  --card-foreground: #121212;
+  --popover: #f6f5f1;
+  --popover-foreground: #121212;
+  --primary: #121212; /* Ink fill */
+  --primary-foreground: #f4f2ee;
+  --primary-ink: #121212;
+  --secondary: #e2e1db;
+  --secondary-foreground: #121212;
+  --muted: #e4e3dd;
+  --muted-foreground: #5e5d58; /* "ink 55%" made solid, 5.4:1 on Paper */
+  --accent: #dfded8;
+  --accent-foreground: #121212;
+  --destructive: #a8261c;
+  --destructive-foreground: #ffffff;
+  --success: #2c6038;
+  --warning: #6f5300;
+  --emphasis: #3f3aa8; /* The dream violet as an ink: rare, for "look here" */
+  --moss: #6f8f6a;
+  --terracotta: #8a86e8; /* Dream orb violet: a fill for highlights, never an error */
+  /* Categorical pigments, for workspaces and categories: a fill, and an ink that meets AA as text. */
+  --river: #6f8ea0;
+  --river-ink: #2d4b5c;
+  --plum: #8b7aa6;
+  --plum-ink: #4d3f68;
+  --rosewood: #b08585;
+  --rosewood-ink: #7a3b3b;
+  --olive: #969a6b;
+  --olive-ink: #535628;
+  --sea: #6c9d95;
+  --sea-ink: #24564e;
+  --stone: #9a978f;
+  --stone-ink: #4d4b46;
+  /* Sprint Harbor's scene. Labels stay Paper on the hull and crates, in both themes. */
+  --harbor-sky-top: #dcdbd5;
+  --harbor-sky-bottom: #f1f0eb;
+  --harbor-sea-top: #4a4a52;
+  --harbor-sea-bottom: #1e1e26;
+  --harbor-hull: #2a2a2e;
+  --harbor-hull-deep: #121212;
+  --harbor-hull-over: #a8261c;
+  --harbor-label: #f4f2ee;
+  /* Terminals and logs stay dark in both themes, and the scrim behind sheets is the same night ink. */
+  --terminal: #0b0b0c;
+  --terminal-foreground: #e8e6e0;
+  --scrim: #0b0b10;
+  --border: #d3d2cc;
+  --hairline: rgb(18 18 18 / 0.08);
+  --grid-line: rgb(18 18 18 / 0.055);
+  --input: #c9c8c1;
+  --ring: #121212;
+  --elevation: 18 18 18;
+  --halo: rgb(255 255 255 / 0.7);
+
+  /* The one glass treatment: the floating pill. Opaque enough that contrast never depends on what is behind it. */
+  --glass-bg: color-mix(in oklch, var(--card) 82%, transparent);
+  --glass-border: rgb(255 255 255 / 0.55);
+  --glass-blur: blur(8px) saturate(1.2);
+  --glass-blur-strong: blur(20px) saturate(1.4);
+  --glass-shadow:
+    0 4px 16px rgb(0 0 0 / 0.08), inset 0 1px 0 rgb(255 255 255 / 0.6),
+    inset 0 -1px 0 rgb(0 0 0 / 0.04);
+}
+
+.dark {
+  --background: #0c0c1c; /* Night */
+  --foreground: #ecebe6;
+  --card: #13132a;
+  --card-foreground: #ecebe6;
+  --popover: #16162e;
+  --popover-foreground: #ecebe6;
+  --primary: #ecebe6;
+  --primary-foreground: #0c0c1c;
+  --primary-ink: #ecebe6;
+  --secondary: #1b1b35;
+  --secondary-foreground: #ecebe6;
+  --muted: #181830;
+  --muted-foreground: #a3a2b4;
+  --accent: #212140;
+  --accent-foreground: #ecebe6;
+  --destructive: #ff9a8f;
+  --destructive-foreground: #0c0c1c;
+  --success: #9fd3a8;
+  --warning: #ecc65e;
+  --emphasis: #b9b4ff;
+  --moss: #5f8a69;
+  --terracotta: #8a86e8;
+  --river-ink: #a9c8da;
+  --plum-ink: #cdbdf0;
+  --rosewood-ink: #e8b0b0;
+  --olive-ink: #ccd08f;
+  --sea-ink: #9cd6cb;
+  --stone-ink: #c8c5bd;
+  --harbor-sky-top: #08081a;
+  --harbor-sky-bottom: #1d1d3a;
+  --harbor-sea-top: #1a1a38;
+  --harbor-sea-bottom: #0a0a18;
+  --harbor-hull: #2b2b48;
+  --harbor-hull-deep: #1a1a30;
+  --border: #26264a;
+  --hairline: rgb(236 235 230 / 0.09);
+  --grid-line: rgb(236 235 230 / 0.045);
+  --input: #30305a;
+  --ring: #ecebe6;
+  --elevation: 0 0 6;
+  --halo: rgb(138 134 232 / 0.35);
+  --glass-bg: color-mix(in oklch, var(--card) 70%, transparent);
+  --glass-border: rgb(255 255 255 / 0.12);
+  --glass-shadow:
+    0 4px 20px rgb(0 0 0 / 0.4), inset 0 1px 0 rgb(255 255 255 / 0.12),
+    inset 0 -1px 0 rgb(0 0 0 / 0.3);
+}
+
+/* Time of day: a slight tint of the page only. The Wake/Dream switch still decides light or dark (lib/daypart.ts). */
+:root[data-daypart='dawn'] {
+  --background: #edeae4;
+}
+:root[data-daypart='dusk'] {
+  --background: #eae8e3;
+}
+:root[data-daypart='night'] {
+  --background: #e9e8e4;
+}
+.dark[data-daypart='day'] {
+  --background: #0c0c1c;
+}
+.dark[data-daypart='dawn'] {
+  --background: #0e0d1d;
+}
+.dark[data-daypart='dusk'] {
+  --background: #0f0c1c;
+}
+.dark[data-daypart='night'] {
+  --background: #0a0a19;
+}
+
+/* Solid surfaces where blur is missing, or when the user asks for more contrast or less transparency. */
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  :root {
+    --glass-bg: var(--card);
+  }
+}
+@media (prefers-contrast: more), (prefers-reduced-transparency: reduce) {
+  :root {
+    --glass-bg: var(--card);
+    --glass-blur: none;
+    --glass-blur-strong: none;
+  }
+}
+
+/* Shared with lib/motion/presets.ts: generated by Motion's spring(visualDuration, bounce). */
+@theme {
+  --font-sans:
+    'Inter Tight Variable', 'Helvetica Neue', Helvetica, Arial, ui-sans-serif, system-ui, sans-serif;
+  --font-mono: 'DM Mono', ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+  --font-accent: 'Instrument Serif', 'Times New Roman', Georgia, ui-serif, serif;
+
+  --text-micro: 0.6875rem;
+  --text-micro--line-height: 0.875rem;
+  --text-micro--letter-spacing: 0.012em;
+  --text-2xs: 0.6875rem;
+  --text-2xs--line-height: 1rem;
+  /* Display sizes: tight, heavy, uppercase. Fluid so a phone still gets a poster. */
+  --text-display: clamp(2.5rem, 7vw, 6.5rem);
+  --text-display--line-height: 0.86;
+  --text-display--letter-spacing: -0.045em;
+  --text-headline: clamp(1.75rem, 3.6vw, 3.25rem);
+  --text-headline--line-height: 0.92;
+  --text-headline--letter-spacing: -0.04em;
+
+  --ease-editorial: cubic-bezier(0.22, 1, 0.36, 1);
+
+  --ease-press: linear(
+    0,
+    0.3475,
+    0.7844,
+    0.9987,
+    1.046,
+    1.0308,
+    1.0104,
+    1.0002,
+    1,
+    0.9986,
+    0.9995,
+    1,
+    1
+  );
+  --ease-settle: linear(
+    0,
+    0.1236,
+    0.341,
+    0.5416,
+    0.6959,
+    0.8046,
+    0.8772,
+    0.9242,
+    0.9538,
+    0.9722,
+    0.9834,
+    0.9901,
+    0.9942,
+    0.9966,
+    0.998,
+    0.9988,
+    0.9993,
+    1
+  );
+  --ease-wobble: linear(
+    0,
+    0.0911,
+    0.2981,
+    0.5396,
+    0.7613,
+    0.9339,
+    1.0482,
+    1.1085,
+    1.1263,
+    1.1158,
+    1.09,
+    1.0596,
+    1.0313,
+    1.0092,
+    0.9944,
+    0.9865,
+    0.9841,
+    0.9853,
+    0.9885,
+    0.9923,
+    0.9959,
+    0.9987,
+    1.0006,
+    1.0017,
+    1
+  );
+}
+
+@theme inline {
+  --color-primary-ink: var(--primary-ink);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-emphasis: var(--emphasis);
+  --color-moss: var(--moss);
+  --color-terracotta: var(--terracotta);
+  --color-river: var(--river);
+  --color-river-ink: var(--river-ink);
+  --color-plum: var(--plum);
+  --color-plum-ink: var(--plum-ink);
+  --color-rosewood: var(--rosewood);
+  --color-rosewood-ink: var(--rosewood-ink);
+  --color-olive: var(--olive);
+  --color-olive-ink: var(--olive-ink);
+  --color-sea: var(--sea);
+  --color-sea-ink: var(--sea-ink);
+  --color-stone: var(--stone);
+  --color-stone-ink: var(--stone-ink);
+  --color-harbor-hull: var(--harbor-hull);
+  --color-harbor-hull-deep: var(--harbor-hull-deep);
+  --color-harbor-hull-over: var(--harbor-hull-over);
+  --color-harbor-label: var(--harbor-label);
+  --color-terminal: var(--terminal);
+  --color-terminal-foreground: var(--terminal-foreground);
+  --color-scrim: var(--scrim);
+  --color-hairline: var(--hairline);
+  --radius-control: var(--radius);
+  --radius-surface: 0.25rem;
+  --radius-sheet: 0.5rem;
+  /* Paper lies flat. Depth is a soft halo under floating things, like light under the crystal. */
+  --shadow-rest: 0 0 0 1px var(--hairline);
+  --shadow-lift: 0 1px 0 var(--hairline), 0 12px 32px -18px rgb(var(--elevation) / 0.35);
+  --shadow-float: 0 30px 80px -30px rgb(var(--elevation) / 0.45), 0 0 0 1px var(--hairline);
+  /* A stacked block's base: a hairline under it, ink when it is next. */
+  --shadow-block: 0 2px 0 var(--border);
+  --shadow-block-next: 0 2px 0 var(--primary);
+  --shadow-glow: 0 0 0 1px var(--primary), 0 0 28px 4px var(--halo);
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-success: var(--success);
+  --color-warning: var(--warning);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --radius-sm: 2px;
+  --radius-md: var(--radius);
+  --radius-lg: var(--radius);
+  --radius-xl: 0.25rem;
+  --radius-2xl: 0.375rem;
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  html {
+    color-scheme: light;
+  }
+  html.dark {
+    color-scheme: dark;
+  }
+  body {
+    @apply bg-background text-foreground antialiased;
+    font-family: var(--font-sans);
+    font-feature-settings: 'ss01', 'cv11';
+    transition: background-color 600ms var(--ease-editorial);
+  }
+  ::selection {
+    background: var(--foreground);
+    color: var(--background);
+  }
+  h1,
+  h2,
+  h3 {
+    letter-spacing: -0.02em;
+  }
+}
+
+/* The serif italic word inside a sans line: "a *memory* —". Short moments only. Never body text. */
+@utility type-accent {
+  font-family: var(--font-accent);
+  font-style: italic;
+  font-weight: 400;
+  letter-spacing: -0.01em;
+  text-transform: none;
+}
+/* The section label: 11px, semibold, uppercase, a hair of tracking. `(01) About`. */
+@utility type-micro {
+  font-family: var(--font-sans);
+  font-size: var(--text-micro);
+  font-weight: 600;
+  line-height: var(--text-micro--line-height);
+  letter-spacing: var(--text-micro--letter-spacing);
+  text-transform: uppercase;
+}
+/* Poster type: page titles and big numbers. */
+@utility type-display {
+  font-family: var(--font-sans);
+  font-size: var(--text-display);
+  font-weight: 600;
+  line-height: var(--text-display--line-height);
+  letter-spacing: var(--text-display--letter-spacing);
+  text-transform: uppercase;
+}
+@utility type-headline {
+  font-family: var(--font-sans);
+  font-size: var(--text-headline);
+  font-weight: 600;
+  line-height: var(--text-headline--line-height);
+  letter-spacing: var(--text-headline--letter-spacing);
+  text-transform: uppercase;
+}
+/* A hairline-ruled list row: the disciplines and awards tables. */
+@utility rule-row {
+  border-top: 1px solid var(--hairline);
+}
+@utility glass {
+  background: var(--glass-bg);
+  border: 1px solid var(--glass-border);
+  -webkit-backdrop-filter: var(--glass-blur);
+  backdrop-filter: var(--glass-blur);
+  box-shadow: var(--glass-shadow);
+}
+
+/* The page's 12 faint column rules, fixed behind everything (components/PaperGrid.tsx). */
+.paper-grid {
+  position: fixed;
+  inset: 0 1rem;
+  z-index: 0;
+  pointer-events: none;
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  border-left: 1px solid var(--grid-line);
+}
+.paper-grid > span {
+  border-right: 1px solid var(--grid-line);
+}
+.paper-grid > span:nth-child(n + 5) {
+  display: none;
+}
+@media (min-width: 768px) {
+  .paper-grid {
+    inset: 0 2.5rem;
+    grid-template-columns: repeat(12, 1fr);
+  }
+  .paper-grid > span:nth-child(n + 5) {
+    display: block;
+  }
+}
+@media print {
+  .paper-grid {
+    display: none;
+  }
+}
+
+/* A link that leans: the arrow slides on hover. `Open →`, `Send ↗`. */
+.arrow-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+}
+.arrow-link > svg {
+  transition: transform 300ms var(--ease-editorial);
+}
+.arrow-link:hover > svg {
+  transform: translateX(3px);
+}
+@media (prefers-reduced-motion: reduce) {
+  .arrow-link:hover > svg {
+    transform: none;
+  }
+}
+
+/* Words rise into place once, on arrival. Reduced motion shows them still. */
+@keyframes rise-in {
+  from {
+    opacity: 0;
+    transform: translateY(0.35em);
+    filter: blur(4px);
+  }
+}
+.rise-in {
+  animation: rise-in 700ms var(--ease-editorial) both;
+}
+@media (prefers-reduced-motion: reduce) {
+  .rise-in {
+    animation: none;
+  }
+}
+
+/* A section that folds (Settings): the row animates between 0fr and 1fr, so the height needs no measuring. */
+.collapse-body {
+  display: grid;
+  grid-template-rows: 1fr;
+  transition: grid-template-rows 320ms var(--ease-settle);
+}
+.collapse-body[data-open='false'] {
+  grid-template-rows: 0fr;
+}
+@media (prefers-reduced-motion: reduce) {
+  .collapse-body {
+    transition: none;
+  }
+}
+
+/* Tactile controls. In the components layer, so a utility on the same element still wins. Interruptible: it is a transition. */
+@layer components {
+  .tactile {
+    transition:
+      transform 400ms var(--ease-press),
+      background-color 150ms ease-out,
+      border-color 150ms ease-out,
+      color 150ms ease-out,
+      filter 150ms ease-out;
+  }
+  .tactile:active:not(:disabled) {
+    transform: scale(0.97);
+    transition-duration: 70ms, 150ms, 150ms, 150ms, 150ms;
+  }
+  /* Calm zones and destructive actions are never playful: the press still shows, without the squash. */
+  .tactile-calm:active:not(:disabled),
+  [role='dialog'] .tactile:active:not(:disabled),
+  [role='alertdialog'] .tactile:active:not(:disabled) {
+    transform: none;
+    filter: brightness(0.92);
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .tactile:active:not(:disabled) {
+      transform: none;
+      filter: brightness(0.92);
+    }
+  }
+
+  /* A dialog comes to rest with no overshoot. `scale` and `translate` are separate properties, so centring is untouched. */
+  .dialog-settle[data-state='open'] {
+    animation: dialog-settle 550ms var(--ease-settle) both;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .dialog-settle[data-state='open'] {
+      animation: dialog-fade 150ms linear both;
+    }
+  }
+}
+/* The XP chip: the bar fills on the settle spring, and a reward lands with a small wobble. */
+.xp-chip-fill {
+  transition: width 550ms var(--ease-settle);
+}
+.xp-chip[data-pulse] {
+  animation: xp-chip-pulse 750ms var(--ease-wobble);
+}
+@keyframes xp-chip-pulse {
+  from {
+    scale: 1.14;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .xp-chip-fill {
+    transition: none;
+  }
+  .xp-chip[data-pulse] {
+    animation: none;
+  }
+}
+@keyframes dialog-settle {
+  from {
+    opacity: 0;
+    scale: 0.985;
+    filter: blur(6px);
+  }
+}
+@keyframes dialog-fade {
+  from {
+    opacity: 0;
+  }
+}
+
+/* Sanitized GitLab markdown (components/Markdown.tsx). Only the tags DOMPurify lets through are styled. */
+.md {
+  font-size: 0.875rem;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+.md > * + * {
+  margin-top: 0.6em;
+}
+.md h1,
+.md h2,
+.md h3,
+.md h4,
+.md h5,
+.md h6 {
+  font-weight: 600;
+  line-height: 1.3;
+}
+.md h1 {
+  font-size: 1.25rem;
+}
+.md h2 {
+  font-size: 1.125rem;
+}
+.md h3,
+.md h4,
+.md h5,
+.md h6 {
+  font-size: 1rem;
+}
+.md ul,
+.md ol {
+  padding-left: 1.4em;
+}
+.md ul {
+  list-style: disc;
+}
+.md ol {
+  list-style: decimal;
+}
+.md a {
+  color: var(--primary-ink);
+  text-decoration: underline;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 3px;
+}
+.md blockquote {
+  border-left: 1px solid var(--foreground);
+  padding-left: 0.75em;
+  color: var(--muted-foreground);
+}
+.md code {
+  background: var(--muted);
+  border-radius: 2px;
+  padding: 0.1em 0.3em;
+  font-size: 0.85em;
+}
+.md pre {
+  background: var(--muted);
+  border-radius: 2px;
+  padding: 0.6em 0.8em;
+  overflow-x: auto;
+  white-space: pre-wrap;
+}
+.md pre code {
+  background: none;
+  padding: 0;
+}
+.md table {
+  display: block;
+  max-width: 100%;
+  overflow-x: auto;
+  border-collapse: collapse;
+}
+.md th,
+.md td {
+  border: 1px solid var(--border);
+  padding: 0.25em 0.6em;
+}
+.md hr {
+  border: 0;
+  border-top: 1px solid var(--border);
+}
+.md summary {
+  cursor: pointer;
+}
+.md details {
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-surface, 4px);
+  padding: 0.4em 0.75em;
+}
+.md details[open] > summary {
+  margin-bottom: 0.4em;
+}
+/* GFM task lists: the checkbox replaces the bullet. */
+.md li:has(> input[type='checkbox']) {
+  list-style: none;
+  margin-left: -1.2em;
+}
+.md li > input[type='checkbox'] {
+  margin-right: 0.45em;
+  accent-color: var(--primary);
+  vertical-align: -0.1em;
+}
+/* A comment upload (proxied): framed like paper on paper, opens full size on click. */
+.md img.md-img {
+  display: block;
+  max-width: 100%;
+  max-height: 24rem;
+  height: auto;
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-surface, 4px);
+  background: var(--muted);
+  cursor: zoom-in;
+}
+.md p > img.md-img {
+  margin: 0.25em 0;
+}
+/* `!123`: another MR, opened in the drawer. Mono numerals, no underline until hover: it reads as a reference. */
+.md a.mr-ref {
+  font-family: var(--font-mono);
+  font-size: 0.92em;
+  text-decoration: none;
+  border-bottom: 1px solid currentColor;
+  padding-bottom: 0.02em;
+}
+.md a.mr-ref:hover {
+  background: var(--accent);
+}
+/* `@user`: a quiet ink chip; my own name wears the Dream violet so it is findable at a glance. */
+.md .mention {
+  border-radius: 3px;
+  padding: 0 0.25em;
+  background: var(--muted);
+  color: var(--foreground);
+  font-weight: 500;
+  white-space: nowrap;
+}
+.md .mention-me {
+  background: color-mix(in oklab, var(--terracotta) 22%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--terracotta) 55%, transparent);
+}
+
+/* ───────────── Sprint Harbor (sprints/HarborScene.tsx) ───────────── */
+@keyframes harbor-wave {
+  from {
+    transform: translateX(0);
+  }
+  to {
+    transform: translateX(-200px);
+  }
+}
+@keyframes harbor-bob {
+  0%,
+  100% {
+    transform: translateY(0) rotate(var(--list, 0deg));
+  }
+  50% {
+    transform: translateY(3px) rotate(calc(var(--list, 0deg) * 1.4));
+  }
+}
+@keyframes harbor-swing {
+  0%,
+  100% {
+    transform: rotate(-4deg);
+  }
+  50% {
+    transform: rotate(4deg);
+  }
+}
+@keyframes harbor-glow {
+  0%,
+  100% {
+    opacity: 0.35;
+  }
+  50% {
+    opacity: 0.9;
+  }
+}
+@keyframes harbor-creak {
+  0%,
+  92%,
+  100% {
+    transform: translateX(0);
+  }
+  94% {
+    transform: translateX(-1.5px);
+  }
+  96% {
+    transform: translateX(1.5px);
+  }
+  98% {
+    transform: translateX(-1px);
+  }
+}
+@keyframes harbor-bubble {
+  from {
+    transform: translateY(0);
+    opacity: 0.8;
+  }
+  to {
+    transform: translateY(-40px);
+    opacity: 0;
+  }
+}
+.harbor-wave {
+  animation: harbor-wave 9s linear infinite;
+}
+.harbor-wave-slow {
+  animation: harbor-wave 16s linear infinite reverse;
+}
+.harbor-ship {
+  transform-box: fill-box;
+  transform-origin: 50% 100%;
+  animation: harbor-bob 5s ease-in-out infinite;
+}
+.harbor-swing {
+  transform-origin: 400px 70px;
+  animation: harbor-swing 4.5s ease-in-out infinite;
+}
+.harbor-glow {
+  animation: harbor-glow 2.4s ease-in-out infinite;
+}
+.harbor-creak {
+  animation: harbor-creak 3.7s linear infinite;
+}
+.harbor-bubble {
+  animation: harbor-bubble 2.2s ease-out infinite;
+}
+.harbor-crate {
+  cursor: pointer;
+}
+.harbor-crate:focus-visible {
+  outline: none;
+}
+.harbor-crate:focus-visible > rect:first-of-type,
+.harbor-crate:hover > rect:first-of-type {
+  stroke: var(--ring);
+  stroke-width: 2.5;
+}
+/* Inside the magnifier: nothing sways under the finger. */
+.harbor-still .harbor-swing,
+.harbor-still .harbor-ship,
+.harbor-still .harbor-creak {
+  animation: none;
+}
+
+/* ───────────── Liquid glass magnifier (sprints/HarborMagnifier.tsx) ───────────── */
+.liquid-glass {
+  --lens-tint: color-mix(in oklch, var(--background) 62%, transparent);
+  --lens-border: oklch(1 0 0 / 0.6);
+  --lens-edge: oklch(1 0 0 / 0.9);
+  --lens-sheen: oklch(1 0 0 / 0.55);
+  --lens-shadow: rgb(var(--elevation) / 0.45);
+  --lens-chip: oklch(1 0 0 / 0.45);
+  --lens-chip-on: oklch(1 0 0 / 0.95);
+  position: relative;
+  isolation: isolate;
+  max-width: 28rem;
+  border-radius: var(--radius-sheet);
+  border: 1px solid var(--lens-border);
+  background:
+    linear-gradient(165deg, oklch(1 0 0 / 0.35), oklch(1 0 0 / 0.05) 42%, oklch(1 0 0 / 0.16)),
+    var(--lens-tint);
+  -webkit-backdrop-filter: var(--glass-blur-strong);
+  backdrop-filter: var(--glass-blur-strong);
+  box-shadow:
+    inset 0 1px 1px var(--lens-edge),
+    inset 0 -1px 1px oklch(1 0 0 / 0.2),
+    inset 0 0 24px oklch(1 0 0 / 0.12),
+    0 28px 70px -18px var(--lens-shadow),
+    0 8px 20px -8px var(--lens-shadow);
+}
+/* Specular highlight: a soft light catching the top-left curve, a faint one bottom-right. */
+.liquid-glass::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  border-radius: inherit;
+  pointer-events: none;
+  background:
+    radial-gradient(120% 55% at 18% 0%, var(--lens-sheen), transparent 55%),
+    radial-gradient(70% 35% at 100% 100%, oklch(1 0 0 / 0.18), transparent 70%);
+}
+.dark .liquid-glass {
+  --lens-tint: color-mix(in oklch, var(--background) 62%, transparent);
+  --lens-border: oklch(1 0 0 / 0.2);
+  --lens-edge: oklch(1 0 0 / 0.4);
+  --lens-sheen: oklch(1 0 0 / 0.16);
+  --lens-shadow: oklch(0 0 0 / 0.7);
+  --lens-chip: oklch(1 0 0 / 0.08);
+  --lens-chip-on: oklch(1 0 0 / 0.22);
+}
+.lens-chip {
+  background: var(--lens-chip);
+  box-shadow:
+    inset 0 1px 0.5px oklch(1 0 0 / 0.5),
+    inset 0 -0.5px 0.5px oklch(0 0 0 / 0.08);
+  -webkit-backdrop-filter: var(--glass-blur);
+  backdrop-filter: var(--glass-blur);
+}
+.lens-segment-on {
+  background: var(--lens-chip-on);
+  color: var(--foreground);
+  box-shadow:
+    inset 0 1px 0.5px oklch(1 0 0 / 0.6),
+    0 2px 8px -2px oklch(0 0 0 / 0.3);
+}
+/* The curved glass over the magnified picture: bright upper rim, darker lower rim, a thin bevel line. */
+.lens-rim {
+  box-shadow:
+    inset 0 0 0 1px oklch(1 0 0 / 0.35),
+    inset 0 14px 24px -14px oklch(1 0 0 / 0.55),
+    inset 0 -18px 30px -16px oklch(0 0 0 / 0.45),
+    inset 12px 0 24px -18px oklch(1 0 0 / 0.3),
+    inset -12px 0 24px -18px oklch(0 0 0 / 0.25);
+}
+
+/* Magnify: the lens grows out of the tapped point (--ox/--oy, set by the component) as a widening circle with a
+   slight overshoot, while the picture inside zooms up from scene size. Closing plays it back into the point. */
+.lens {
+  transform-origin: var(--ox, 50%) var(--oy, 50%);
+  clip-path: circle(150% at var(--ox, 50%) var(--oy, 50%));
+  transition:
+    transform 520ms cubic-bezier(0.2, 1.3, 0.35, 1),
+    clip-path 480ms cubic-bezier(0.3, 0.9, 0.3, 1),
+    opacity 220ms ease-out;
+  will-change: transform, clip-path;
+}
+.lens[data-phase='from'] {
+  transform: scale(0.55);
+  clip-path: circle(26px at var(--ox, 50%) var(--oy, 50%));
+  opacity: 0.6;
+  transition:
+    transform 360ms cubic-bezier(0.5, 0, 0.75, 0),
+    clip-path 340ms cubic-bezier(0.5, 0, 0.75, 0),
+    opacity 360ms ease-in;
+}
+.lens-zoom {
+  transform-origin: 50% 50%;
+  transition: transform 600ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+.lens[data-phase='from'] .lens-zoom {
+  transform: scale(0.5);
+  transition-duration: 340ms;
+}
+.lens-backdrop {
+  transition: opacity 300ms ease;
+}
+.lens-backdrop[data-phase='from'] {
+  opacity: 0;
+}
+@media (prefers-reduced-motion: reduce) {
+  .lens,
+  .lens[data-phase='from'] {
+    transform: none;
+    clip-path: none;
+    transition: opacity 150ms linear;
+  }
+  .lens[data-phase='from'] {
+    opacity: 0;
+  }
+  .lens-zoom,
+  .lens[data-phase='from'] .lens-zoom {
+    transform: none;
+    transition: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .harbor-wave,
+  .harbor-wave-slow,
+  .harbor-ship,
+  .harbor-swing,
+  .harbor-glow,
+  .harbor-creak,
+  .harbor-bubble {
+    animation: none;
+  }
+}
+
+/* Page to page (`components/PageSwap.tsx`). Reduced motion never gets the class. */
+::view-transition-group(.page-swap),
+::view-transition-old(.page-swap),
+::view-transition-new(.page-swap) {
+  animation-duration: 220ms;
+  animation-timing-function: var(--ease-settle);
+}
+
+/* Theme ink bleed (`lib/inkBleed.ts`): no cross-fade, the new page is revealed by an animated clip-path. */
+html[data-ink-bleed]::view-transition-old(root),
+html[data-ink-bleed]::view-transition-new(root) {
+  animation: none;
+  mix-blend-mode: normal;
+}
+html[data-ink-bleed]::view-transition-new(root) {
+  z-index: 1;
+}
+
+/* The sound toggle's wave drifts while sound is on. */
+@keyframes sound-wave {
+  to {
+    transform: translateX(-8px);
+  }
+}
+.sound-wave {
+  animation: sound-wave 1.2s linear infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .sound-wave {
+    animation: none;
+  }
+}
+
+/* The build crystal: it trembles under strain just before it seals, and its outline marches when the seed is hovered. */
+@keyframes crystal-strain {
+  0%,
+  100% {
+    translate: 0 0;
+  }
+  25% {
+    translate: -0.9px 0.3px;
+  }
+  75% {
+    translate: 0.9px -0.3px;
+  }
+}
+.crystal-strain {
+  animation: crystal-strain 0.09s linear infinite;
+}
+@keyframes crystal-march {
+  to {
+    stroke-dashoffset: -14;
+  }
+}
+.crystal-march {
+  animation: crystal-march 0.7s linear infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .crystal-strain,
+  .crystal-march {
+    animation: none;
+  }
+}
+
+/* The card river: the current runs downstream, beads bob on it, out-of-step beads glow. */
+@keyframes river-flow {
+  to {
+    stroke-dashoffset: -28;
+  }
+}
+.river-flow {
+  animation: river-flow 1.6s linear infinite;
+}
+@keyframes river-bob {
+  0%,
+  100% {
+    translate: 0 0;
+  }
+  50% {
+    translate: 1.5px -2px;
+  }
+}
+.river-bob {
+  animation: river-bob 4s ease-in-out infinite;
+}
+@keyframes crystal-halo {
+  0%,
+  100% {
+    opacity: 0.25;
+    scale: 0.8;
+  }
+  50% {
+    opacity: 0.9;
+    scale: 1.15;
+  }
+}
+.crystal-halo {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: crystal-halo 2.2s ease-in-out infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .river-flow,
+  .river-bob,
+  .crystal-halo {
+    animation: none;
+  }
+}
+
+/* The state crystal in the session header. */
+.mood-crystal {
+  transform-box: fill-box;
+  transform-origin: center;
+}
+.mood-crystal[data-mood='working'] {
+  animation: mood-hum 1.4s ease-in-out infinite;
+}
+.mood-crystal[data-mood='waiting'] {
+  animation: mood-bob 1.8s ease-in-out infinite;
+}
+.mood-crystal[data-mood='start'] {
+  animation: mood-spin 2.4s linear infinite;
+}
+@keyframes mood-hum {
+  0%,
+  100% {
+    scale: 1;
+    rotate: -3deg;
+  }
+  50% {
+    scale: 1.08;
+    rotate: 3deg;
+  }
+}
+@keyframes mood-bob {
+  0%,
+  100% {
+    translate: 0 0;
+  }
+  50% {
+    translate: 0 -3px;
+  }
+}
+@keyframes mood-spin {
+  to {
+    rotate: 360deg;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .mood-crystal {
+    animation: none !important;
+  }
+}
