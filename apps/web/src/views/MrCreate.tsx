@@ -442,12 +442,12 @@ export function MrCreate() {
 
       <section className="grid gap-2 rounded-surface border bg-card p-4">
         <Field label="From → into">
-          <span className="font-mono text-xs">
+          <span className="font-mono text-xs [overflow-wrap:anywhere]">
             {t.sourceBranch} → {t.targetBranch}
           </span>
         </Field>
         <Field label="Title">
-          <span className="font-mono text-xs">{t.title}</span>
+          <span className="font-mono text-xs [overflow-wrap:anywhere]">{t.title}</span>
         </Field>
         <Field label="Description">
           {t.description ? (
