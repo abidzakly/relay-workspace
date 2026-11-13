@@ -31,6 +31,7 @@ import { useHealthReport, useStateSnapshot } from '@/lib/stateApi';
 import { useUiStore } from '@/store/ui';
 import { PageTitle } from '@/components/PageTitle';
 import { CardRiver } from '@/board/CardRiver';
+import { PriorityList } from '@/board/PriorityList';
 import { useVisual } from '@/lib/visuals';
 
 export function Board() {
@@ -153,6 +154,29 @@ export function Board() {
     jump(wantedCard);
     setParams({}, { replace: true });
   }, [wantedCard, model, filters, jump, setParams, cardMonth, setCardMonth]);
+
+  // "Work on next": a prioritized card can start when it is on the board and has a Branch formula, as in select mode.
+  const boardCardById = useMemo(
+    () => new Map((scoped?.cards ?? []).map((c) => [nid(c.id), c] as const)),
+    [scoped],
+  );
+  const canStart = useCallback(
+    (cardId: string) => !!boardCardById.get(nid(cardId))?.branchName,
+    [boardCardById],
+  );
+  const startPrioritized = useCallback(
+    (cardIds: string[]) =>
+      setBulkStart(
+        cardIds
+          .map((id) => boardCardById.get(nid(id)))
+          .filter((c): c is StateCard => c !== undefined && !!c.branchName),
+      ),
+    [boardCardById],
+  );
+  const pickPrioritized = useCallback(
+    (cardId: string) => setParams({ card: cardId }, { replace: true }),
+    [setParams],
+  );
 
   // The river shows the same cards the columns do, after the filters.
   const showVisual = useVisual('board');
@@ -291,6 +315,11 @@ export function Board() {
 
       {model && (
         <>
+          <PriorityList
+            canStart={canStart}
+            onPick={pickPrioritized}
+            onStartAll={startPrioritized}
+          />
           {showVisual && (
             <CardRiver columns={riverColumns} onPickColumn={showColumn} onPickCard={jump} />
           )}
