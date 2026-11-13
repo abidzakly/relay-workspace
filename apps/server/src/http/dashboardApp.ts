@@ -35,6 +35,8 @@ import { registerConnectionTestRoutes } from './routes/connectionTests';
 import { registerCardActionRoutes } from './routes/cardActions';
 import { registerGamificationRoutes } from './routes/gamification';
 import { registerKpiRoutes } from './routes/kpi';
+import { registerReaderRoutes } from './routes/reader';
+import type { ReaderService } from '../services/readerService';
 import { registerMrActionRoutes } from './routes/mrActions';
 import { registerCockpitRoutes, type CockpitDeps } from './routes/cockpit';
 import { registerMrRoutes } from './routes/mrs';
@@ -109,6 +111,8 @@ export interface DashboardAppOptions {
   cardActions?: CardActions;
   /** When given (with `cache`), the KPI routes are served. */
   kpi?: KpiService;
+  /** When given, `/api/reader*` (the Reader library) is served. */
+  reader?: ReaderService;
   /** When given (with `cache`), `GET /api/gamification` is served. */
   gamification?: GamificationService;
   /** Mobile Dev Cockpit (AI, review deck, workspaces, sessions). Private listener only. */
@@ -252,6 +256,7 @@ export async function buildDashboardApp(opts: DashboardAppOptions): Promise<Fast
       undo.register(opts.kpi.assignedAtUndoHandler);
       registerKpiRoutes(app, { kpi: opts.kpi });
     }
+    if (opts.reader) registerReaderRoutes(app, { reader: opts.reader });
     if (opts.gamification) registerGamificationRoutes(app, { gamification: opts.gamification });
     registerMrActionRoutes(app, { actions: mrActions });
     if (opts.reviewDesk) registerReviewsRoutes(app, { desk: opts.reviewDesk, audit: opts.audit });

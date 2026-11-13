@@ -167,3 +167,14 @@ export function useHighlight(
   }, [path, oldText, newText, enabled]);
   return out;
 }
+
+/**
+ * One fenced code block as shiki HTML (both themes; Dream switches via `.dark .shiki` in index.css), or null when the
+ * language is unknown or the block is too large. Shiki escapes the code itself, so the result is safe to insert.
+ */
+export async function codeBlockHtml(code: string, lang: Lang): Promise<string | null> {
+  if (code.length > MAX_CHARS) return null;
+  const h = await highlighter();
+  await ensureLang(h, lang);
+  return h.codeToHtml(code, { lang, themes: THEMES, defaultColor: 'light' });
+}
