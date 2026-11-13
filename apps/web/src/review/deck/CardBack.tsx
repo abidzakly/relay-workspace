@@ -4,7 +4,7 @@ import { GeneratedBy } from '@/components/GeneratedBy';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { describeError } from '@/lib/api';
-import { useExplain } from '@/lib/deckApi';
+import { useExplain, useHunkExplain } from '@/lib/deckApi';
 import { MicButton } from '@/components/MicButton';
 
 /**
@@ -22,12 +22,22 @@ export function CardBack({
   onUnderstood: () => void;
   aiReady: boolean;
 }) {
-  const explain = useExplain(deckId);
+  // The plain explanation is usually prefetched by the deck; a follow-up question is a fresh request.
+  const [wanted, setWanted] = useState(false);
+  const base = useHunkExplain(deckId, hunkId, wanted && aiReady);
+  const followUp = useExplain(deckId);
   const [asking, setAsking] = useState(false);
   const [question, setQuestion] = useState('');
+  const explain = {
+    data: followUp.data ?? base.data,
+    isPending: followUp.isPending || (wanted && base.isFetching && !base.data),
+    isError: followUp.isError || (!followUp.data && base.isError),
+    error: followUp.error ?? base.error,
+  };
 
   const ask = (q?: string) => {
-    explain.mutate({ scope: 'hunk', hunkId, ...(q ? { question: q } : {}) });
+    if (q) followUp.mutate({ scope: 'hunk', hunkId, question: q });
+    else setWanted(true);
     setAsking(false);
     setQuestion('');
   };

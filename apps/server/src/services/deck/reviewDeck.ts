@@ -629,7 +629,8 @@ export class ReviewDeckService {
                 .filter((c): c is Extract<DeckCard, { kind: 'hunk' }> => c.kind === 'hunk')
                 .map((c) => `### ${c.hunk.file}\n${c.hunk.text}`)
                 .join('\n\n'),
-              60_000,
+              // Grading needs the gist of the MR, not every line: a smaller prompt answers sooner.
+              30_000,
             ),
           };
     const { output, generatedBy } = await this.d.ai.run('grade-teachback', vars, { fresh: true });

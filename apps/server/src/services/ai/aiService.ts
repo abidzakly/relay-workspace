@@ -334,9 +334,12 @@ export class AiService {
         : undefined) ?? (engine === 'cursor_cli' ? CURSOR_MODEL : AI_MODELS[tier]);
     const by = (engine: AiEngine): AiGeneratedBy => ({ engine, model: modelFor(engine) });
     const prompt = renderTemplate(template, vars, this.d.prompts?.()[template]);
-    const key = createHash('sha256')
-      .update(`${template}\n${modelFor('claude_cli')}\n${prompt}`)
-      .digest('hex');
+    // Automatic choice keeps the original key (Claude's model). A pinned engine keys on that engine and its model, so
+    // a pinned Cursor answer is cached too and never mixed up with a Claude one.
+    const keyModel = choice.engine
+      ? `${choice.engine}:${modelFor(choice.engine)}`
+      : modelFor('claude_cli');
+    const key = createHash('sha256').update(`${template}\n${keyModel}\n${prompt}`).digest('hex');
     if (!opts.fresh) {
       const hit = this.d.store.db.select().from(aiCache).where(eq(aiCache.key, key)).get();
       if (hit) {
@@ -367,6 +370,7 @@ export class AiService {
     const schema = AI_OUTPUT_SCHEMAS[template];
     let failure: unknown;
     for (const provider of providers) {
+      const started = this.now();
       let output: AiOutput<T>;
       try {
         output = (await provider.complete({
@@ -392,9 +396,15 @@ export class AiService {
         );
         continue;
       }
+      this.d.log.info(
+        { engine: provider.engine, template, promptChars: prompt.length, ms: this.now() - started },
+        'ai run',
+      );
       this.cooling.delete(provider.engine);
-      // Not cached from Cursor: the same prompt gets Opus again once Claude is back.
-      if (provider.engine !== 'cursor_cli') this.remember(key, template, provider.engine, output);
+      // A Cursor fallback is not cached: the same prompt gets Opus again once Claude is back. Cursor chosen in
+      // Settings is the answer the user wants, so it is.
+      if (provider.engine !== 'cursor_cli' || choice.engine === 'cursor_cli')
+        this.remember(key, template, provider.engine, output);
       return { output, cached: false, engine: provider.engine, generatedBy: by(provider.engine) };
     }
     throw failure;

@@ -41,6 +41,7 @@ import {
   useCompleteDeck,
   useDeck,
   useDeckStatus,
+  usePrefetchExplains,
   useRebuildDeck,
   useRequestChange,
 } from '@/lib/deckApi';
@@ -389,6 +390,12 @@ function Deck({
   const cards = d.cards;
   const cursor = Math.min(state.cursor, cards.length);
   const card = cards[cursor] as DeckCard | undefined;
+  // This card and the next hunk card: their "Explain" is ready before it is asked for. Trivial hunks are skipped.
+  const warm = cards
+    .slice(cursor, cursor + 4)
+    .flatMap((c) => (c.kind === 'hunk' && c.hunk.tier !== 'trivial' ? [c.hunk.id] : []))
+    .slice(0, 2);
+  usePrefetchExplains(d.deckId, warm, aiReady);
   const coverage = useMemo(() => deckCoverage(cards, state), [cards, state]);
   const perFile = useMemo(() => fileCoverage(cards, state), [cards, state]);
 

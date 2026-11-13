@@ -1,4 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useEffect } from 'react';
 import {
   deckSourceKey,
   type DeckExplainRequest,
@@ -52,6 +53,38 @@ export function useExplain(deckId: string) {
   return useMutation<DeckExplainResult, Error, DeckExplainRequest>({
     mutationFn: (b) => post(`/api/deck/${deckId}/explain`, b),
   });
+}
+
+/** The plain "Explain" of one hunk (no question): a query, so a prefetch and the click share one request. */
+export const explainHunkKey = (deckId: string, hunkId: string) =>
+  ['deck-explain', deckId, hunkId] as const;
+
+const explainHunkQuery = (deckId: string, hunkId: string) => ({
+  queryKey: explainHunkKey(deckId, hunkId),
+  queryFn: () =>
+    post<DeckExplainResult>(`/api/deck/${deckId}/explain`, { scope: 'hunk', hunkId }),
+  staleTime: Infinity,
+  gcTime: 30 * 60_000,
+  retry: false,
+});
+
+export function useHunkExplain(deckId: string, hunkId: string, enabled: boolean) {
+  return useQuery({ ...explainHunkQuery(deckId, hunkId), enabled });
+}
+
+/**
+ * Warms the explanations of the cards just ahead, so "Not yet → Explain" shows at once instead of waiting a
+ * headless agent run (about 15 s with Cursor). The server caches the answer, so a revisit is free too.
+ */
+export function usePrefetchExplains(deckId: string, hunkIds: readonly string[], enabled: boolean) {
+  const qc = useQueryClient();
+  const ids = hunkIds.join('\n');
+  useEffect(() => {
+    if (!enabled) return;
+    for (const id of ids.split('\n').filter(Boolean)) {
+      void qc.prefetchQuery(explainHunkQuery(deckId, id));
+    }
+  }, [qc, deckId, ids, enabled]);
 }
 
 export function useGrade(deckId: string) {
