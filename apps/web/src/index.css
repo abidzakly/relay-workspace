@@ -540,6 +540,17 @@
 }
 
 /* Sanitized GitLab markdown (components/Markdown.tsx). Only the tags DOMPurify lets through are styled. */
+/*
+ * Syntax colors: shiki writes the light color inline and the dark one as `--shiki-dark`. Anything that shows shiki
+ * tokens (the Code Reviewer's `.rv-code`, deck cards' `.code-tokens`, the Reader's `.shiki` blocks) switches here.
+ */
+.dark :is(.rv-code, .code-tokens, .shiki) span[style] {
+  color: var(--shiki-dark) !important;
+}
+.dark .shiki {
+  background-color: var(--shiki-dark-bg) !important;
+}
+
 .md {
   font-size: 0.875rem;
   line-height: 1.5;

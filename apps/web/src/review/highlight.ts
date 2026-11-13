@@ -41,14 +41,14 @@ const LOADERS: Record<Lang, () => Promise<unknown>> = {
   dockerfile: () => import('shiki/langs/dockerfile.mjs'),
 };
 
-const THEMES = { light: 'vitesse-light', dark: 'vitesse-dark' } as const;
+export const THEMES = { light: 'vitesse-light', dark: 'vitesse-dark' } as const;
 /** Characters per side; past this the file is shown as plain text. */
 const MAX_CHARS = 250_000;
 
 let core: Promise<HighlighterCore> | null = null;
 const loaded = new Map<Lang, Promise<void>>();
 
-function highlighter(): Promise<HighlighterCore> {
+export function highlighter(): Promise<HighlighterCore> {
   core ??= (async () => {
     const [{ createHighlighterCore }, { createJavaScriptRegexEngine }] = await Promise.all([
       import('shiki/core'),
@@ -63,7 +63,7 @@ function highlighter(): Promise<HighlighterCore> {
   return core;
 }
 
-async function ensureLang(h: HighlighterCore, lang: Lang): Promise<void> {
+export async function ensureLang(h: HighlighterCore, lang: Lang): Promise<void> {
   let p = loaded.get(lang);
   if (!p) {
     p = LOADERS[lang]().then((m) =>
@@ -79,8 +79,58 @@ async function tokenize(text: string, lang: Lang): Promise<Token[][]> {
   await ensureLang(h, lang);
   const r = h.codeToTokens(text, { lang, themes: THEMES });
   return r.tokens.map((line) =>
-    line.map((t) => ({ content: t.content, ...(t.htmlStyle ? { style: t.htmlStyle } : {}) })),
+    line.map((t) => ({
+      content: t.content,
+      ...(t.htmlStyle ? { style: liftDarkStyle(t.htmlStyle) } : {}),
+    })),
   );
+}
+
+/** The darkest Dream surface code sits on (`--card`); dark token colors are checked against it. */
+const DREAM_SURFACE = [0x13, 0x13, 0x2a] as const;
+const MIN_CONTRAST = 4.5;
+const lifted = new Map<string, string>();
+
+function luminance([r, g, b]: readonly number[]): number {
+  const c = [r!, g!, b!].map((v) => {
+    const s = v / 255;
+    return s <= 0.03928 ? s / 12.92 : ((s + 0.055) / 1.055) ** 2.4;
+  });
+  return 0.2126 * c[0]! + 0.7152 * c[1]! + 0.0722 * c[2]!;
+}
+
+function contrast(a: readonly number[], b: readonly number[]): number {
+  const [x, y] = [luminance(a), luminance(b)].sort((p, q) => q - p);
+  return (x! + 0.05) / (y! + 0.05);
+}
+
+/**
+ * vitesse-dark's comments and punctuation are dim and partly transparent: on Dream's navy cards they fall under
+ * 4.5:1. Each such color is blended onto the card and lifted toward white until it reads; hue stays.
+ */
+export function liftDarkColor(hex: string): string {
+  const hit = lifted.get(hex);
+  if (hit) return hit;
+  const m = /^#([0-9a-f]{6})([0-9a-f]{2})?$/i.exec(hex);
+  if (!m) return hex;
+  const n = parseInt(m[1]!, 16);
+  const alpha = m[2] ? parseInt(m[2], 16) / 255 : 1;
+  let rgb = [(n >> 16) & 255, (n >> 8) & 255, n & 255].map((v, i) =>
+    Math.round(v * alpha + DREAM_SURFACE[i]! * (1 - alpha)),
+  );
+  let changed = false;
+  for (let i = 0; i < 20 && contrast(rgb, DREAM_SURFACE) < MIN_CONTRAST; i++) {
+    rgb = rgb.map((v) => Math.round(v + (255 - v) * 0.08));
+    changed = true;
+  }
+  const out = changed ? `#${rgb.map((v) => v.toString(16).padStart(2, '0')).join('')}` : hex;
+  lifted.set(hex, out);
+  return out;
+}
+
+function liftDarkStyle(style: Record<string, string>): Record<string, string> {
+  const dark = style['--shiki-dark'];
+  return dark ? { ...style, '--shiki-dark': liftDarkColor(dark) } : style;
 }
 
 export interface SideTokens {

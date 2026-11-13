@@ -49,7 +49,7 @@ export function HunkView({
       )}
     >
       {hunks.map((h, hi) => (
-        <div key={hi} className="min-w-max">
+        <div key={hi} className="md:min-w-max">
           <div className="sticky left-0 bg-primary/5 px-3 py-1 text-2xs text-muted-foreground">
             @@ {h.oldStart},{h.oldCount} → {h.newStart},{h.newCount} {h.section}
           </div>
@@ -83,7 +83,8 @@ export function HunkView({
                 <span className="w-4 shrink-0 select-none text-center text-muted-foreground">
                   {l.kind === 'add' ? '+' : l.kind === 'del' ? '−' : ' '}
                 </span>
-                <span className="pr-4 whitespace-pre">
+                {/* Phones wrap long lines: a sideways scroll would fight the card's swipe. */}
+                <span className="code-tokens min-w-0 pr-4 whitespace-pre-wrap [overflow-wrap:anywhere] md:whitespace-pre md:[overflow-wrap:normal]">
                   {tokens.get(l)?.map((t, ti) => (
                     <span key={ti} style={t.style}>
                       {t.content}

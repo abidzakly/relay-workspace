@@ -53,6 +53,7 @@ import { CoverageRing } from './CoverageRing';
 import { ExplainableDiff } from './ExplainableDiff';
 import { IssueSheet } from './IssueSheet';
 import { SwipeCard, type SwipeDir } from './SwipeCard';
+import '../review.css';
 
 const TIER_BADGE = {
   trivial: { variant: 'secondary', label: 'trivial' },
