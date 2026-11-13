@@ -27,7 +27,7 @@ import type { DiffMode, WsStatus } from './workspaceFs';
 
 export interface AiRunRequest {
   prompt: string;
-  /** Full model id, e.g. `claude-opus-5-5`. Cursor ignores it: its model is fixed (`CURSOR_MODEL`). */
+  /** Full model id, e.g. `claude-opus-5-5` or `composer-2.5-fast`. */
   model: string;
   timeoutMs: number;
   /** Which CLI answers; default `claude`. */

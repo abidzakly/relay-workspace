@@ -1,6 +1,6 @@
-import { index, integer, sqliteTable, text } from 'drizzle-orm/sqlite-core';
+import { index, integer, real, sqliteTable, text } from 'drizzle-orm/sqlite-core';
 import type { Json } from '@relay/shared';
-import { createdAtCol, nowMsSql } from './_helpers';
+import { createdAtCol, nowMsSql, updatedAtCol } from './_helpers';
 
 /** Web Push subscriptions. */
 export const pushSubs = sqliteTable('push_subs', {
@@ -130,3 +130,19 @@ export const cockpitAttachments = sqliteTable('cockpit_attachments', {
   refId: text('ref_id').notNull(),
   createdAt: integer('created_at').notNull(),
 });
+
+/** Reader: Markdown / plain-text documents the user keeps to read in the app. */
+export const readerDocs = sqliteTable(
+  'reader_docs',
+  {
+    id: text('id').primaryKey(),
+    title: text('title').notNull(),
+    format: text('format').$type<'md' | 'txt'>().notNull().default('md'),
+    body: text('body').notNull(),
+    /** Where the reader left off, 0–1 of the page height. */
+    lastPos: real('last_pos').notNull().default(0),
+    createdAt: createdAtCol(),
+    updatedAt: updatedAtCol(),
+  },
+  (t) => [index('reader_docs_updated_idx').on(t.updatedAt)],
+);

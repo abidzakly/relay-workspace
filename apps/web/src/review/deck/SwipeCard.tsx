@@ -10,8 +10,8 @@ const VELOCITY = 0.5;
 
 /**
  * A flashcard on the desk: right = understood, left = not yet, up = issue.
- * Gestures come from `@use-gesture/react`, motion from `motion`. Only horizontal / upward swipes count; a vertical drag
- * inside scrollable code is left to the browser (`touch-action: pan-y`). `swipe` (from the buttons / keyboard) plays the
+ * Gestures come from `@use-gesture/react`, motion from `motion`. A drag locks to its first axis: sideways is a swipe,
+ * vertical on touch is left to the browser's scroll (`touch-action: pan-y`) and never opens "Issue". `swipe` (from the buttons / keyboard) plays the
  * same fly-out. Reduced motion: no fly-out, the card just changes.
  */
 export function SwipeCard({
@@ -76,20 +76,41 @@ export function SwipeCard({
   }, [pending]);
 
   const bind = useDrag(
-    ({ down, movement: [mx, my], velocity: [vx, vy], direction: [dx, dy], cancel, tap }) => {
+    ({
+      down,
+      movement: [mx, my],
+      velocity: [vx, vy],
+      direction: [dx, dy],
+      cancel,
+      tap,
+      event,
+      axis,
+    }) => {
       if (disabled || tap) return;
+      // On a phone the card body scrolls: a vertical drag is always a scroll there, never a swipe. "Issue" is the
+      // button below the card. Mouse and pen keep the swipe up.
+      const touch = (event as PointerEvent).pointerType === 'touch' || 'touches' in event;
+      const vertical = axis === 'y';
       if (down) {
-        x.set(mx);
-        y.set(Math.min(0, my));
+        if (touch && vertical) return;
+        x.set(vertical ? 0 : mx);
+        y.set(touch ? 0 : Math.min(0, my));
         return;
       }
-      if (mx > THRESHOLD || (vx > VELOCITY && dx > 0 && Math.abs(mx) > 40)) flyOut('right');
-      else if (mx < -THRESHOLD || (vx > VELOCITY && dx < 0 && Math.abs(mx) > 40)) flyOut('left');
-      else if (my < -THRESHOLD || (vy > VELOCITY && dy < 0 && my < -40)) flyOut('up');
+      // Selecting code (long-press, or a drag with the mouse) is not a swipe.
+      const selecting = (window.getSelection()?.toString().length ?? 0) > 0;
+      const sideways = !vertical && Math.abs(mx) > 2 * Math.abs(my);
+      if (selecting) springBack();
+      else if (sideways && (mx > THRESHOLD || (vx > VELOCITY && dx > 0 && mx > 40)))
+        flyOut('right');
+      else if (sideways && (mx < -THRESHOLD || (vx > VELOCITY && dx < 0 && mx < -40)))
+        flyOut('left');
+      else if (!touch && vertical && (my < -THRESHOLD || (vy > VELOCITY && dy < 0 && my < -40)))
+        flyOut('up');
       else springBack();
       cancel?.();
     },
-    { filterTaps: true, pointer: { touch: true } },
+    { filterTaps: true, axis: 'lock', pointer: { touch: true } },
   );
 
   return (

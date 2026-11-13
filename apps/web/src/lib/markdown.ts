@@ -142,6 +142,7 @@ const MR_HREF = /^\/mrs\/[a-z0-9-]+\/\d{1,7}$/;
 /** Only our proxy paths may be an image source. */
 const SAFE_SRC = /^\/api\/mrs\/[a-z0-9-]+\/uploads\/[0-9a-f]{32}\/[\w.()%-]+$/;
 const CLASSES = new Set(['mr-ref', 'mention', 'mention-me', 'md-img']);
+const FENCE_LANG = /^language-[a-z0-9+#.-]{1,24}$/i;
 
 let hooked = false;
 function installHooks(): void {
@@ -150,7 +151,8 @@ function installHooks(): void {
   DOMPurify.addHook('afterSanitizeAttributes', (node) => {
     const cls = node.getAttribute('class');
     if (cls !== null) {
-      const kept = cls.split(/\s+/).filter((c) => CLASSES.has(c));
+      // `language-x` on fenced code survives so the Reader can highlight it; it carries no behavior.
+      const kept = cls.split(/\s+/).filter((c) => CLASSES.has(c) || FENCE_LANG.test(c));
       if (kept.length) node.setAttribute('class', kept.join(' '));
       else node.removeAttribute('class');
     }
@@ -202,4 +204,24 @@ export function renderMarkdown(source: string, context: MarkdownContext = {}): s
   } finally {
     ctx = {};
   }
+}
+
+/**
+ * The Reader's Markdown: plain CommonMark + GFM (a single newline is not a line break, unlike GitLab comments), no
+ * `!123` / `@user` extensions. Same sanitizer. Images other than our upload proxy become their alt text, as above.
+ */
+const readerMarked = new Marked({
+  gfm: true,
+  breaks: false,
+  async: false,
+  renderer: {
+    image({ href, text }) {
+      const label = escapeHtml(text || 'image');
+      return `<a href="${escapeHtml(href)}">Image: ${label}</a>`;
+    },
+  },
+});
+
+export function renderReaderMarkdown(source: string): string {
+  return sanitizeHtml(readerMarked.parse(source) as string);
 }

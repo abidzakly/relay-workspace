@@ -3,6 +3,7 @@ import {
   Gem,
   Send,
   Bell,
+  BookOpen,
   Bot,
   GitCompare,
   Hammer,
@@ -43,6 +44,7 @@ export const NAV: NavItem[] = [
   { to: '/builds', label: 'Builds', icon: Hammer, chord: 'u' },
   { to: '/kpi', label: 'KPI', icon: Target, chord: 'k' },
   { to: '/sprints', label: 'Sprint Atelier', icon: Gem, chord: 'p' },
+  { to: '/reader', label: 'Reader', icon: BookOpen, chord: 'd' },
   { to: '/settings', label: 'Settings', icon: SettingsIcon, chord: 's' },
   { to: '/audit', label: 'Audit', icon: ScrollText, chord: 'a' },
 ];

@@ -19,6 +19,7 @@ export const FEATURE_IDS = [
   'syncHealth',
   'kpi',
   'sprints',
+  'reader',
 ] as const;
 export type FeatureId = (typeof FEATURE_IDS)[number];
 
@@ -139,6 +140,13 @@ export const FEATURES: readonly FeatureInfo[] = [
     description: 'Sprint capacity and what fits in it.',
     routes: ['/sprints'],
     needsNotion: true,
+  },
+  {
+    id: 'reader',
+    group: 'plan',
+    label: 'Reader',
+    description: 'Markdown and text documents to read in a calm column, on any device.',
+    routes: ['/reader'],
   },
 ];
 

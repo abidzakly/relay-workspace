@@ -86,8 +86,12 @@ export type SessionKind = z.infer<typeof SessionKindSchema>;
 
 export const SESSION_STATES = ['running', 'idle', 'exited'] as const;
 
+/** Agents shown as a conversation document (stream-json) rather than a terminal. */
+export const isConversationKind = (kind: SessionKind): boolean =>
+  kind === 'claude' || kind === 'cursor';
+
 /**
- * A Claude session is a document, not a terminal (`claude -p` over stream-json). Output: one `ConversationEvent` JSON per
+ * An agent session (Claude or Cursor) is a document, not a terminal (`-p` over stream-json). Output: one `ConversationEvent` JSON per
  * line on the session stream. Input: one `ConversationCommand` JSON per session input.
  */
 export const CONVERSATION_MODES = ['plan', 'acceptEdits'] as const;
@@ -96,6 +100,8 @@ export type ConversationMode = (typeof CONVERSATION_MODES)[number];
 export type ConversationEvent =
   | { k: 'user'; text: string }
   | { k: 'text'; text: string }
+  /** Streamed text (Cursor): appended to the text block in progress. */
+  | { k: 'text_delta'; text: string }
   | { k: 'tool'; id: string; name: string; summary: string }
   | { k: 'tool_done'; id: string; ok: boolean; output?: string }
   | {

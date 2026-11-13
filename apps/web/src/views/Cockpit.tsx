@@ -12,7 +12,7 @@ import {
 } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { Link, useSearchParams } from 'react-router';
-import type { SessionKind, Workspace } from '@relay/shared';
+import { isConversationKind, type SessionKind, type Workspace } from '@relay/shared';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
@@ -72,7 +72,7 @@ function NewSession({
   useEffect(() => setWs(initialWs ?? workspaces[0]?.id ?? ''), [initialWs, workspaces]);
   const kinds: { kind: SessionKind; label: string; hint: string; icon: typeof Bot }[] = [
     { kind: 'claude', label: 'Claude', hint: 'plan first', icon: Bot },
-    { kind: 'cursor', label: 'Cursor', hint: 'terminal, plan mode', icon: Bot },
+    { kind: 'cursor', label: 'Cursor', hint: 'plan first, chat', icon: Bot },
     { kind: 'shell', label: 'Shell', hint: 'zsh -l', icon: SquareTerminal },
   ];
   return (
@@ -285,7 +285,7 @@ export function Cockpit() {
         </Button>
       </div>
       {active ? (
-        active.kind === 'claude' ? (
+        isConversationKind(active.kind) ? (
           <ConversationView key={active.id} s={active} />
         ) : (
           <AgentView key={active.id} s={active} returnTo={returnTo(active.id)} />

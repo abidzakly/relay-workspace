@@ -743,11 +743,6 @@
     }
   }
 
-  /* Syntax colors: shiki emits light colors inline and the dark ones as `--shiki-dark`. */
-  .dark .rv-code span[style] {
-    color: var(--shiki-dark) !important;
-  }
-
   ::view-transition-old(root),
   ::view-transition-new(root) {
     animation-duration: 220ms;

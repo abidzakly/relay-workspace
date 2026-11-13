@@ -2,7 +2,7 @@ import { useEffect, useReducer } from 'react';
 import type { ConversationEvent, ConversationMode } from '@relay/shared';
 
 /**
- * A Claude session as a document. The session stream carries one `ConversationEvent` JSON per line; this folds them
+ * An agent session (Claude or Cursor) as a document. The session stream carries one `ConversationEvent` JSON per line; this folds them
  * into what the page shows. The fold is pure, so a replay after a reconnect ends up in the same place.
  */
 
@@ -51,6 +51,12 @@ export function foldEvent(doc: ConversationDoc, e: ConversationEvent): Conversat
       return { ...doc, items: [...items, { kind: 'user', text: e.text }] };
     case 'text':
       return { ...doc, items: [...items, { kind: 'text', text: e.text }] };
+    case 'text_delta': {
+      const last = items.at(-1);
+      return last?.kind === 'text'
+        ? { ...doc, items: [...items.slice(0, -1), { kind: 'text', text: last.text + e.text }] }
+        : { ...doc, items: [...items, { kind: 'text', text: e.text }] };
+    }
     case 'tool': {
       const tool: DocTool = {
         id: e.id,

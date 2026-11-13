@@ -540,6 +540,62 @@
 }
 
 /* Sanitized GitLab markdown (components/Markdown.tsx). Only the tags DOMPurify lets through are styled. */
+/*
+ * Reader: long-form reading. A measure of about 68 characters, a larger body and looser leading than comments, and
+ * headings that leave room above them when the contents link jumps there.
+ */
+.md.md-reader {
+  max-width: 68ch;
+  font-size: 1.0625rem;
+  line-height: 1.75;
+  overflow-wrap: break-word;
+}
+.md.md-reader > * + * {
+  margin-top: 1.1em;
+}
+.md.md-reader :is(h1, h2, h3, h4) {
+  scroll-margin-top: 1.5rem;
+  line-height: 1.25;
+  letter-spacing: -0.01em;
+}
+.md.md-reader h1 {
+  font-size: 2rem;
+  margin-top: 0;
+}
+.md.md-reader h2 {
+  font-size: 1.5rem;
+  margin-top: 2em;
+}
+.md.md-reader h3 {
+  font-size: 1.2rem;
+  margin-top: 1.6em;
+}
+.md.md-reader :is(pre, .shiki) {
+  font-size: 0.875rem;
+  line-height: 1.6;
+  padding: 0.9rem 1rem;
+  border-radius: var(--radius-surface, 0.5rem);
+  overflow-x: auto;
+  white-space: pre;
+}
+.md.md-reader li + li {
+  margin-top: 0.35em;
+}
+.md.md-reader blockquote {
+  font-style: italic;
+}
+
+/*
+ * Syntax colors: shiki writes the light color inline and the dark one as `--shiki-dark`. Anything that shows shiki
+ * tokens (the Code Reviewer's `.rv-code`, deck cards' `.code-tokens`, the Reader's `.shiki` blocks) switches here.
+ */
+.dark :is(.rv-code, .code-tokens, .shiki) span[style] {
+  color: var(--shiki-dark) !important;
+}
+.dark .shiki {
+  background-color: var(--shiki-dark-bg) !important;
+}
+
 .md {
   font-size: 0.875rem;
   line-height: 1.5;

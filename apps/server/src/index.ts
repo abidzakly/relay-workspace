@@ -60,6 +60,7 @@ import { GamificationService } from './services/gamificationService';
 import { HttpClient } from './services/httpClient';
 import { NtfyChannel, resolveNtfy } from './services/ntfyChannel';
 import { KpiService } from './services/kpiService';
+import { ReaderService } from './services/readerService';
 import { NotionService } from './services/notionService';
 import { NotificationCenter } from './services/notificationCenter';
 import { TokenIdentity } from './services/tokenIdentity';
@@ -486,6 +487,7 @@ async function main(): Promise<void> {
     signing: new SigningFiles({ config: store, git, jobs: release.jobs, audit, log }),
     cardActions,
     kpi,
+    reader: new ReaderService({ store: app }),
     gamification,
     getSyncStatus: () => poller.status(),
     refreshSync: () => engine.refreshNow(),

@@ -25,7 +25,7 @@ import { cn } from '@/lib/utils';
 import { useCoarsePointer } from '@/workspace/useMedia';
 
 /**
- * A Claude session as a calm document: one reading column, the agent's words as prose, tool activity folded into a quiet
+ * An agent session (Claude or Cursor) as a calm document: one reading column, the agent's words as prose, tool activity folded into a quiet
  * line, and at most one decision at a time. The editor at the bottom behaves like an editor: Enter is a new line.
  */
 
@@ -502,23 +502,33 @@ export function ConversationView({ s }: { s: SessionView }) {
                 </option>
               ))}
             </Select>
-            <Select
-              aria-label="Model"
-              className="h-8 w-auto text-xs"
-              value={doc.model ?? 'default'}
-              onChange={(e) =>
-                onCommand({
-                  type: 'model',
-                  model: e.target.value as Extract<ConversationCommand, { type: 'model' }>['model'],
-                })
-              }
-            >
-              {modelOptions(doc.model).map((m) => (
-                <option key={m.value} value={m.value}>
-                  {m.label}
-                </option>
-              ))}
-            </Select>
+            {s.kind === 'cursor' ? (
+              // Cursor keeps the model it started on (one headless run per turn, no live switch).
+              <span className="text-xs text-muted-foreground" title="Cursor model">
+                {doc.model ?? 'Cursor'}
+              </span>
+            ) : (
+              <Select
+                aria-label="Model"
+                className="h-8 w-auto text-xs"
+                value={doc.model ?? 'default'}
+                onChange={(e) =>
+                  onCommand({
+                    type: 'model',
+                    model: e.target.value as Extract<
+                      ConversationCommand,
+                      { type: 'model' }
+                    >['model'],
+                  })
+                }
+              >
+                {modelOptions(doc.model).map((m) => (
+                  <option key={m.value} value={m.value}>
+                    {m.label}
+                  </option>
+                ))}
+              </Select>
+            )}
           </>
         )}
         {working && (
