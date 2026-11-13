@@ -1,6 +1,6 @@
 import { useDrag } from '@use-gesture/react';
 import { animate, motion, useMotionValue, useTransform } from 'motion/react';
-import { useEffect, type ReactNode } from 'react';
+import { useEffect, useRef, type ReactNode } from 'react';
 import { SPRING } from '@/lib/motion/presets';
 
 export type SwipeDir = 'right' | 'left' | 'up';
@@ -75,8 +75,20 @@ export function SwipeCard({
     if (pending) flyOut(pending);
   }, [pending]);
 
+  useEffect(
+    () => () => {
+      document.body.style.userSelect = '';
+    },
+    [],
+  );
+
+  // Set when a gesture starts on a control, or (touch) on a long-press text selection: that drag is not a swipe.
+  const ignore = useRef(false);
+
   const bind = useDrag(
     ({
+      first,
+      last,
       down,
       movement: [mx, my],
       velocity: [vx, vy],
@@ -86,23 +98,37 @@ export function SwipeCard({
       event,
       axis,
     }) => {
-      if (disabled || tap) return;
+      if (last) document.body.style.userSelect = '';
+      if (disabled) return;
       // On a phone the card body scrolls: a vertical drag is always a scroll there, never a swipe. "Issue" is the
       // button below the card. Mouse and pen keep the swipe up.
       const touch = (event as PointerEvent).pointerType === 'touch' || 'touches' in event;
       const vertical = axis === 'y';
+      if (first) {
+        const selected = (window.getSelection()?.toString().length ?? 0) > 0;
+        // Typing or pressing a control inside the card is never a swipe.
+        const control = (event.target as Element | null)?.closest?.(
+          'input, textarea, select, a, button:not(:disabled)',
+        );
+        ignore.current = Boolean(control) || (touch && selected);
+        // A mouse drag would select the code under the pointer; the drag is the swipe, so nothing gets selected.
+        if (!touch && !ignore.current) {
+          window.getSelection()?.removeAllRanges();
+          document.body.style.userSelect = 'none';
+        }
+      }
+      if (tap || ignore.current) {
+        if (last) springBack();
+        return;
+      }
       if (down) {
         if (touch && vertical) return;
         x.set(vertical ? 0 : mx);
         y.set(touch ? 0 : Math.min(0, my));
         return;
       }
-      // Selecting code (long-press, or a drag with the mouse) is not a swipe.
-      const selecting = (window.getSelection()?.toString().length ?? 0) > 0;
       const sideways = !vertical && Math.abs(mx) > 2 * Math.abs(my);
-      if (selecting) springBack();
-      else if (sideways && (mx > THRESHOLD || (vx > VELOCITY && dx > 0 && mx > 40)))
-        flyOut('right');
+      if (sideways && (mx > THRESHOLD || (vx > VELOCITY && dx > 0 && mx > 40))) flyOut('right');
       else if (sideways && (mx < -THRESHOLD || (vx > VELOCITY && dx < 0 && mx < -40)))
         flyOut('left');
       else if (!touch && vertical && (my < -THRESHOLD || (vy > VELOCITY && dy < 0 && my < -40)))
