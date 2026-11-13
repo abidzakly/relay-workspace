@@ -61,8 +61,7 @@ export const explainHunkKey = (deckId: string, hunkId: string) =>
 
 const explainHunkQuery = (deckId: string, hunkId: string) => ({
   queryKey: explainHunkKey(deckId, hunkId),
-  queryFn: () =>
-    post<DeckExplainResult>(`/api/deck/${deckId}/explain`, { scope: 'hunk', hunkId }),
+  queryFn: () => post<DeckExplainResult>(`/api/deck/${deckId}/explain`, { scope: 'hunk', hunkId }),
   staleTime: Infinity,
   gcTime: 30 * 60_000,
   retry: false,

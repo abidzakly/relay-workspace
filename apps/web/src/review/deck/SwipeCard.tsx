@@ -76,7 +76,16 @@ export function SwipeCard({
   }, [pending]);
 
   const bind = useDrag(
-    ({ down, movement: [mx, my], velocity: [vx, vy], direction: [dx, dy], cancel, tap, event, axis }) => {
+    ({
+      down,
+      movement: [mx, my],
+      velocity: [vx, vy],
+      direction: [dx, dy],
+      cancel,
+      tap,
+      event,
+      axis,
+    }) => {
       if (disabled || tap) return;
       // On a phone the card body scrolls: a vertical drag is always a scroll there, never a swipe. "Issue" is the
       // button below the card. Mouse and pen keep the swipe up.

@@ -14,12 +14,14 @@ import {
   type RunTargets,
   type SessionKind,
   type TestRunProfile,
+  isConversationKind,
 } from '@relay/shared';
 import type { Logger } from '../../util/logger';
 import { listEntrypoints } from '../flutterBuild';
 import { loadNodePty, type NodePtyModule, type NodePtyProcess } from '../ptyBackend';
 import { CLAUDE_BIN, CLAUDE_SESSION_MODEL } from './claudeCli';
 import { ClaudeConversation } from './claudeConversation';
+import { CursorConversation } from './cursorConversation';
 import { CURSOR_BIN, CURSOR_MODEL } from './cursorCli';
 import { CockpitHostError } from './host';
 import { defaultShell, launchSpec, signalTree, which } from '../../util/platform';
@@ -273,8 +275,9 @@ function whichSync(bin: string): string | null {
 
 /**
  * Which program a kind runs. Pure; exported for tests. Agents start in plan mode: nothing is edited until the user
- * approves a plan in the session. Claude runs as a `ClaudeConversation` (a document with its own approval channel);
- * Cursor stays in its TUI, because headless it approves its own way out of plan mode and has no approval channel.
+ * approves a plan in the session. Claude runs as a `ClaudeConversation` (a document with its own approval channel).
+ * Cursor runs as a `CursorConversation`: one headless `cursor-agent -p` per turn, so `args` here are its per-turn
+ * extras; the driver adds plan mode, `--force` after approval and `--resume`.
  */
 export function commandFor(
   kind: SessionKind,
@@ -336,17 +339,16 @@ export function commandFor(
       };
     case 'cursor':
       if (cursorTestModel) {
-        // Normal mode, not plan: the tester must call the bench tools without a human approving a plan. `--force` is
-        // not passed, so shell and edit calls still wait for approval.
+        // Not plan mode: the tester must call the bench tools without a human approving a plan. No `--force`.
         return {
           file: CURSOR_BIN,
-          args: ['--model', cursorTestModel, '--approve-mcps', '--trust'],
+          args: ['--model', cursorTestModel, '--approve-mcps'],
           title: 'Cursor · device test',
         };
       }
       return {
         file: CURSOR_BIN,
-        args: ['--mode', 'plan', '--model', agentModel ?? CURSOR_MODEL],
+        args: ['--model', agentModel ?? CURSOR_MODEL],
         title: 'Cursor',
       };
     case 'shell': {
@@ -368,8 +370,12 @@ export function commandFor(
   }
 }
 
+type Conversation = ClaudeConversation | CursorConversation;
+const isConversation = (p: NodePtyProcess | null): p is Conversation =>
+  p instanceof ClaudeConversation || p instanceof CursorConversation;
+
 function stopProcess(proc: NodePtyProcess): void {
-  if (proc instanceof ClaudeConversation) {
+  if (isConversation(proc)) {
     proc.kill();
     return;
   }
@@ -416,7 +422,7 @@ export class SessionManager {
         continue;
       }
       // A conversation reports its own state; a long silent tool call is not "finished".
-      if (s.proc instanceof ClaudeConversation) continue;
+      if (isConversation(s.proc)) continue;
       const quiet = s.info.lastOutputAt !== null && now - s.info.lastOutputAt >= IDLE_MS;
       if (quiet && s.info.state === 'running') {
         const agent = s.info.kind === 'claude' || s.info.kind === 'cursor';
@@ -426,7 +432,7 @@ export class SessionManager {
   }
 
   start(i: StartInput): CockpitSession {
-    if (!this.pty && i.kind !== 'claude')
+    if (!this.pty && !isConversationKind(i.kind))
       throw new CockpitHostError('pty_unavailable', 'node-pty is not installed on the host.', 409);
     const alive = [...this.sessions.values()].filter((s) => s.info.state !== 'exited').length;
     if (alive >= MAX_SESSIONS)
@@ -455,24 +461,35 @@ export class SessionManager {
     let proc: NodePtyProcess;
     try {
       proc =
-        i.kind === 'claude'
-          ? new ClaudeConversation({
+        i.kind === 'cursor'
+          ? new CursorConversation({
               file: cmd.file,
               args: cmd.args,
-              cwd: i.cwd,
-              env: sessionEnv(),
-              ...(i.model ? { model: i.model } : {}),
-              ...(i.execModel ? { execModel: i.execModel } : {}),
-              ...(i.execEffort ? { execEffort: i.execEffort } : {}),
-              ...(i.execSwitch ? { execSwitch: i.execSwitch } : {}),
-            })
-          : this.pty!.spawn(cmd.file, cmd.args, {
-              name: 'xterm-256color',
-              cols: i.cols,
-              rows: i.rows,
               cwd,
               env: sessionEnv(),
-            });
+              ...(i.model ? { model: i.model } : {}),
+              ...(cursorTest
+                ? { startMode: 'acceptEdits' as const }
+                : { startMode: 'plan' as const, forceAfterPlan: true }),
+            })
+          : i.kind === 'claude'
+            ? new ClaudeConversation({
+                file: cmd.file,
+                args: cmd.args,
+                cwd: i.cwd,
+                env: sessionEnv(),
+                ...(i.model ? { model: i.model } : {}),
+                ...(i.execModel ? { execModel: i.execModel } : {}),
+                ...(i.execEffort ? { execEffort: i.execEffort } : {}),
+                ...(i.execSwitch ? { execSwitch: i.execSwitch } : {}),
+              })
+            : this.pty!.spawn(cmd.file, cmd.args, {
+                name: 'xterm-256color',
+                cols: i.cols,
+                rows: i.rows,
+                cwd,
+                env: sessionEnv(),
+              });
     } catch (e) {
       if (cursorTest) rmSync(cwd, { recursive: true, force: true });
       if (mcpConfig) rmSync(mcpConfig, { force: true });
@@ -489,7 +506,7 @@ export class SessionManager {
         workspaceId: i.wsId,
         kind: i.kind,
         title: cmd.title,
-        state: i.kind === 'claude' ? 'idle' : 'running',
+        state: isConversationKind(i.kind) ? 'idle' : 'running',
         waiting: false,
         exitCode: null,
         startedAt: this.now(),
@@ -503,7 +520,7 @@ export class SessionManager {
       bytesSinceInput: 0,
     };
     this.sessions.set(id, s);
-    if (proc instanceof ClaudeConversation) {
+    if (isConversation(proc)) {
       proc.onStatus(({ working, waiting }) =>
         this.setState(s, { state: working ? 'running' : 'idle', waiting }),
       );
@@ -514,7 +531,7 @@ export class SessionManager {
       const wasIdle = s.info.state !== 'running';
       s.info = { ...s.info, lastOutputAt: this.now() };
       this.emit(s, { t: 'data', data, offset });
-      if (wasIdle && !(proc instanceof ClaudeConversation)) {
+      if (wasIdle && !isConversation(proc)) {
         this.setState(s, { state: 'running', waiting: false });
       }
     });
@@ -546,7 +563,7 @@ export class SessionManager {
     if (!s.proc) throw new CockpitHostError('session_exited', 'The session has ended.', 409);
     s.bytesSinceInput = 0;
     // A conversation decides for itself: a mode change, for one, is not the user answering.
-    if (s.info.waiting && !(s.proc instanceof ClaudeConversation)) {
+    if (s.info.waiting && !isConversation(s.proc)) {
       this.setState(s, { waiting: false });
     }
     s.proc.write(data);

@@ -7,6 +7,7 @@ import {
   type CockpitSession,
   type ConversationCommand,
   type SessionStartInput,
+  isConversationKind,
 } from '@relay/shared';
 import type { EventBus } from '../../sync/eventBus';
 import type { Logger } from '../../util/logger';
@@ -44,7 +45,7 @@ export interface SessionServiceDeps {
   preferredAgent?: () => 'claude' | 'cursor';
   /** Settings' plan / execution models. Default: Opus 5.5 plans, Sonnet 5.5 (medium) executes. */
   agentModels?: () => AgentModels;
-  /** Cursor's TUI needs a moment to draw before the first prompt (ms). Tests set 0. */
+  /** Unused: Cursor sessions are conversations now and queue their first prompt. Kept so callers still compile. */
   cursorBootMs?: number;
   now?: () => number;
   pollMs?: number;
@@ -160,11 +161,12 @@ export class CockpitSessionService {
       });
       this.waiting.set(id, false);
     }
-    if (s.kind === 'claude') {
+    if (isConversationKind(s.kind)) {
       const cmd: ConversationCommand = { type: 'prompt', text };
       await this.d.host.sessionInput(id, JSON.stringify(cmd));
     } else {
-      await this.d.host.sessionInput(id, AGENT_KINDS.has(s.kind) ? asPrompt(text) : text);
+      // Only shell-like sessions are left here (agents are conversations).
+      await this.d.host.sessionInput(id, text);
       await this.d.host.sessionInput(id, '\r');
     }
     this.ensurePolling();
@@ -193,7 +195,6 @@ export class CockpitSessionService {
       rows: 30,
       ...(pick.model ? { model: pick.model } : {}),
     });
-    if (kind === 'cursor') await new Promise((r) => setTimeout(r, this.d.cursorBootMs ?? 2_500));
     return s;
   }
 

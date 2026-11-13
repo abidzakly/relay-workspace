@@ -1,5 +1,6 @@
 import { ExternalLink } from 'lucide-react';
 import { Link } from 'react-router';
+import { isConversationKind } from '@relay/shared';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/components/ui/dialog';
 import { useWorkspaces } from '@/lib/cockpitApi';
@@ -99,7 +100,7 @@ export function LogDrawer({
         <div className="flex min-h-0 flex-1 flex-col">
           {tab === 'agent' ? (
             agent ? (
-              agent.kind === 'claude' ? (
+              isConversationKind(agent.kind) ? (
                 <ConversationView key={agent.id} s={agent} />
               ) : (
                 <AgentView key={agent.id} s={agent} />

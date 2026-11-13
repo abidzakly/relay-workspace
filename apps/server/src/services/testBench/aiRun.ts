@@ -221,8 +221,6 @@ export class AiRunService {
         cursorModel,
       });
       live.sessionId = s.id;
-      // A TUI needs a moment before it accepts a pasted prompt.
-      if (engine === 'cursor') await new Promise((r) => setTimeout(r, 2_500));
       const regressions = st.findings.filter((f) => f.status === 'fixed').length;
       await this.d.sessions.prompt(
         s.id,

@@ -51,7 +51,16 @@ export function runCursorCli(
   return runJsonCli(
     'cursor',
     CURSOR_BIN,
-    ['-p', '--output-format', 'json', '--mode', 'ask', '--trust', '--model', cursorModel(req.model)],
+    [
+      '-p',
+      '--output-format',
+      'json',
+      '--mode',
+      'ask',
+      '--trust',
+      '--model',
+      cursorModel(req.model),
+    ],
     { ...req, prompt: NO_TOOLS + req.prompt },
   );
 }
