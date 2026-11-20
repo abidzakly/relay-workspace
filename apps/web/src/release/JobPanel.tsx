@@ -19,6 +19,8 @@ import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Button, type ButtonProps } from '@/components/ui/button';
 import { ApiError, describeError } from '@/lib/api';
 import { useJobAction, type JobAction } from '@/lib/releaseApi';
+import { useLogView } from '@/lib/visuals';
+import { ModeSwitch } from '@/components/ModeSwitch';
 import { safeHref } from '@/lib/utils';
 import {
   canCancel,
@@ -29,6 +31,7 @@ import {
   stateText,
   type StrandedMerge,
 } from './model';
+import { JobConstellation } from './JobConstellation';
 import { FlavorChoice, NotionOffer, QaShare } from './PipelineActions';
 import { PtyNotice } from './PtyNotice';
 
@@ -209,6 +212,7 @@ export function JobPanel({
   const mrUrl = stateText(view, 'mrUrl');
   const mrHref = job.mrIid !== null ? safeHref(mrUrl) : undefined;
   const pty = job.engine === 'pty';
+  const logView = useLogView('release');
   const paused = !pty && job.status === 'paused' && job.currentStep === 'AWAIT_REVIEW';
   const merging = job.status === 'running' && job.currentStep === 'MERGE';
   const next = nextStep(view, cancelling);
@@ -401,15 +405,30 @@ export function JobPanel({
           <PtyTerminal key={job.id} jobId={job.id} />
         </Suspense>
       ) : (
-        <div>
-          <p className="text-xs text-muted-foreground">
-            Logs refresh when a step changes, so a long step shows its output when it ends.
-          </p>
-          <ol className="divide-y">
-            {steps.map((s) => (
-              <StepRow key={s.id} step={s} />
-            ))}
-          </ol>
+        <div className="grid gap-3">
+          {logView.canSwitch && (
+            <ModeSwitch
+              label="Release log view"
+              options={logView.options}
+              value={logView.view}
+              onChange={logView.setView}
+              className="justify-self-end"
+            />
+          )}
+          {logView.view === 'visual' ? (
+            <JobConstellation view={view} />
+          ) : (
+            <div>
+              <p className="text-xs text-muted-foreground">
+                Logs refresh when a step changes, so a long step shows its output when it ends.
+              </p>
+              <ol className="divide-y">
+                {steps.map((s) => (
+                  <StepRow key={s.id} step={s} />
+                ))}
+              </ol>
+            </div>
+          )}
         </div>
       )}
     </div>

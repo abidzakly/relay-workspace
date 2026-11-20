@@ -10,7 +10,7 @@ import {
 import { BuildRow } from '@/builds/BuildRow';
 import { FlavorDialog } from '@/builds/FlavorDialog';
 import { PreviewDialog } from '@/builds/PreviewDialog';
-import { LogViewer } from '@/builds/LogViewer';
+import { BuildProgress } from '@/builds/BuildProgress';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -297,7 +297,11 @@ export function Builds() {
             <CardTitle>Log</CardTitle>
           </CardHeader>
           <CardContent>
-            <LogViewer key={shownLog} jobId={shownLog} />
+            <BuildProgress
+              key={shownLog}
+              jobId={shownLog}
+              job={items.find((v) => v.job.id === shownLog)?.job ?? null}
+            />
           </CardContent>
         </Card>
       )}

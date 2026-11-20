@@ -18,6 +18,9 @@ export type HomeMode = 'scene' | 'classic';
 /** Pages with a visual of their own (design system: Page visuals). Release and Builds hold their start gestures. */
 export const VISUAL_PAGES = ['builds', 'release', 'sync', 'board'] as const;
 export type VisualPage = (typeof VISUAL_PAGES)[number];
+/** How a running job's progress is shown: the live picture, or the plain log. */
+export type LogView = 'visual' | 'raw';
+export type LogViewPage = 'release' | 'builds';
 
 interface UiState {
   theme: Theme;
@@ -42,6 +45,8 @@ interface UiState {
   settingsCollapsed: Record<string, boolean>;
   /** Setup checklist items the user chose to stop seeing, by item id. */
   setupIgnored: string[];
+  /** Release and Builds: the live picture of a job, or its plain log. */
+  logView: Record<LogViewPage, LogView>;
   setTheme: (v: Theme) => void;
   setMode3d: (v: CoreMode) => void;
   setScope: (v: CoreScope) => void;
@@ -57,6 +62,7 @@ interface UiState {
   setOtherVisuals: (v: boolean) => void;
   setSettingsCollapsed: (ids: string[], collapsed: boolean) => void;
   setSetupIgnored: (ids: string[], ignored: boolean) => void;
+  setLogView: (page: LogViewPage, view: LogView) => void;
 }
 
 const ALL_VISUALS: Record<VisualPage, boolean> = {
@@ -87,6 +93,7 @@ export const useUiStore = create<UiState>()(
       otherVisuals: true,
       settingsCollapsed: {},
       setupIgnored: [],
+      logView: { release: 'visual', builds: 'visual' },
       setTheme: (theme) => set({ theme }),
       setMode3d: (mode3d) => set({ mode3d }),
       setScope: (scope) => set({ scope }),
@@ -115,6 +122,7 @@ export const useUiStore = create<UiState>()(
             ? [...new Set([...s.setupIgnored, ...ids])]
             : s.setupIgnored.filter((id) => !ids.includes(id)),
         })),
+      setLogView: (page, view) => set((s) => ({ logView: { ...s.logView, [page]: view } })),
     }),
     {
       name: UI_STORAGE_KEY,
@@ -144,6 +152,7 @@ export const useUiStore = create<UiState>()(
         otherVisuals: s.otherVisuals,
         settingsCollapsed: s.settingsCollapsed,
         setupIgnored: s.setupIgnored,
+        logView: s.logView,
       }),
     },
   ),
