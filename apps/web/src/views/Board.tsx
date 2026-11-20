@@ -12,7 +12,7 @@ import { Button } from '@/components/ui/button';
 import { TimeAgo } from '@/components/TimeAgo';
 import { BoardFilterBar } from '@/board/BoardFilters';
 import { BoardDnd, DragTile, DropColumn, type PendingMove } from '@/board/BoardDnd';
-import { CardTile, OrphanTile } from '@/board/CardTile';
+import { agentStartBlock, CardTile, OrphanTile } from '@/board/CardTile';
 import {
   buildBoard,
   bulkReadyCandidates,
@@ -241,9 +241,11 @@ export function Board() {
                 disabled={selected.length === 0}
                 onClick={() =>
                   setBulkStart(
-                    selected
-                      .map((id) => stateQ.data?.cards.find((c) => c.id === id))
-                      .filter((c): c is StateCard => c !== undefined),
+                    // A ticked card starts only if its tile still qualifies: a sync may have moved it meanwhile.
+                    selected.flatMap((id) => {
+                      const t = tileById.get(id);
+                      return t && !agentStartBlock(t) ? [t.card] : [];
+                    }),
                   )
                 }
               >
@@ -396,9 +398,10 @@ export function Board() {
                                 select: {
                                   checked: selected.includes(t.card.id),
                                   disabled:
-                                    !t.card.branchName ||
+                                    !!agentStartBlock(t) ||
                                     (!selected.includes(t.card.id) &&
                                       selected.length >= BULK_START_MAX),
+                                  reason: agentStartBlock(t) ?? undefined,
                                   onToggle: () => toggleSelected(t.card.id),
                                 },
                               }
