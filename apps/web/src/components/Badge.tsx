@@ -9,7 +9,7 @@ import {
   TriangleAlert,
   type LucideIcon,
 } from 'lucide-react';
-import type { MrDerivedState, Severity, WaitingOn } from '@relay/shared';
+import type { ActionKind, MrDerivedState, Severity, WaitingOn } from '@relay/shared';
 import { Badge, type badgeVariants } from '@/components/ui/badge';
 import type { VariantProps } from 'class-variance-authority';
 
@@ -64,7 +64,25 @@ const WAITING: Record<WaitingOn, { variant: Variant; label: string; icon: Lucide
   none: null,
 };
 
-export function WaitingBadge({ kind }: { kind: WaitingOn }) {
+/**
+ * `action` / `state`: what the sibling ActionBadge / MrStateBadge already say. When one of them states the same fact
+ * ("Waiting for reviewer", "Reply needed", "approved"), this badge stays hidden instead of repeating it.
+ */
+export function WaitingBadge({
+  kind,
+  action,
+  state,
+}: {
+  kind: WaitingOn;
+  action?: ActionKind;
+  state?: MrDerivedState;
+}) {
+  if (
+    (kind === 'reviewer' && action === 'waiting_reviewer') ||
+    (kind === 'you' && action === 'reply_needed') ||
+    (kind === 'approved' && state === 'approved')
+  )
+    return null;
   const w = WAITING[kind];
   return w ? (
     <Badge variant={w.variant}>

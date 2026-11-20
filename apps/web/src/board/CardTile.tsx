@@ -283,7 +283,7 @@ export function CardTile({
             +{tile.extraMrs} more MR{tile.extraMrs > 1 ? 's' : ''}
           </Badge>
         )}
-        {mr && <WaitingBadge kind={mr.timing.waitingOn.kind} />}
+        {mr && <WaitingBadge kind={mr.timing.waitingOn.kind} state={mr.derivedState} />}
       </div>
 
       {(parentChip || family) && (
@@ -397,7 +397,7 @@ export function OrphanTile({
       </div>
       <p className="text-xs text-muted-foreground">{verdict.message}</p>
       <MrTimingLine mr={mr} />
-      <WaitingBadge kind={mr.timing.waitingOn.kind} />
+      <WaitingBadge kind={mr.timing.waitingOn.kind} state={mr.derivedState} />
     </article>
   );
 }
