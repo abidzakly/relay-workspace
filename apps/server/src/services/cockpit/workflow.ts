@@ -610,7 +610,7 @@ export class CockpitWorkflowService {
 
   /**
    * "Make more changes" on a draft MR: a NEW agent session on the MR's branch with the user's brief (instructions,
-   * Figma links, Postrack endpoints, files). The agent plans first, then adds commits; it never pushes, so the user can
+   * Figma links, files). The agent plans first, then adds commits; it never pushes, so the user can
    * review and test before anything reaches the MR. The MR is re-read from GitLab: only an open draft qualifies.
    */
   async mrRevise(input: ReviseBrief & { repoId: string; iid: number }): Promise<ReviseResult> {
