@@ -355,7 +355,11 @@ export function MrDetail() {
                     <div className="flex min-w-0 flex-wrap items-center gap-1.5 text-xs text-muted-foreground">
                       <ActionBadge action={q.data.mr.action} />
                       <MrStateBadge state={q.data.mr.derivedState} />
-                      <WaitingBadge kind={q.data.mr.timing.waitingOn.kind} />
+                      <WaitingBadge
+                        kind={q.data.mr.timing.waitingOn.kind}
+                        action={q.data.mr.action.kind}
+                        state={q.data.mr.derivedState}
+                      />
                       {q.data.mr.timing.openFor && (
                         <span>open {q.data.mr.timing.openFor.label}</span>
                       )}

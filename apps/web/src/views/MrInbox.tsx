@@ -135,7 +135,7 @@ function Row({ m, search, inStack }: { m: InboxMr; search: string; inStack?: boo
               {m.unreadNotes} unread
             </Badge>
           )}
-          <WaitingBadge kind={t.waitingOn.kind} />
+          <WaitingBadge kind={t.waitingOn.kind} action={m.action.kind} state={m.derivedState} />
           {m.card?.conflict && (
             <Badge variant="destructive">
               <TriangleAlert aria-hidden />
