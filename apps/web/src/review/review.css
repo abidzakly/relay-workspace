@@ -384,6 +384,11 @@
   .rv-viewed:active {
     transform: scale(0.95);
   }
+  .rv-icon-btn:disabled,
+  .rv-viewed:disabled {
+    opacity: 0.4;
+    pointer-events: none;
+  }
   .rv-viewed-on {
     color: var(--success);
     background: color-mix(in oklch, var(--success) 10%, transparent);

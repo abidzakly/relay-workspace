@@ -13,6 +13,7 @@ import {
 import { ConfigStore } from './config/store';
 import { openDatabase, runMigrations } from './db';
 import { mrs } from './db/schema';
+import { ReviewAssistService } from './services/review/reviewAssist';
 import { and, eq, inArray } from 'drizzle-orm';
 import { buildDashboardApp } from './http/dashboardApp';
 import { loadPresets } from './config/presets';
@@ -314,20 +315,22 @@ async function main(): Promise<void> {
     figmaSnapshots,
     onAttachments: (a) => recordAttachments(app, a),
   });
+  const reviewDiff = createDiffReader({
+    config: store,
+    cache: app,
+    http,
+    log,
+    localDiff: (source) => workspaces.localDiff(source),
+    workspaceForRepo: (repoId) => workspaces.forRepo(repoId),
+    branchHeads: (repoId) => ready.branchHeads(repoId),
+  });
+  const reviewCommits = createCommitReader({ config: store, cache: app, http, log });
   const decks = new ReviewDeckService({
     store: app,
     log,
     ai,
-    readDiff: createDiffReader({
-      config: store,
-      cache: app,
-      http,
-      log,
-      localDiff: (source) => workspaces.localDiff(source),
-      workspaceForRepo: (repoId) => workspaces.forRepo(repoId),
-      branchHeads: (repoId) => ready.branchHeads(repoId),
-    }),
-    readCommits: createCommitReader({ config: store, cache: app, http, log }),
+    readDiff: reviewDiff,
+    readCommits: reviewCommits,
     award: (deckId, diffSha, issues) => gamification.awardReviewDeck(deckId, diffSha, issues),
     sendToAgent: (workspaceId, prompt) => sessions.sendToAgent(workspaceId, prompt),
     prepareAgentBranch: (source) => workflow.prepareDeckBranch(source),
@@ -358,6 +361,28 @@ async function main(): Promise<void> {
           ),
         )
         .get()?.iid ?? null,
+  });
+  const reviewAssist = new ReviewAssistService({
+    log,
+    ai,
+    readDiff: reviewDiff,
+    commitsOf: async (source) => {
+      let range: { from: string; to: string } | null =
+        source.kind === 'compare' ? { from: source.from, to: source.to } : null;
+      if (source.kind === 'mr') {
+        const mr = app.db
+          .select({ from: mrs.targetBranch, to: mrs.sourceBranch })
+          .from(mrs)
+          .where(and(eq(mrs.repoId, source.repoId), eq(mrs.iid, source.iid)))
+          .get();
+        range = mr ?? null;
+      }
+      if (!range) return [];
+      const r = await reviewCommits(source.repoId, range.from, range.to);
+      return r.commits.map((c) => c.message);
+    },
+    sendToAgent: (workspaceId, prompt) => sessions.sendToAgent(workspaceId, prompt),
+    prepareAgentBranch: (source) => workflow.prepareDeckBranch(source),
   });
   // HEAD of a branch: a workspace that has it checked out, else the last pushed sha.
   const headOf = async (repoId: string, branch: string): Promise<string | null> => {
@@ -443,6 +468,7 @@ async function main(): Promise<void> {
       host: cockpitHost,
       ai,
       decks,
+      reviewAssist,
       ready,
       workspaces,
       sessions,

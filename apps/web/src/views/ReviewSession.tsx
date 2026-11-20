@@ -1,10 +1,4 @@
-import {
-  ArrowLeft,
-  ExternalLink,
-  GitBranch,
-  GitCommitHorizontal,
-  MoveRight,
-} from 'lucide-react';
+import { ArrowLeft, ExternalLink, GitBranch, GitCommitHorizontal, MoveRight } from 'lucide-react';
 import { useEffect } from 'react';
 import { Link, Navigate, useLocation, useParams, useSearchParams } from 'react-router';
 import type { DeckSource } from '@relay/shared';
@@ -174,8 +168,7 @@ export function MrReviewSession() {
       at: Date.now(),
     });
   }, [loaded]);
-  if (toDeck)
-    return <Navigate to={toDeck} replace state={originState} />;
+  if (toDeck) return <Navigate to={toDeck} replace state={originState} />;
   // A malformed link never loads: say so instead of waiting forever.
   if (!valid)
     return (
@@ -192,6 +185,9 @@ export function MrReviewSession() {
     <ReviewWorkspace
       back={<BackLink />}
       storageKey={`${mr.repoId}!${mr.iid}@${d.diffRefs?.headSha ?? 'unknown'}`}
+      assistSource={
+        mr.repoId.startsWith('~') ? null : { kind: 'mr', repoId: mr.repoId, iid: mr.iid }
+      }
       title={
         <div className="grid min-w-0 gap-0.5">
           <span className="flex min-w-0 items-center gap-2 text-xs text-muted-foreground">
@@ -329,6 +325,11 @@ export function CompareReviewSession() {
     <ReviewWorkspace
       back={<BackLink />}
       storageKey={`${d.repoId}:${d.from}...${d.to}@${d.commits[0]?.id ?? 'none'}`}
+      assistSource={
+        d.repoId.startsWith('~')
+          ? null
+          : { kind: 'compare', repoId: d.repoId, from: d.from, to: d.to }
+      }
       title={
         <div className="grid min-w-0 gap-0.5">
           <span className="text-xs text-muted-foreground">{d.repoName} · compare</span>

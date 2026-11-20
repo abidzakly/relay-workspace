@@ -11,6 +11,8 @@ import {
   BranchNameSchema,
   DISCUSSION_ID_RE,
   MrChatRequestSchema,
+  ReviewExplainRequestSchema,
+  ReviewProposeRequestSchema,
   MrCreateRequestSchema,
   WorkspaceCreateSchema,
   WorkspaceIdSchema,
@@ -22,6 +24,7 @@ import {
 } from '@relay/shared';
 import { z } from 'zod';
 import type { ReviewDeckService } from '../../services/deck/reviewDeck';
+import type { ReviewAssistService } from '../../services/review/reviewAssist';
 import type { MrCreateService } from '../../services/mrCreate';
 import type { ReadyForMrService } from '../../services/readyForMr';
 import type { WorkspaceService } from '../../services/cockpit/workspaces';
@@ -49,6 +52,8 @@ export interface CockpitDeps {
   host: CockpitHost;
   ai: AiService;
   decks: ReviewDeckService;
+  /** Code Review: Explain / Propose changes on a file. */
+  reviewAssist?: ReviewAssistService;
   ready: ReadyForMrService;
   mrCreate: MrCreateService;
   workspaces: WorkspaceService;
@@ -407,6 +412,19 @@ export function registerCockpitRoutes(app: FastifyInstance, deps: CockpitDeps): 
     const body = parseWith(MrCreateRequestSchema, req.body);
     return run(() => deps.mrCreate.create(body));
   });
+
+  // ── Code Review assist (classic review)
+  const assist = deps.reviewAssist;
+  if (assist) {
+    app.post('/api/review-assist/explain', async (req) => {
+      const b = parseWith(ReviewExplainRequestSchema, req.body);
+      return run(() => assist.explain(b));
+    });
+    app.post('/api/review-assist/propose', async (req) => {
+      const b = parseWith(ReviewProposeRequestSchema, req.body);
+      return run(() => assist.propose(b));
+    });
+  }
 
   // ── Review Deck
   app.post('/api/deck/open', async (req) => {

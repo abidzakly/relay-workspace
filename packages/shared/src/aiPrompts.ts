@@ -270,6 +270,70 @@ Uncommitted changes (git diff):
 <data>
 {{diff}}
 </data>`,
+
+  'explain-change-chat': `${COMMON}
+
+Task: help a reviewer understand WHY this file changed in this branch. The answer goes in "answer".
+- When the user has no question yet: say in 1 sentence what changed, then why (use the commit messages and the
+  MR/branch title as evidence of intent), then side effects and what to check. Keep it short, use "- " bullets.
+- When the user asks a question: answer it specifically, continuing the earlier conversation.
+Base everything on the diff. When the intent is not visible in the commits or title, say so instead of guessing.
+You only answer: you cannot change code.
+
+File: {{file}}
+
+User's latest question (or "(tidak ada)" for the first explanation):
+<data>
+{{question}}
+</data>
+
+Earlier conversation:
+<data>
+{{history}}
+</data>
+
+MR / branch:
+<data>
+{{title}}
+</data>
+
+Commits:
+<data>
+{{commits}}
+</data>
+
+Other files changed in this branch:
+<data>
+{{others}}
+</data>
+
+Diff of this file:
+<data>
+{{diff}}
+</data>`,
+
+  'propose-change': `${COMMON}
+
+Task: write an instruction "prompt" ready to send to a coding agent (Claude Code / Cursor) that works on this branch,
+to change the code as the reviewer asks. The prompt must contain: context (the files and the relevant diff excerpts),
+the requested change (clear and specific, split into steps when it touches several places), and these constraints:
+${NO_VERIFY}
+
+Scope: {{scope}}
+MR / branch:
+<data>
+{{title}}
+</data>
+
+Reviewer's request:
+<data>
+{{request}}
+</data>
+
+Current changes in scope:
+<data>
+{{diff}}
+</data>`,
 };
 
 /** Per-template prompt overrides from Settings. */
@@ -315,6 +379,14 @@ export const AI_TEMPLATE_INFO: Record<AiTemplate, { label: string; where: string
   'commit-message': {
     label: 'Commit message',
     where: 'Create MR: writes the message when you commit uncommitted changes.',
+  },
+  'explain-change-chat': {
+    label: 'Explain a file change (chat)',
+    where: 'Code Review: "Explain" on a file, with follow-up questions.',
+  },
+  'propose-change': {
+    label: 'Propose changes',
+    where: 'Code Review: the agent prompt for changes to a file or the whole branch.',
   },
 };
 

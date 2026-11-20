@@ -19,6 +19,8 @@ export const AI_TEMPLATES = [
   'base-suggest',
   'explain-thread',
   'commit-message',
+  'explain-change-chat',
+  'propose-change',
 ] as const;
 export const AiTemplateSchema = z.enum(AI_TEMPLATES);
 export type AiTemplate = z.infer<typeof AiTemplateSchema>;
@@ -211,6 +213,8 @@ export const AI_OUTPUT_SCHEMAS = {
   'base-suggest': BaseSuggestOutputSchema,
   'explain-thread': ExplainThreadOutputSchema,
   'commit-message': CommitMessageOutputSchema,
+  'explain-change-chat': MrChatOutputSchema,
+  'propose-change': RequestChangeOutputSchema,
 } as const satisfies Record<AiTemplate, z.ZodType>;
 export type AiOutput<T extends AiTemplate> = z.infer<(typeof AI_OUTPUT_SCHEMAS)[T]>;
 
@@ -220,7 +224,15 @@ export function aiOutputProblem(template: AiTemplate, out: unknown): string | nu
     const s = (out as GradeTeachbackOutput).score;
     if (s < 0 || s > 3) return 'score must be 0–3';
   }
-  if (template === 'mr-chat' && !(out as MrChatOutput).answer.trim()) return 'the answer is empty';
+  if (
+    (template === 'mr-chat' || template === 'explain-change-chat') &&
+    !(out as MrChatOutput).answer.trim()
+  ) {
+    return 'the answer is empty';
+  }
+  if (template === 'propose-change' && !(out as RequestChangeOutput).prompt.trim()) {
+    return 'the prompt is empty';
+  }
   if (template === 'commit-message' && !(out as CommitMessageOutput).message.trim()) {
     return 'the message is empty';
   }
