@@ -33,6 +33,7 @@ export * from './review';
 export * from './mrStack';
 export * from './ai';
 export * from './reviewDeck';
+export * from './reviewAssist';
 export * from './mrCreate';
 export * from './cockpit';
 export * from './testBench';

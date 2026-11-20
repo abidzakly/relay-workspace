@@ -7,6 +7,8 @@ import {
   FileWarning,
   MessageSquare,
   MessageSquarePlus,
+  Sparkles,
+  Wand2,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { lineKey, type FileThreads, type LineKey } from './anchor';
@@ -258,6 +260,15 @@ interface FileProps {
   anchorId: string;
   /** Navigation is heading here: mount and unfold the body now. */
   reveal?: boolean;
+  /** Explain / Propose changes buttons; absent where AI assist is not offered (external repos). */
+  assist?: FileAssist;
+}
+
+/** The file header's AI actions. One object for every file, so the memoized cards do not re-render. */
+export interface FileAssist {
+  ready: boolean;
+  onExplain: (path: string) => void;
+  onPropose: (path: string) => void;
 }
 
 /** Rows rendered per chunk of a long file; the next chunk mounts as the reader nears it. */
@@ -553,6 +564,32 @@ function DiffFileImpl(p: FileProps) {
             <ChangeBar add={file.additions} del={file.deletions} />
           </span>
         </span>
+        {p.assist && (
+          <>
+            <button
+              type="button"
+              className="rv-viewed"
+              disabled={!p.assist.ready}
+              onClick={() => p.assist!.onExplain(file.path)}
+              title={p.assist.ready ? 'Explain why this file changed' : 'AI is not available'}
+              aria-label={`Explain why ${file.path} changed`}
+            >
+              <Sparkles className="size-4" aria-hidden />
+              <span className="hidden md:inline">Explain</span>
+            </button>
+            <button
+              type="button"
+              className="rv-viewed"
+              disabled={!p.assist.ready}
+              onClick={() => p.assist!.onPropose(file.path)}
+              title={p.assist.ready ? 'Propose changes to this file' : 'AI is not available'}
+              aria-label={`Propose changes to ${file.path}`}
+            >
+              <Wand2 className="size-4" aria-hidden />
+              <span className="hidden md:inline">Propose</span>
+            </button>
+          </>
+        )}
         <button
           type="button"
           onClick={() => p.onViewed(file.path)}

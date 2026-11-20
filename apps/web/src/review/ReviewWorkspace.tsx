@@ -2,7 +2,7 @@ import * as DialogPrimitive from '@radix-ui/react-dialog';
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { flushSync } from 'react-dom';
 import { useSearchParams } from 'react-router';
-import type { DiffFile, ReviewDiscussion } from '@relay/shared';
+import type { DiffFile, ReviewAssistSource, ReviewDiscussion } from '@relay/shared';
 import {
   ChevronDown,
   ChevronLeft,
@@ -14,14 +14,23 @@ import {
   MessageSquare,
   Rows3,
   Search,
+  Wand2,
   WrapText,
   X,
 } from 'lucide-react';
+import { useAiStatus } from '@/lib/cockpitApi';
 import { cn } from '@/lib/utils';
 import { useNarrow, useReducedMotion } from '@/workspace/useMedia';
 import { groupThreads, positionFor, type FileThreads } from './anchor';
 import { buildTree, sortForTree, type DirNode } from './fileTree';
-import { ChangeBar, DiffFileView, type CommentSlots, type DiffMode } from './DiffFile';
+import { AssistDrawer, type AssistTarget } from './AssistDrawer';
+import {
+  ChangeBar,
+  DiffFileView,
+  type CommentSlots,
+  type DiffMode,
+  type FileAssist,
+} from './DiffFile';
 import { parseDiff, type Hunk } from './parseDiff';
 import { NewComment, ThreadCard } from './Threads';
 import './review.css';
@@ -367,6 +376,8 @@ export interface ReviewWorkspaceProps {
   /** MR sessions only; branch compares are read-only. `headSha` = the version on screen. */
   mr: { repo: string; iid: number; canComment: boolean; headSha: string | null } | null;
   storageKey: string;
+  /** Where Explain / Propose changes read the diff from; null hides them (external repos). */
+  assistSource?: ReviewAssistSource | null;
 }
 
 export function ReviewWorkspace(props: ReviewWorkspaceProps) {
@@ -657,6 +668,22 @@ export function ReviewWorkspace(props: ReviewWorkspaceProps) {
   }, [active, mode, narrow, setMode, toggleCollapsed, markViewed, stepFile, nextHunk, nextThread]);
 
   const mr = p.mr;
+  const aiStatus = useAiStatus();
+  const aiReady = aiStatus.data ? aiStatus.data.engine !== 'none' : false;
+  const [assistTarget, setAssistTarget] = useState<AssistTarget | null>(null);
+  const hasAssist = Boolean(p.assistSource);
+  const assist: FileAssist | undefined = useMemo(
+    () =>
+      hasAssist
+        ? {
+            ready: aiReady,
+            onExplain: (file) => setAssistTarget({ kind: 'explain', file }),
+            onPropose: (file) => setAssistTarget({ kind: 'propose', file }),
+          }
+        : undefined,
+    [hasAssist, aiReady],
+  );
+
   const slots: CommentSlots = useMemo(
     () => ({
       canComment: Boolean(mr?.canComment),
@@ -744,6 +771,18 @@ export function ReviewWorkspace(props: ReviewWorkspaceProps) {
             >
               <WrapText className="size-4" aria-hidden />
             </button>
+            {assist && (
+              <button
+                type="button"
+                className="rv-icon-btn"
+                disabled={!assist.ready}
+                onClick={() => setAssistTarget({ kind: 'propose', file: null })}
+                title={assist.ready ? 'Propose changes to the whole branch' : 'AI is not available'}
+                aria-label="Propose changes to the whole branch"
+              >
+                <Wand2 className="size-4" aria-hidden />
+              </button>
+            )}
             {p.actions}
           </div>
         </div>
@@ -820,6 +859,7 @@ export function ReviewWorkspace(props: ReviewWorkspaceProps) {
               threads={grouped.byFile.get(file.path)}
               slots={slots}
               reveal={revealed.has(file.path)}
+              assist={assist}
             />
           ))}
           {p.truncated && (
@@ -932,6 +972,13 @@ export function ReviewWorkspace(props: ReviewWorkspaceProps) {
           </DialogPrimitive.Content>
         </DialogPrimitive.Portal>
       </DialogPrimitive.Root>
+      {p.assistSource && (
+        <AssistDrawer
+          source={p.assistSource}
+          target={assistTarget}
+          onClose={() => setAssistTarget(null)}
+        />
+      )}
     </div>
   );
 }
