@@ -942,6 +942,40 @@
   .ax-mention-opt-on {
     background: var(--muted);
   }
+  .ax-from {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    padding: 0.55rem 0.7rem;
+    border-radius: 0.75rem;
+    border: 1px solid var(--border);
+    background: color-mix(in oklch, var(--muted) 60%, transparent);
+    transition: opacity 150ms ease-out;
+  }
+  .ax-from-off {
+    opacity: 0.6;
+    border-style: dashed;
+    background: transparent;
+  }
+  .ax-link {
+    display: inline-flex;
+    flex-shrink: 0;
+    align-items: center;
+    gap: 0.25rem;
+    padding: 0.2rem 0.35rem;
+    border-radius: 0.4rem;
+    font-size: 0.75rem;
+    color: var(--muted-foreground);
+    text-underline-offset: 3px;
+  }
+  .ax-link:hover {
+    color: var(--foreground);
+    text-decoration: underline;
+  }
+  .ax-link:focus-visible {
+    outline: 2px solid var(--ring);
+    outline-offset: 1px;
+  }
   .ax-skel {
     display: block;
     height: 0.7rem;

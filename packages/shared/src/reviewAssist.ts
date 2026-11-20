@@ -34,19 +34,26 @@ export type ReviewExplainResult = z.infer<typeof ReviewExplainResultSchema>;
 export const ReviewProposeRequestSchema = z
   .object({
     source: ReviewAssistSourceSchema,
-    scope: z.enum(['file', 'branch']),
-    /** Required when `scope` is `file`. */
-    file: z.string().min(1).max(1000).optional(),
-    request: z.string().trim().min(1).max(8_000),
+    scope: z.enum(['files', 'branch']),
+    /** Required when `scope` is `files`. */
+    files: z.array(z.string().min(1).max(1000)).max(20).default([]),
+    /** What should change. May be empty when a conversation is attached: the AI takes it from there. */
+    request: z.string().trim().max(8_000).default(''),
+    /** The Explain discussion this change comes from (its conclusions shape the prompt). */
+    conversation: z.array(MrChatMessageSchema).max(MR_CHAT_MAX_HISTORY).default([]),
     /** An already written (maybe edited) prompt: send it as is, without a new AI call. */
     prompt: z.string().trim().min(1).max(60_000).optional(),
     /** true = also send to the branch's agent session. */
     send: z.boolean().default(false),
   })
   .strict()
-  .refine((r) => r.scope === 'branch' || Boolean(r.file), {
-    message: 'file is required for a file-scoped proposal',
-    path: ['file'],
+  .refine((r) => r.scope === 'branch' || r.files.length > 0, {
+    message: 'pick at least one file',
+    path: ['files'],
+  })
+  .refine((r) => Boolean(r.prompt || r.request || r.conversation.length), {
+    message: 'say what should change, or start from an Explain chat',
+    path: ['request'],
   });
 export type ReviewProposeRequest = z.infer<typeof ReviewProposeRequestSchema>;
 

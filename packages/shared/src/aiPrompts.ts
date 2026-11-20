@@ -333,6 +333,9 @@ Task: write an instruction "prompt" ready to send to a coding agent (Claude Code
 to change the code as the reviewer asks. The prompt must contain: context (the files and the relevant diff excerpts),
 the requested change (clear and specific, split into steps when it touches several places), and these constraints:
 ${NO_VERIFY}
+When the reviewer's request is empty, take the change from what the discussion below concluded or agreed on, not
+from questions that stayed open. When both are given, the request wins and the discussion is background.
+For a branch-wide refactor, name every file it touches and order the steps so the code builds after each one.
 
 Scope: {{scope}}
 MR / branch:
@@ -343,6 +346,11 @@ MR / branch:
 Reviewer's request:
 <data>
 {{request}}
+</data>
+
+Discussion that led to this request (reviewer and AI, about these changes):
+<data>
+{{conversation}}
 </data>
 
 Current changes in scope:

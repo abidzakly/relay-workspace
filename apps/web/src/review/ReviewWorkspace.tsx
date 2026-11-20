@@ -683,7 +683,7 @@ export function ReviewWorkspace(props: ReviewWorkspaceProps) {
         ? {
             ready: aiReady,
             onExplain: (file) => setAssistTarget({ kind: 'explain', file }),
-            onPropose: (file) => setAssistTarget({ kind: 'propose', file }),
+            onPropose: (file) => setAssistTarget({ kind: 'propose', files: [file] }),
           }
         : undefined,
     [hasAssist, aiReady],
@@ -793,7 +793,7 @@ export function ReviewWorkspace(props: ReviewWorkspaceProps) {
                 type="button"
                 className="rv-icon-btn"
                 disabled={!assist.ready}
-                onClick={() => setAssistTarget({ kind: 'propose', file: null })}
+                onClick={() => setAssistTarget({ kind: 'propose', files: [] })}
                 title={assist.ready ? 'Propose changes to the whole branch' : 'AI is not available'}
                 aria-label="Propose changes to the whole branch"
               >
@@ -996,6 +996,7 @@ export function ReviewWorkspace(props: ReviewWorkspaceProps) {
           target={assistTarget}
           files={filePaths}
           onJumpToFile={scrollToFile}
+          onTarget={setAssistTarget}
           onClose={closeAssist}
         />
       )}

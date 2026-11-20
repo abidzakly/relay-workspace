@@ -1,6 +1,9 @@
 import * as DialogPrimitive from '@radix-ui/react-dialog';
 import {
+  ArrowLeft,
   AtSign,
+  MessagesSquare,
+  Plus,
   Check,
   Copy,
   CornerDownRight,
@@ -30,6 +33,7 @@ import {
   MR_CHAT_MAX_MESSAGE,
   type AiGeneratedBy,
   type ExplainChangeOutput,
+  type MrChatMessage,
   type ReviewAssistSource,
   type ReviewProposeResult,
 } from '@relay/shared';
@@ -46,7 +50,13 @@ import { useCoarsePointer, useNarrow } from '@/workspace/useMedia';
 export type AssistTarget =
   | { kind: 'explain'; file: string }
   | { kind: 'explain-branch' }
-  | { kind: 'propose'; file: string | null };
+  | { kind: 'propose'; files: string[]; chat?: ChatContext };
+
+/** The Explain discussion a change starts from. */
+export interface ChatContext {
+  from: { kind: 'file'; file: string } | { kind: 'branch' };
+  conversation: MrChatMessage[];
+}
 
 /** The branch "Explain branch" summarises: Create MR's view (`base` = what it is compared with). */
 export interface AssistBranch {
@@ -81,6 +91,7 @@ export function AssistDrawer({
   target,
   files,
   onJumpToFile,
+  onTarget,
   onClose,
 }: {
   source: ReviewAssistSource;
@@ -90,6 +101,8 @@ export function AssistDrawer({
   /** Paths of the changed files. */
   files: readonly string[];
   onJumpToFile: (path: string) => void;
+  /** Switches the drawer to another view (Explain → Propose and back). */
+  onTarget: (t: AssistTarget) => void;
   onClose: () => void;
 }) {
   const narrow = useNarrow();
@@ -134,12 +147,10 @@ export function AssistDrawer({
           // Escape with the @ file list open closes the list (in the composer), not the drawer.
           onEscapeKeyDown={(e) => {
             const el = document.activeElement;
-            if (
+            const listOpen =
               el?.getAttribute('role') === 'combobox' &&
-              el.getAttribute('aria-expanded') === 'true'
-            ) {
-              e.preventDefault();
-            }
+              el.getAttribute('aria-expanded') === 'true';
+            if (listOpen || el?.hasAttribute('data-esc-local')) e.preventDefault();
           }}
           className={cn(
             'fixed inset-y-0 right-0 z-[60] flex w-full flex-col bg-popover outline-none sm:w-[min(36rem,46vw)]',
@@ -158,13 +169,31 @@ export function AssistDrawer({
                 setTurns={(fn) =>
                   setChats((prev) => new Map(prev).set(shown.file, fn(prev.get(shown.file) ?? [])))
                 }
+                onMakeChange={onTarget}
               />
             )}
             {shown?.kind === 'explain-branch' && branch && (
-              <BranchExplainPane branch={branch} turns={branchTurns} setTurns={setBranchTurns} />
+              <BranchExplainPane
+                branch={branch}
+                turns={branchTurns}
+                setTurns={setBranchTurns}
+                onMakeChange={onTarget}
+              />
             )}
             {shown?.kind === 'propose' && (
-              <ProposePane key={shown.file ?? '\0branch'} source={source} file={shown.file} />
+              <ProposePane
+                key={`${shown.files.join('\n')}|${shown.chat ? JSON.stringify(shown.chat.from) : ''}`}
+                source={source}
+                initialFiles={shown.files}
+                chat={shown.chat}
+                onBackToChat={(from) =>
+                  onTarget(
+                    from.kind === 'file'
+                      ? { kind: 'explain', file: from.file }
+                      : { kind: 'explain-branch' },
+                  )
+                }
+              />
             )}
           </FileLinksContext.Provider>
         </DialogPrimitive.Content>
@@ -727,6 +756,18 @@ function Composer({
   );
 }
 
+/** Under an Explain chat: turn what was learned into a change (Propose, with this chat attached). */
+function MakeChangeAction({ onClick, hint }: { onClick: () => void; hint: string }) {
+  return (
+    <div className="flex items-center justify-between gap-3 pt-0.5">
+      <span className="min-w-0 truncate text-2xs text-muted-foreground">{hint}</span>
+      <Button size="sm" variant="outline" className="shrink-0" onClick={onClick}>
+        <Wand2 className="size-3.5" aria-hidden /> Change this…
+      </Button>
+    </div>
+  );
+}
+
 /** The scrolling conversation area; follows new turns to the bottom. */
 function ChatScroll({
   count,
@@ -764,7 +805,10 @@ function FailedFirst({ error, onRetry }: { error: Error; onRetry?: () => void })
   );
 }
 
-const historyOf = (turns: readonly { role: 'user' | 'assistant' }[], text: (i: number) => string) =>
+const historyOf = (
+  turns: readonly { role: 'user' | 'assistant' }[],
+  text: (i: number) => string,
+): MrChatMessage[] =>
   turns
     .slice(-MR_CHAT_MAX_HISTORY)
     .map((t, i, all) => ({
@@ -778,11 +822,13 @@ function ExplainPane({
   file,
   turns,
   setTurns,
+  onMakeChange,
 }: {
   source: ReviewAssistSource;
   file: string;
   turns: Turn[];
   setTurns: (fn: (prev: Turn[]) => Turn[]) => void;
+  onMakeChange: (t: AssistTarget) => void;
 }) {
   const chat = useExplainChat();
   const links = useContext(FileLinksContext);
@@ -865,6 +911,26 @@ function ExplainPane({
         onAsk={(q, m, restore) => ask(q, m, restore)}
         mentionFiles={(links?.files ?? []).filter((f) => f !== file)}
         placeholder="Ask about this change… type @ to bring in another file"
+        actions={
+          lastAi && (
+            <MakeChangeAction
+              hint="Learned something? Turn it into a change."
+              onClick={() => {
+                const mentioned = turns.flatMap((t) =>
+                  t.role === 'user' ? (t.mentions ?? []) : [],
+                );
+                onMakeChange({
+                  kind: 'propose',
+                  files: [...new Set([file, ...mentioned])],
+                  chat: {
+                    from: { kind: 'file', file },
+                    conversation: historyOf(turns, (i) => turnText(turns[i]!)),
+                  },
+                });
+              }}
+            />
+          )
+        }
       />
     </>
   );
@@ -882,10 +948,12 @@ function BranchExplainPane({
   branch,
   turns,
   setTurns,
+  onMakeChange,
 }: {
   branch: AssistBranch;
   turns: BranchTurn[];
   setTurns: (fn: (prev: BranchTurn[]) => BranchTurn[]) => void;
+  onMakeChange: (t: AssistTarget) => void;
 }) {
   const summary = useBranchSummary(branch.repo, branch.branch, branch.base);
   const chat = useMrChat();
@@ -960,30 +1028,141 @@ function BranchExplainPane({
         suggestions={[]}
         onAsk={(q, _m, restore) => ask(q, restore)}
         placeholder="Ask about this branch…"
+        actions={
+          s && (
+            <MakeChangeAction
+              hint="Rework the branch based on this?"
+              onClick={() => {
+                const brief = [
+                  s.summary,
+                  ...s.bullets.map((b) => `- ${b}`),
+                  ...(s.risks.length ? ['Risks:', ...s.risks.map((r) => `- ${r}`)] : []),
+                ].join('\n');
+                onMakeChange({
+                  kind: 'propose',
+                  files: [],
+                  chat: {
+                    from: { kind: 'branch' },
+                    conversation: [
+                      { role: 'assistant' as const, text: brief.slice(0, MR_CHAT_MAX_MESSAGE) },
+                      ...historyOf(turns, (i) => turns[i]!.text),
+                    ].slice(-MR_CHAT_MAX_HISTORY),
+                  },
+                });
+              }}
+            />
+          )
+        }
       />
     </>
   );
 }
 
-function ProposePane({ source, file }: { source: ReviewAssistSource; file: string | null }) {
+/** "+ Add file": a filterable list of the changed files not picked yet. */
+function AddFile({ files, onAdd }: { files: readonly string[]; onAdd: (path: string) => void }) {
+  const [open, setOpen] = useState(false);
+  const [q, setQ] = useState('');
+  const listId = useId();
+  const shown = files.filter((f) => f.toLowerCase().includes(q.trim().toLowerCase())).slice(0, 8);
+  if (files.length === 0) return null;
+  return (
+    <div className="relative">
+      <button
+        type="button"
+        className="ax-suggest"
+        aria-expanded={open}
+        aria-controls={open ? listId : undefined}
+        onClick={() => setOpen((o) => !o)}
+      >
+        <Plus className="size-3" aria-hidden /> Add file
+      </button>
+      {open && (
+        <div className="ax-mention-list top-[calc(100%+0.4rem)] bottom-auto w-[min(22rem,80vw)]">
+          <input
+            autoFocus
+            data-esc-local
+            value={q}
+            onChange={(e) => setQ(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Escape') {
+                e.preventDefault();
+                e.stopPropagation();
+                setOpen(false);
+              }
+              if (e.key === 'Enter' && shown[0]) {
+                e.preventDefault();
+                onAdd(shown[0]);
+                setQ('');
+              }
+            }}
+            placeholder="Filter changed files"
+            aria-label="Filter changed files"
+            className="mb-1 h-8 rounded-md border border-border bg-background px-2 text-xs outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          />
+          <ul id={listId} role="listbox" aria-label="Changed files" className="grid gap-px">
+            {shown.map((f) => (
+              <li
+                key={f}
+                role="option"
+                aria-selected={false}
+                className="ax-mention-opt hover:bg-muted"
+                onClick={() => {
+                  onAdd(f);
+                  setQ('');
+                }}
+              >
+                <span className="truncate font-mono text-xs text-foreground">{baseName(f)}</span>
+                <span className="truncate text-2xs text-muted-foreground">{f}</span>
+              </li>
+            ))}
+            {shown.length === 0 && (
+              <li className="px-2 py-1.5 text-xs text-muted-foreground">No matching file.</li>
+            )}
+          </ul>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ProposePane({
+  source,
+  initialFiles,
+  chat,
+  onBackToChat,
+}: {
+  source: ReviewAssistSource;
+  initialFiles: readonly string[];
+  /** The Explain discussion this change starts from, if any. */
+  chat: ChatContext | undefined;
+  onBackToChat: (from: ChatContext['from']) => void;
+}) {
+  const links = useContext(FileLinksContext);
   const propose = useProposeChange();
-  const [scope, setScope] = useState<'file' | 'branch'>(file ? 'file' : 'branch');
+  const [scope, setScope] = useState<'files' | 'branch'>(initialFiles.length ? 'files' : 'branch');
+  const [files, setFiles] = useState<string[]>(() => [...initialFiles]);
+  const [useChat, setUseChat] = useState(Boolean(chat));
   const [request, setRequest] = useState('');
   const [prompt, setPrompt] = useState('');
   const [result, setResult] = useState<ReviewProposeResult | null>(null);
   const [copied, setCopied] = useState(false);
   const pending = propose.isPending;
   const sending = pending && propose.variables.send;
+  const conversation = useChat && chat ? chat.conversation : [];
+  const canWrite =
+    (request.trim().length > 0 || conversation.length > 0) &&
+    (scope === 'branch' || files.length > 0);
 
   const base = () => ({
     source,
     scope,
-    ...(scope === 'file' && file ? { file } : {}),
+    files: scope === 'files' ? files : [],
     request: request.trim(),
+    conversation,
   });
 
   const write = () => {
-    if (!request.trim() || pending) return;
+    if (!canWrite || pending) return;
     propose.mutate(
       { ...base(), send: false },
       {
@@ -1008,22 +1187,54 @@ function ProposePane({ source, file }: { source: ReviewAssistSource; file: strin
     }
   };
 
-  const choices = [
-    ...(file ? [{ id: 'file' as const, label: 'This file' }] : []),
-    { id: 'branch' as const, label: 'Whole branch' },
-  ];
+  const fromLabel = chat?.from.kind === 'file' ? `${baseName(chat.from.file)} chat` : 'branch chat';
+  const answers = chat ? chat.conversation.filter((m) => m.role === 'assistant').length : 0;
 
   return (
     <>
       <PaneHeader
         icon={<Wand2 className="size-3.5" aria-hidden />}
         title="Propose changes"
-        file={scope === 'file' ? file : null}
+        file={scope === 'files' && files.length === 1 ? files[0]! : null}
       />
-      <div className="grid min-h-0 flex-1 content-start gap-3 overflow-y-auto px-4 py-5 text-sm sm:px-5">
-        {choices.length > 1 && (
+      <div className="grid min-h-0 flex-1 content-start gap-4 overflow-y-auto px-4 py-5 text-sm sm:px-5">
+        {chat && (
+          <div className={cn('ax-from', !useChat && 'ax-from-off')}>
+            <MessagesSquare className="size-4 shrink-0 opacity-70" aria-hidden />
+            <div className="grid min-w-0 flex-1">
+              <span className="truncate text-xs font-medium text-foreground">
+                {useChat ? 'Using your' : 'Not using your'} {fromLabel}
+              </span>
+              <span className="text-2xs text-muted-foreground">
+                {chat.conversation.length} messages · {answers} AI{' '}
+                {answers === 1 ? 'answer' : 'answers'}
+              </span>
+            </div>
+            <button type="button" className="ax-link" onClick={() => onBackToChat(chat.from)}>
+              <ArrowLeft className="size-3" aria-hidden /> Back to chat
+            </button>
+            <button
+              type="button"
+              className="ax-link"
+              aria-pressed={useChat}
+              onClick={() => setUseChat((u) => !u)}
+            >
+              {useChat ? 'Detach' : 'Attach'}
+            </button>
+          </div>
+        )}
+
+        <section className="grid gap-2">
           <div className="flex flex-wrap gap-1" role="radiogroup" aria-label="Scope">
-            {choices.map((c) => (
+            {(
+              [
+                {
+                  id: 'files',
+                  label: files.length > 1 ? `These ${files.length} files` : 'These files',
+                },
+                { id: 'branch', label: 'Whole branch' },
+              ] as const
+            ).map((c) => (
               <button
                 key={c.id}
                 type="button"
@@ -1041,16 +1252,54 @@ function ProposePane({ source, file }: { source: ReviewAssistSource; file: strin
               </button>
             ))}
           </div>
-        )}
+          {scope === 'files' ? (
+            <div className="flex flex-wrap items-center gap-1.5">
+              {files.map((f) => (
+                <span key={f} className="ax-mention" title={f}>
+                  <button
+                    type="button"
+                    className="truncate hover:underline"
+                    onClick={() => links?.jump(f)}
+                    title={`Show ${f} in the diff`}
+                  >
+                    {baseName(f)}
+                  </button>
+                  <button
+                    type="button"
+                    className="ax-mention-x"
+                    aria-label={`Remove ${f}`}
+                    onClick={() => setFiles((prev) => prev.filter((x) => x !== f))}
+                  >
+                    <X className="size-3" aria-hidden />
+                  </button>
+                </span>
+              ))}
+              <AddFile
+                files={(links?.files ?? []).filter((f) => !files.includes(f))}
+                onAdd={(f) => setFiles((prev) => (prev.includes(f) ? prev : [...prev, f]))}
+              />
+            </div>
+          ) : (
+            <p className="text-xs text-muted-foreground">
+              The agent may touch any file on the branch, e.g. for a refactor of how the logic
+              works.
+            </p>
+          )}
+        </section>
+
         <label className="grid gap-1">
-          <span className="text-xs font-medium text-muted-foreground">What should change?</span>
+          <span className="text-xs font-medium text-muted-foreground">
+            What should change?{conversation.length > 0 && ' (optional)'}
+          </span>
           <Textarea
             value={request}
             onChange={(e) => setRequest(e.target.value)}
             placeholder={
-              scope === 'file'
-                ? 'e.g. Handle the empty list before mapping, and log the failure instead of swallowing it.'
-                : 'e.g. Rename fetchLock to readLockState everywhere and drop the unused retry flag.'
+              conversation.length > 0
+                ? 'Leave empty to apply what you concluded in the chat, or add details.'
+                : scope === 'files'
+                  ? 'e.g. Handle the empty list before mapping, and log the failure instead of swallowing it.'
+                  : 'e.g. Move the trail state into one place and drop the duplicated flags.'
             }
             maxLength={8000}
             className="min-h-24 bg-background"
@@ -1060,7 +1309,7 @@ function ProposePane({ source, file }: { source: ReviewAssistSource; file: strin
           size="sm"
           variant={prompt ? 'outline' : 'default'}
           className="justify-self-start"
-          disabled={!request.trim() || pending}
+          disabled={!canWrite || pending}
           onClick={write}
         >
           {pending && !sending ? (
