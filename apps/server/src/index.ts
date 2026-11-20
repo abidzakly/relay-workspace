@@ -460,6 +460,7 @@ async function main(): Promise<void> {
         deckReview: (source, diff) => decks.branchReview(source, diff),
         testGate: (repoId, branch) => testBench.gate(repoId, branch),
         squash: (repoId, branch, parent) => benchFlow!.squashForMr(repoId, branch, parent),
+        workingTree: (repoId, branch) => benchFlow!.workingTree(repoId, branch),
         markCompleted: (cardId) => cardActions.markCompleted(cardId),
       }),
     },

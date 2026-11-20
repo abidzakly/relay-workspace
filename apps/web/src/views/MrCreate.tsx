@@ -30,7 +30,8 @@ import { MicButton } from '@/components/MicButton';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
-import { describeError } from '@/lib/api';
+import { DirtyTreePanel } from '@/cockpit/DirtyTreePanel';
+import { ApiError, describeError } from '@/lib/api';
 import { useApplyWrite, usePreviewWrite } from '@/lib/cardApi';
 import { deckPath } from '@/lib/deckApi';
 import { useCreateMr, useMrChat, useMrCreatePreview, useMrSummary } from '@/lib/mrCreateApi';
@@ -376,7 +377,11 @@ export function MrCreate() {
   const dryRun = settings.data?.dryRun === true;
   const reviewOk = p.deckCompleted || (skip && reason.trim().length >= 3);
   const testOk = !p.testRequired || p.testOk || (skipTest && testReason.trim().length >= 3);
+  const dirty = p.workspace?.dirty ?? [];
+  // Create squashes in the workspace, which refuses uncommitted changes to tracked files (untracked ones are left out).
+  const trackedDirty = dirty.some((d) => d.code !== '??');
   const canCreate =
+    !trackedDirty &&
     !p.blocked &&
     p.existingMrIid === null &&
     reviewOk &&
@@ -631,6 +636,26 @@ export function MrCreate() {
         )}
       </section>
 
+      {p.workspace && dirty.length > 0 && !create.data && (
+        <DirtyTreePanel
+          key={p.workspace.workspaceId}
+          purpose="mr"
+          workspaceId={p.workspace.workspaceId}
+          lastCommit={p.workspace.lastCommit}
+          disabled={create.isPending}
+          onCleared={() => {
+            create.reset();
+            void q.refetch();
+          }}
+        />
+      )}
+      {dirty.length > 0 && !trackedDirty && (
+        <p className="text-xs text-muted-foreground">
+          Only new (untracked) files are uncommitted: they stay out of the MR unless you commit
+          them.
+        </p>
+      )}
+
       {dryRun && (
         <Alert variant="warning">
           <AlertTitle>Dry-run ON</AlertTitle>
@@ -644,14 +669,22 @@ export function MrCreate() {
         className="h-12 rounded-surface"
         disabled={!canCreate}
         onClick={() =>
-          create.mutate({
-            repoId: repo,
-            branch,
-            ...(!p.deckCompleted && skip ? { skipReviewReason: reason.trim() } : {}),
-            ...(p.testRequired && !p.testOk && skipTest
-              ? { skipTestReason: testReason.trim() }
-              : {}),
-          })
+          create.mutate(
+            {
+              repoId: repo,
+              branch,
+              ...(!p.deckCompleted && skip ? { skipReviewReason: reason.trim() } : {}),
+              ...(p.testRequired && !p.testOk && skipTest
+                ? { skipTestReason: testReason.trim() }
+                : {}),
+            },
+            {
+              // The tree changed after the preview was read: show the changes panel instead of the raw error.
+              onError: (e) => {
+                if (e instanceof ApiError && e.code === 'dirty') void q.refetch();
+              },
+            },
+          )
         }
       >
         {create.isPending ? (
@@ -661,7 +694,10 @@ export function MrCreate() {
         )}
         {dryRun ? 'Simulate MR' : 'Create MR'}
       </Button>
-      {create.error && <p className="text-sm text-destructive">{describeError(create.error)}</p>}
+      {create.error &&
+        !(create.error instanceof ApiError && create.error.code === 'dirty' && trackedDirty) && (
+          <p className="text-sm text-destructive wrap-anywhere">{describeError(create.error)}</p>
+        )}
       {create.data && <Created r={create.data} cardId={p.card?.id ?? null} />}
     </div>
   );

@@ -1,6 +1,7 @@
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQueries, useQuery, useQueryClient } from '@tanstack/react-query';
 import type {
   AiEngineStatus,
+  CommitMessageResult,
   ConnectionTestResult,
   DiffFile,
   Workspace,
@@ -74,6 +75,17 @@ export function useWsStatus(id: string | null) {
   });
 }
 
+/** `useWsStatus` for several workspaces at once (same cache entries), in the order of `ids`. */
+export function useWsStatuses(ids: string[]) {
+  return useQueries({
+    queries: ids.map((id) => ({
+      queryKey: cockpitKeys.status(id),
+      queryFn: () => get<WsStatusView>(`/api/cockpit/ws/${e(id)}/status`),
+      refetchInterval: 15_000,
+    })),
+  });
+}
+
 export function useWsTree(id: string | null) {
   return useQuery({
     queryKey: cockpitKeys.tree(id ?? ''),
@@ -125,6 +137,52 @@ export function useWsWorkingDiff(id: string | null) {
 }
 
 export type CleanTreeMode = 'stash' | 'discard';
+
+export interface WsCommitResult {
+  sha: string;
+  subject: string;
+  amended: boolean;
+}
+
+/** Keeps a workspace's uncommitted changes: a new commit with `message`, or amended into the branch's last commit. */
+export function useWsCommit() {
+  const qc = useQueryClient();
+  return useMutation<
+    WsCommitResult,
+    Error,
+    { workspaceId: string; message?: string; amend: boolean }
+  >({
+    mutationFn: ({ workspaceId, ...b }) => post(`/api/cockpit/ws/${e(workspaceId)}/commit`, b),
+    onSuccess: (_r, v) => {
+      void qc.invalidateQueries({ queryKey: cockpitKeys.status(v.workspaceId) });
+      void qc.invalidateQueries({ queryKey: cockpitKeys.tree(v.workspaceId) });
+    },
+  });
+}
+
+/** "Smart commit": an AI-written message for the workspace's uncommitted changes. */
+export function useCommitMessage() {
+  return useMutation<CommitMessageResult, Error, { workspaceId: string }>({
+    mutationFn: ({ workspaceId }) => post(`/api/cockpit/ws/${e(workspaceId)}/commit-message`, {}),
+  });
+}
+
+/** Puts a workspace on `branch` (fast-forwarded to origin). The server refuses a dirty tree with `ws_dirty`. */
+export function useWsCheckout() {
+  const qc = useQueryClient();
+  return useMutation<
+    { branch: string; synced: boolean },
+    Error,
+    { workspaceId: string; branch: string }
+  >({
+    mutationFn: ({ workspaceId, branch }) =>
+      post(`/api/cockpit/ws/${e(workspaceId)}/checkout`, { branch }),
+    onSuccess: (_r, v) => {
+      void qc.invalidateQueries({ queryKey: cockpitKeys.status(v.workspaceId) });
+      void qc.invalidateQueries({ queryKey: cockpitKeys.tree(v.workspaceId) });
+    },
+  });
+}
 
 /** Stashes (untracked included) or discards a workspace's uncommitted changes. */
 export function useCleanTree() {

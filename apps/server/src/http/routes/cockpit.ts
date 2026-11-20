@@ -137,6 +137,16 @@ const EmuParams = z.object({
 
 const WsParams = z.object({ id: WorkspaceIdSchema });
 const CleanTreeBody = z.object({ mode: z.enum(['stash', 'discard']) }).strict();
+const CommitTreeBody = z
+  .object({
+    /** Required for a new commit; ignored by an amend, which keeps the last commit's message. */
+    message: z.string().trim().max(10_000).optional(),
+    amend: z.boolean(),
+  })
+  .strict()
+  .refine((b) => b.amend || !!b.message, { message: 'A commit message is required.' });
+
+const CheckoutBody = z.object({ branch: z.string().trim().min(1).max(255) }).strict();
 const DiffQuery = z.object({
   mode: z.enum(['working', 'branch', 'turn']).default('working'),
   base: z.string().max(200).optional(),
@@ -224,6 +234,20 @@ export function registerCockpitRoutes(app: FastifyInstance, deps: CockpitDeps): 
     const { id } = parseWith(WsParams, req.params);
     const { mode } = parseWith(CleanTreeBody, req.body);
     return run(() => deps.workflow.cleanTree(id, mode));
+  });
+  app.post('/api/cockpit/ws/:id/checkout', async (req) => {
+    const { id } = parseWith(WsParams, req.params);
+    const { branch } = parseWith(CheckoutBody, req.body);
+    return run(() => deps.workflow.checkoutBranch(id, branch));
+  });
+  app.post('/api/cockpit/ws/:id/commit', async (req) => {
+    const { id } = parseWith(WsParams, req.params);
+    const b = parseWith(CommitTreeBody, req.body);
+    return run(() => deps.workflow.commitTree(id, b));
+  });
+  app.post('/api/cockpit/ws/:id/commit-message', async (req) => {
+    const { id } = parseWith(WsParams, req.params);
+    return run(() => deps.workflow.commitMessage(id));
   });
   app.post('/api/cockpit/ws/:id/checkpoint', async (req) => {
     const { id } = parseWith(WsParams, req.params);

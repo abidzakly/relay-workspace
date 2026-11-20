@@ -1,4 +1,4 @@
-import { squashForMr, wsLog } from './branchOps';
+import { commitTree, squashForMr, wsLog } from './branchOps';
 import type { CockpitSession, DiffFile, FlutterDevice, RunTargets } from '@relay/shared';
 import { ensureAgentRules } from './agentRules';
 import {
@@ -254,6 +254,10 @@ export class LocalCockpitHost implements CockpitHost {
 
   async wsCleanTree(ref: WsRef, mode: 'stash' | 'discard') {
     return cleanTree(await this.cwd(ref), mode);
+  }
+
+  async wsCommit(ref: WsRef, opts: { message?: string | undefined; amend: boolean; base: string }) {
+    return commitTree(await this.cwd(ref), opts);
   }
 
   async wsCheckoutBranch(ref: WsRef, branch: string) {

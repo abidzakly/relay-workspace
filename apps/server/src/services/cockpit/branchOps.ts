@@ -231,3 +231,56 @@ export async function squashForMr(
   }
   return { oldHead, newHead, squashed: shas.length, pushed: true, backupRef };
 }
+
+export interface CommitResult {
+  sha: string;
+  subject: string;
+  amended: boolean;
+}
+
+/**
+ * Commits every working-tree change (untracked files included) on the current branch: as a NEW commit with `message`,
+ * or folded into the last commit with `amend` (its message kept). An amend is refused when HEAD is not a commit of
+ * the branch's own (HEAD = the merge-base with `base`), so a base-branch commit is never rewritten.
+ */
+export async function commitTree(
+  cwd: string,
+  opts: { message?: string | undefined; amend: boolean; base: string },
+): Promise<CommitResult> {
+  safeRef(opts.base, 'base');
+  if (!(await git(cwd, ['status', '--porcelain'])).trim()) {
+    throw new CockpitHostError('clean', 'There is nothing to commit.', 409);
+  }
+  const message = opts.message?.trim() ?? '';
+  if (!opts.amend && !message) {
+    throw new CockpitHostError('validation', 'A commit message is required.', 422);
+  }
+  if (opts.amend) {
+    const head = (await git(cwd, ['rev-parse', 'HEAD'])).trim();
+    const mergeBase = (await git(cwd, ['merge-base', opts.base, 'HEAD']).catch(() => '')).trim();
+    if (!mergeBase || mergeBase === head) {
+      throw new CockpitHostError(
+        'no_commits',
+        'The branch has no commit of its own to amend: make a new commit instead.',
+        409,
+      );
+    }
+  }
+  await git(cwd, ['add', '-A']);
+  if (opts.amend) {
+    await git(cwd, ['commit', '--no-verify', '--amend', '--no-edit']);
+  } else {
+    const dir = await mkdtemp(join(tmpdir(), 'cockpit-commit-'));
+    try {
+      const file = join(dir, 'MSG');
+      await writeFile(file, `${message}\n`);
+      await git(cwd, ['commit', '--no-verify', '--cleanup=strip', '-F', file]);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  }
+  const [sha = '', subject = ''] = (await git(cwd, ['log', '-1', `--format=%H${FIELD}%s`]))
+    .trim()
+    .split(FIELD);
+  return { sha, subject, amended: opts.amend };
+}

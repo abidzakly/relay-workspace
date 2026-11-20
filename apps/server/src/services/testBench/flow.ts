@@ -4,6 +4,7 @@ import { join } from 'node:path';
 import type { ConfigStore } from '../../config/store';
 import { ActionError } from '../actionError';
 import type { SquashResult, WsCommit } from '../cockpit/branchOps';
+import type { WsStatusView } from '@relay/shared';
 import type { CockpitHost } from '../cockpit/host';
 import { testFixPrompt } from '../cockpit/threadPrompt';
 import type { WorkspaceService } from '../cockpit/workspaces';
@@ -20,7 +21,8 @@ export interface TestBenchFlowDeps {
   host: Pick<CockpitHost, 'wsLog' | 'wsSquashForMr' | 'wsStatus' | 'wsSaveAttachment'>;
   /** `<data dir>/testbench`: AI evidence screenshots, copied into the workspace for the fixing agent. */
   evidenceDir?: string;
-  workspaces: Pick<WorkspaceService, 'forRepo' | 'ref'>;
+  workspaces: Pick<WorkspaceService, 'forRepo' | 'ref'> &
+    Partial<Pick<WorkspaceService, 'worktreesOf'>>;
   /** Checks the branch out in the repo's workspace (the deck's `prepareDeckBranch`); null = no workspace. */
   prepareBranch: (
     repoId: string,
@@ -44,18 +46,50 @@ export class TestBenchFlow {
     return this.d.config.getRepo(repoId)?.baseBranch ?? 'main';
   }
 
-  /** The workspace that has `branch` checked out, or null. */
-  private async workspaceOn(repoId: string, branch: string): Promise<string | null> {
-    const id = this.d.workspaces.forRepo(repoId);
-    if (!id) return null;
-    const st = await this.d.host.wsStatus(this.d.workspaces.ref(id)).catch(() => null);
-    return st?.branch === branch ? id : null;
+  /** The workspace that has `branch` checked out (the repo workspace or one of its worktrees), or null. */
+  private async workspaceOn(
+    repoId: string,
+    branch: string,
+  ): Promise<{ id: string; status: WsStatusView } | null> {
+    const repoWs = this.d.workspaces.forRepo(repoId);
+    if (!repoWs) return null;
+    const ids = [repoWs, ...(this.d.workspaces.worktreesOf?.(repoWs) ?? []).map((w) => w.id)];
+    for (const id of ids) {
+      const status = await this.d.host.wsStatus(this.d.workspaces.ref(id)).catch(() => null);
+      if (status?.branch === branch) return { id, status };
+    }
+    return null;
+  }
+
+  /**
+   * The workspace that has `branch` checked out, with its uncommitted changes and the branch's newest own commit
+   * (what an amend would change). Null = no workspace has the branch, or the host cannot be reached.
+   */
+  async workingTree(
+    repoId: string,
+    branch: string,
+  ): Promise<{
+    workspaceId: string;
+    dirty: { path: string; code: string }[];
+    lastCommit: { sha: string; subject: string } | null;
+  } | null> {
+    const on = await this.workspaceOn(repoId, branch);
+    if (!on) return null;
+    const { id, status: st } = on;
+    const ref = this.d.workspaces.ref(id);
+    const log = await this.d.host.wsLog(ref, `origin/${this.base(repoId)}`).catch(() => []);
+    const last = log[0];
+    return {
+      workspaceId: id,
+      dirty: st.dirty.map((d) => ({ path: d.path, code: d.code })),
+      lastCommit: last ? { sha: last.sha, subject: last.subject } : null,
+    };
   }
 
   async localCommits(repoId: string, branch: string): Promise<WsCommit[] | null> {
-    const id = await this.workspaceOn(repoId, branch);
-    if (!id) return null;
-    return this.d.host.wsLog(this.d.workspaces.ref(id), `origin/${this.base(repoId)}`);
+    const on = await this.workspaceOn(repoId, branch);
+    if (!on) return null;
+    return this.d.host.wsLog(this.d.workspaces.ref(on.id), `origin/${this.base(repoId)}`);
   }
 
   /** Sends the open findings (or the given ones) to an agent; they move to "fixing". */
@@ -137,11 +171,11 @@ export class TestBenchFlow {
         'An MR is open for this branch: add commits instead of squashing.',
       );
     }
-    const id = await this.workspaceOn(repoId, branch);
+    const on = await this.workspaceOn(repoId, branch);
     // No workspace has the branch: it was pushed from elsewhere, nothing to squash here.
-    if (!id) return null;
+    if (!on) return null;
     const r = await this.d.host.wsSquashForMr(
-      this.d.workspaces.ref(id),
+      this.d.workspaces.ref(on.id),
       branch,
       `origin/${parentBranch ?? this.base(repoId)}`,
     );
