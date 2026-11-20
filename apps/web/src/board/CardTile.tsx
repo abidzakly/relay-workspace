@@ -22,6 +22,7 @@ import { EffortChip } from '@/components/EffortChip';
 import type { WriteRequest } from '@/lib/cardApi';
 import { useSettings } from '@/lib/settingsApi';
 import { cn, safeHref } from '@/lib/utils';
+import { WRAP_BADGE } from '@/components/MrBits';
 import type { CardTileModel, LinkKind, OrphanMrModel } from './model';
 
 /** The agent action per Board column; columns not listed have none. */
@@ -228,7 +229,9 @@ export function CardTile({
       <div className="grid grid-cols-2 gap-px overflow-hidden rounded-md border bg-border text-xs">
         <div className="bg-card p-2">
           <div className="mb-1 type-micro text-muted-foreground">Notion</div>
-          <Badge variant="secondary">{card.status ?? 'no status'}</Badge>
+          <Badge variant="secondary" className={WRAP_BADGE}>
+            {card.status ?? 'no status'}
+          </Badge>
         </div>
         <div className="bg-card p-2">
           <div className="mb-1 type-micro text-muted-foreground">GitLab</div>

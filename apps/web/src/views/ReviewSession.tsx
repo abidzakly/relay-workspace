@@ -274,7 +274,7 @@ export function MrReviewSession() {
             </Alert>
           )}
           {d.files.length === 0 && d.errors.length === 0 && (
-            <p className="rv-card text-center text-sm text-muted-foreground">
+            <p className="rv-card text-center text-sm text-muted-foreground wrap-anywhere">
               This MR has no changes.
             </p>
           )}
@@ -360,7 +360,7 @@ export function CompareReviewSession() {
             <summary className="flex cursor-pointer list-none items-center gap-2 text-sm font-medium">
               <GitCommitHorizontal className="size-4 text-muted-foreground" aria-hidden />
               {d.commitCount} commit{d.commitCount === 1 ? '' : 's'}
-              <span className="text-xs font-normal text-muted-foreground">
+              <span className="min-w-0 text-xs font-normal text-muted-foreground wrap-anywhere">
                 in {d.to} that are not in {d.from}
               </span>
             </summary>

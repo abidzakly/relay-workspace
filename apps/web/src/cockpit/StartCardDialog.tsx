@@ -201,7 +201,7 @@ export function StartCardDialog({
 
   return (
     <Dialog open={open} onOpenChange={(o) => !o && !busy && onClose()}>
-      <DialogContent className="top-auto bottom-0 max-h-[90dvh] max-w-none translate-y-0 overflow-y-auto rounded-t-sheet rounded-b-none sm:bottom-auto sm:top-1/2 sm:max-w-lg sm:-translate-y-1/2 sm:rounded-sheet">
+      <DialogContent className="top-auto bottom-0 w-full sm:w-[calc(100%-1.5rem)] max-h-[90dvh] max-w-none translate-y-0 overflow-y-auto rounded-t-sheet rounded-b-none sm:bottom-auto sm:top-1/2 sm:max-w-lg sm:-translate-y-1/2 sm:rounded-sheet">
         <DialogHeader>
           <DialogTitle>{resuming ? 'Continue card' : 'Start card'}</DialogTitle>
           <DialogDescription>

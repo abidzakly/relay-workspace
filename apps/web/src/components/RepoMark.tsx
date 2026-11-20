@@ -158,9 +158,9 @@ export function useRepoColor(): (repoId: string) => WorkspaceColor | null {
 export function RepoName({ repoId, name }: { repoId: string; name: string }) {
   const color = useRepoColor()(repoId);
   return (
-    <span className="inline-flex items-center gap-1 text-muted-foreground">
+    <span className="inline-flex max-w-full min-w-0 items-center gap-1 text-muted-foreground">
       {color && <RepoMark color={color} size="sm" />}
-      {name}
+      <span className="min-w-0 wrap-anywhere">{name}</span>
     </span>
   );
 }

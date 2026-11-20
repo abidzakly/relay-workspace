@@ -30,12 +30,12 @@ export function ExistingBranchPrompt({
     >
       <div className="min-w-0">
         <h3 className="text-sm font-medium break-words">
-          Branch <span className="font-mono">{branch}</span> already exists
+          Branch <span className="font-mono wrap-anywhere">{branch}</span> already exists
         </h3>
         <p className="text-xs text-muted-foreground">
           Use it as it is, earlier commits included, or replace it with a fresh branch from{' '}
-          <span className="font-mono">{base}</span>. Replacing drops its local commits, and the
-          agent&apos;s push overwrites the remote branch.
+          <span className="font-mono wrap-anywhere">{base}</span>. Replacing drops its local
+          commits, and the agent&apos;s push overwrites the remote branch.
         </p>
       </div>
       <div className="flex flex-wrap gap-2">

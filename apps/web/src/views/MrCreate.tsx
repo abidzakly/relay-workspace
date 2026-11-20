@@ -201,7 +201,7 @@ function IntegrityGate({ wsId, wsName }: { wsId: string; wsName: string }) {
                   ) : (
                     <X aria-hidden className="mr-1 inline size-3.5" />
                   )}{' '}
-                  <span className="font-mono text-xs">{st.name}</span>{' '}
+                  <span className="font-mono text-xs wrap-anywhere">{st.name}</span>{' '}
                   <span className="text-xs text-muted-foreground">
                     {Math.round(st.durationMs / 1000)} s
                   </span>

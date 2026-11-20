@@ -490,35 +490,37 @@ export function Standings({ className }: { className?: string }) {
           </div>
         </div>
       </div>
-      <table className="w-full text-sm">
-        <caption className="sr-only">Streaks</caption>
-        <thead>
-          <tr className="type-micro text-muted-foreground">
-            <th scope="col" className="pb-1 text-left font-semibold">
-              Streak
-            </th>
-            <th scope="col" className="pb-1 text-right font-semibold">
-              Now
-            </th>
-            <th scope="col" className="pb-1 text-right font-semibold">
-              Best
-            </th>
-          </tr>
-        </thead>
-        <tbody>
-          {rows.map(([label, s]) => (
-            <tr key={label} className="border-t border-hairline">
-              <th scope="row" className="py-1.5 text-left font-normal">
-                {label}
+      <div className="overflow-x-auto">
+        <table className="w-full text-sm">
+          <caption className="sr-only">Streaks</caption>
+          <thead>
+            <tr className="type-micro text-muted-foreground">
+              <th scope="col" className="pb-1 text-left font-semibold">
+                Streak
               </th>
-              <td className="py-1.5 text-right font-mono tabular-nums">{s.current}</td>
-              <td className="py-1.5 text-right font-mono text-muted-foreground tabular-nums">
-                {s.best}
-              </td>
+              <th scope="col" className="pb-1 text-right font-semibold">
+                Now
+              </th>
+              <th scope="col" className="pb-1 text-right font-semibold">
+                Best
+              </th>
             </tr>
-          ))}
-        </tbody>
-      </table>
+          </thead>
+          <tbody>
+            {rows.map(([label, s]) => (
+              <tr key={label} className="border-t border-hairline">
+                <th scope="row" className="py-1.5 text-left font-normal">
+                  {label}
+                </th>
+                <td className="py-1.5 text-right font-mono tabular-nums">{s.current}</td>
+                <td className="py-1.5 text-right font-mono text-muted-foreground tabular-nums">
+                  {s.best}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
       <p className="font-mono text-2xs text-muted-foreground">
         Achievements {p.badgesEarned}/{p.badgesTotal}
       </p>

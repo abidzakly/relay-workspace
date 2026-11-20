@@ -5,6 +5,7 @@ import { Badge, MrStateBadge } from '@/components/Badge';
 import { EffortChip } from '@/components/EffortChip';
 import { Button } from '@/components/ui/button';
 import { safeHref } from '@/lib/utils';
+import { WRAP_BADGE } from '@/components/MrBits';
 
 export const STAGE_LABEL: Record<DockStage, string> = {
   quay: 'In the quarry (not started)',
@@ -47,8 +48,14 @@ export function TaskPanel({ task, onClose }: { task: SprintTask; onClose: () => 
         </Button>
       </div>
       <div className="flex flex-wrap gap-1">
-        <Badge variant="secondary">{task.status ?? 'no status'}</Badge>
-        {task.type && <Badge variant="outline">{task.type}</Badge>}
+        <Badge variant="secondary" className={WRAP_BADGE}>
+          {task.status ?? 'no status'}
+        </Badge>
+        {task.type && (
+          <Badge variant="outline" className={WRAP_BADGE}>
+            {task.type}
+          </Badge>
+        )}
         <EffortChip point={task.point} />
         {task.blocked && (
           <Badge variant="destructive">
@@ -92,7 +99,9 @@ export function TaskPanel({ task, onClose }: { task: SprintTask; onClose: () => 
               return (
                 <li key={s.id} className="flex flex-wrap items-center gap-2">
                   {s.status ? (
-                    <Badge variant="secondary">{s.status}</Badge>
+                    <Badge variant="secondary" className={WRAP_BADGE}>
+                      {s.status}
+                    </Badge>
                   ) : (
                     <Badge variant="outline">?</Badge>
                   )}

@@ -55,7 +55,7 @@ export function Layout() {
           <NavLink to="/overview" className="min-w-0 type-micro text-foreground">
             <span className="truncate">Relay</span>
           </NavLink>
-          <div className="flex items-center gap-1 md:hidden">
+          <div className="flex min-w-0 items-center gap-1 overflow-x-auto md:hidden">
             <CommandButton compact />
             <ConnectionIndicator />
             <AiStatusButton compact />

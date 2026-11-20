@@ -128,12 +128,12 @@ function AcRow({
         selected ? 'border-primary bg-primary/5' : 'bg-card',
       )}
     >
-      <div className="flex items-start gap-2">
+      <div className="flex flex-wrap items-start gap-2">
         <button
           type="button"
           onClick={onSelect}
           aria-pressed={selected}
-          className="min-w-0 flex-1 text-left text-sm [overflow-wrap:anywhere] focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+          className="min-w-0 flex-[1_1_12rem] text-left text-sm break-words focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
         >
           {item.text}
           <span className="mt-1 flex flex-wrap gap-1.5">
