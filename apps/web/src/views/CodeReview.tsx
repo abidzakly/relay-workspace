@@ -12,6 +12,7 @@ import {
   Search,
 } from 'lucide-react';
 import { MrStateBadge } from '@/components/Badge';
+import { Dropdown, type DropdownOption } from '@/components/Dropdown';
 import { ActionBadge, PipelineBadge, useUserLabel } from '@/components/MrBits';
 import { TimeAgo } from '@/components/TimeAgo';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
@@ -331,47 +332,55 @@ function BranchField({
   value: string;
   onChange: (v: string) => void;
 }) {
+  // The filter text drives a GitLab search (debounced), so branches past the first pages are reachable. The picked
+  // value never narrows the list: every pushed branch stays visible when the menu opens.
+  const [query, setQuery] = useState('');
   const [search, setSearch] = useState('');
   useEffect(() => {
-    const t = setTimeout(() => setSearch(value.trim()), 250);
+    const t = setTimeout(() => setSearch(query.trim()), 250);
     return () => clearTimeout(t);
-  }, [value]);
+  }, [query]);
   const b = useBranches(repo, search);
+  const options = useMemo(() => {
+    const list: DropdownOption<string>[] = (b.data?.branches ?? []).map((br) => ({
+      value: br.name,
+      label: br.name,
+      ...(br.default ? { hint: 'default' } : br.protected ? { hint: 'protected' } : {}),
+    }));
+    // A branch from the URL that is not in this page of results still shows as picked.
+    if (value && !search && !list.some((o) => o.value === value))
+      list.unshift({ value, label: value });
+    return list;
+  }, [b.data, value, search]);
+  const searching = b.isFetching && search !== '';
   return (
     <div className="grid min-w-0 flex-1 gap-1">
       <label htmlFor={id} className="text-xs font-medium text-muted-foreground">
         {label}
       </label>
-      <div className="relative">
-        <GitBranch
-          className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground"
-          aria-hidden
-        />
-        <input
-          id={id}
-          list={`${id}-list`}
-          value={value}
-          onChange={(e) => onChange(e.target.value)}
-          placeholder={repo ? 'branch name' : 'pick a repo first'}
-          disabled={!repo}
-          autoComplete="off"
-          spellCheck={false}
-          className="h-10 w-full rounded-xl border bg-card pr-3 pl-9 font-mono text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50"
-        />
-        <datalist id={`${id}-list`}>
-          {(b.data?.branches ?? []).map((br) => (
-            <option key={br.name} value={br.name}>
-              {br.default ? 'default' : br.protected ? 'protected' : ''}
-            </option>
-          ))}
-        </datalist>
-      </div>
-      {b.error && <span className="text-xs text-destructive">{describeError(b.error)}</span>}
-      {b.data?.truncated && (
-        <span className="text-xs text-muted-foreground">
-          Showing the first {b.data.branches.length} branches: type to narrow.
-        </span>
-      )}
+      <Dropdown
+        id={id}
+        options={options}
+        value={value || null}
+        onChange={onChange}
+        onQueryChange={setQuery}
+        searchable
+        icon={GitBranch}
+        width="full"
+        placeholder={repo ? 'Pick a branch' : 'Pick a repo first'}
+        disabled={!repo}
+        footer={
+          b.error
+            ? describeError(b.error)
+            : b.isPending && repo
+              ? 'Loading branches…'
+              : searching
+                ? 'Searching GitLab…'
+                : b.data?.truncated
+                  ? `Showing the first ${b.data.branches.length} branches: type to narrow.`
+                  : undefined
+        }
+      />
     </div>
   );
 }
@@ -399,7 +408,19 @@ function BranchPicker() {
       ),
     [setParams],
   );
-  const setRepo = (v: string) => setParam('repo', v);
+  // One URL write: separate setParams calls in the same tick each start from the same URL, so the last one
+  // (clearing a branch) would drop the new repo again.
+  const setRepo = (v: string) =>
+    setParams(
+      (prev) => {
+        const next = new URLSearchParams(prev);
+        next.set('repo', v);
+        next.delete('base');
+        next.delete('target');
+        return next;
+      },
+      { replace: true },
+    );
   const setFrom = (v: string) => setParam('base', v);
   const setTo = (v: string) => setParam('target', v);
   const effectiveRepo = repo || repos[0]?.id || '';
@@ -435,11 +456,7 @@ function BranchPicker() {
         <Select
           id="cmp-repo"
           value={effectiveRepo}
-          onChange={(e) => {
-            setRepo(e.target.value);
-            setFrom('');
-            setTo('');
-          }}
+          onChange={(e) => setRepo(e.target.value)}
           className="h-10 rounded-xl"
         >
           {repos.map((r) => (
@@ -460,10 +477,19 @@ function BranchPicker() {
         <button
           type="button"
           className="rv-icon-btn self-center sm:mb-0.5"
-          onClick={() => {
-            setFrom(to);
-            setTo(from);
-          }}
+          onClick={() =>
+            setParams(
+              (prev) => {
+                const next = new URLSearchParams(prev);
+                if (to) next.set('base', to);
+                else next.delete('base');
+                if (from) next.set('target', from);
+                else next.delete('target');
+                return next;
+              },
+              { replace: true },
+            )
+          }
           aria-label="Swap base and target"
           title="Swap"
         >
