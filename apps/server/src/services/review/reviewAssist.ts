@@ -38,6 +38,42 @@ const DIFF_TTL_MS = 2 * 60_000;
 const MAX_FILE_CHARS = 30_000;
 const MAX_BRANCH_CHARS = 60_000;
 const MAX_COMMITS_CHARS = 8_000;
+const MAX_MENTION_CHARS = 15_000;
+const MAX_MENTIONS_CHARS = 40_000;
+const MAX_MENTIONS = 8;
+
+const escapeRe = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+/**
+ * The other changed files a question is about: the ones picked with @, then any whose path or (unique) base name the
+ * question names. The current file is not one of them. Pure.
+ */
+export function mentionedFiles(
+  files: readonly DiffFile[],
+  current: string,
+  picked: readonly string[],
+  question: string | undefined,
+): DiffFile[] {
+  const others = files.filter((f) => f.path !== current);
+  const out = new Map<string, DiffFile>();
+  for (const p of picked) {
+    const f = others.find((x) => x.path === p);
+    if (f) out.set(f.path, f);
+  }
+  if (question) {
+    const base = (p: string) => p.slice(p.lastIndexOf('/') + 1);
+    const count = new Map<string, number>();
+    for (const f of files) count.set(base(f.path), (count.get(base(f.path)) ?? 0) + 1);
+    for (const f of others) {
+      const names = count.get(base(f.path)) === 1 ? [f.path, base(f.path)] : [f.path];
+      const hit = names.some((n) =>
+        new RegExp(`(^|[^\\w./-])${escapeRe(n)}($|[^\\w/-])`).test(question),
+      );
+      if (hit) out.set(f.path, f);
+    }
+  }
+  return [...out.values()].slice(0, MAX_MENTIONS);
+}
 
 const clip = (s: string, n: number) => (s.length > n ? `${s.slice(0, n)}\n… (dipotong)` : s);
 
@@ -93,6 +129,9 @@ export class ReviewAssistService {
     const [d, commits] = await Promise.all([this.diff(req.source), this.commits(req.source)]);
     const f = this.file(d, req.file);
     const others = d.files.filter((x) => x.path !== f.path).map((x) => `- ${x.path}`);
+    const mentioned = mentionedFiles(d.files, f.path, req.mentions, req.question).map(
+      (m) => `### ${m.path}\n${clip(fileText(m), MAX_MENTION_CHARS)}`,
+    );
     const { output, generatedBy } = await this.d.ai.run('explain-change-chat', {
       file: f.oldPath && f.oldPath !== f.path ? `${f.oldPath} → ${f.path}` : f.path,
       question: req.question?.trim() || '(tidak ada)',
@@ -100,6 +139,9 @@ export class ReviewAssistService {
       title: titleOf(d),
       commits,
       others: clip(others.join('\n'), 4_000) || '(tidak ada)',
+      mentioned: mentioned.length
+        ? clip(mentioned.join('\n\n'), MAX_MENTIONS_CHARS)
+        : '(tidak ada)',
       diff: clip(fileText(f), MAX_FILE_CHARS),
     });
     return { ...output, generatedBy };
