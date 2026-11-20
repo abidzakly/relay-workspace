@@ -286,7 +286,9 @@ Task: help a reviewer understand WHY this file changed in this branch.
 - Always: "followUps" = 2-3 short questions (max 10 words each) the reviewer is likely to ask next, not already
   answered.
 Style: every point at most 25 words. Wrap identifiers and file names in backticks (\`setVesselTrail\`,
-\`live_tracking_map_widget.dart\`). No headings. Base everything on the diff. You only answer: you cannot change code.
+\`live_tracking_map_widget.dart\`). No headings. Base everything on the diff. When the user mentions other files, their diffs are below: use them to explain how
+those files connect to this one. For other changed files you only know the name: say so instead of guessing.
+You only answer: you cannot change code.
 
 File: {{file}}
 
@@ -313,6 +315,11 @@ Commits:
 Other files changed in this branch:
 <data>
 {{others}}
+</data>
+
+Diffs of other files the user mentioned:
+<data>
+{{mentioned}}
 </data>
 
 Diff of this file:

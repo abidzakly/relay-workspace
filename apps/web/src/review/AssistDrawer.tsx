@@ -1,5 +1,6 @@
 import * as DialogPrimitive from '@radix-ui/react-dialog';
 import {
+  AtSign,
   Check,
   Copy,
   CornerDownRight,
@@ -18,8 +19,10 @@ import {
   useMemo,
   useRef,
   useState,
+  useId,
   type KeyboardEvent,
   type ReactNode,
+  type RefObject,
 } from 'react';
 import { Link } from 'react-router';
 import {
@@ -43,13 +46,15 @@ export type AssistTarget =
   { kind: 'explain'; file: string } | { kind: 'propose'; file: string | null };
 
 type Turn =
-  | { role: 'user'; text: string }
+  | { role: 'user'; text: string; mentions?: string[] }
   | ({ role: 'assistant'; generatedBy: AiGeneratedBy } & ExplainChangeOutput);
 
 const baseName = (p: string) => p.slice(p.lastIndexOf('/') + 1);
 
 /** Changed files, for turning a `file.dart` mention into a jump. */
 interface FileLinks {
+  /** Every changed file, in diff order. */
+  files: readonly string[];
   find: (name: string) => string | null;
   jump: (path: string) => void;
 }
@@ -89,6 +94,7 @@ export function AssistDrawer({
       byKey.set(b, byKey.has(b) && byKey.get(b) !== f ? '' : f);
     }
     return {
+      files,
       find: (name) => byKey.get(name.replace(/^\.?\//, '')) || null,
       jump: (path) => {
         if (narrow) onClose();
@@ -111,6 +117,16 @@ export function AssistDrawer({
           aria-describedby={undefined}
           // Beside the diff: clicking or scrolling the code must not close it.
           onInteractOutside={(e) => !narrow && e.preventDefault()}
+          // Escape with the @ file list open closes the list (in the composer), not the drawer.
+          onEscapeKeyDown={(e) => {
+            const el = document.activeElement;
+            if (
+              el?.getAttribute('role') === 'combobox' &&
+              el.getAttribute('aria-expanded') === 'true'
+            ) {
+              e.preventDefault();
+            }
+          }}
           className={cn(
             'fixed inset-y-0 right-0 z-[60] flex w-full flex-col bg-popover outline-none sm:w-[min(36rem,46vw)]',
             'border-l border-hairline shadow-[-12px_0_32px_-16px_rgb(0_0_0/0.18)]',
@@ -336,7 +352,11 @@ function Brief({ t }: { t: Extract<Turn, { role: 'assistant' }> }) {
 
 /** What the AI said, as plain text for the conversation history it gets back. */
 function turnText(t: Turn): string {
-  if (t.role === 'user') return t.text;
+  if (t.role === 'user') {
+    return t.mentions?.length
+      ? `${t.text}\n(mentioned: ${t.mentions.map(baseName).join(', ')})`
+      : t.text;
+  }
   if (t.answer.trim()) return t.answer;
   const list = (title: string, xs: readonly string[]) =>
     xs.length ? [`${title}:`, ...xs.map((x) => `- ${x}`)] : [];
@@ -369,6 +389,189 @@ function Thinking({ first }: { first: boolean }) {
   );
 }
 
+function UserBubble({ text, mentions }: { text: string; mentions: readonly string[] }) {
+  const links = useContext(FileLinksContext);
+  return (
+    <div className="grid max-w-[85%] justify-items-end gap-1 justify-self-end">
+      <p className="rounded-2xl rounded-br-md bg-muted px-3.5 py-2 whitespace-pre-wrap text-foreground">
+        {text}
+      </p>
+      {mentions.length > 0 && (
+        <div className="flex flex-wrap justify-end gap-1">
+          {mentions.map((m) => (
+            <button
+              key={m}
+              type="button"
+              className="ax-code ax-code-link text-[0.6875rem]"
+              title={`Show ${m} in the diff`}
+              onClick={() => links?.jump(m)}
+            >
+              @{baseName(m)}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** The `@query` right before the caret, or null. */
+function atQuery(text: string, caret: number): { start: number; query: string } | null {
+  const m = /(^|\s)@([\w./-]*)$/.exec(text.slice(0, caret));
+  if (!m) return null;
+  return { start: caret - m[2]!.length - 1, query: m[2]! };
+}
+
+/**
+ * "@" in the composer: a list of the other changed files, filtered by what follows the "@". Arrow keys move, Enter or
+ * Tab picks, Escape closes. Picking removes the "@query" text; the file becomes a chip instead.
+ */
+function useMentionPicker({
+  files,
+  draft,
+  inputRef,
+  onPick,
+}: {
+  files: readonly string[];
+  draft: string;
+  inputRef: RefObject<HTMLTextAreaElement | null>;
+  onPick: (path: string, nextDraft: string) => void;
+}) {
+  const [at, setAt] = useState<{ start: number; query: string } | null>(null);
+  const [index, setIndex] = useState(0);
+  const listId = useId();
+
+  const matches = useMemo(() => {
+    if (!at) return [];
+    const q = at.query.toLowerCase();
+    const scored = files
+      .map((f) => {
+        const b = baseName(f).toLowerCase();
+        const score = !q
+          ? 1
+          : b.startsWith(q)
+            ? 0
+            : b.includes(q)
+              ? 1
+              : f.toLowerCase().includes(q)
+                ? 2
+                : -1;
+        return { f, score };
+      })
+      .filter((x) => x.score >= 0)
+      .sort((a, b) => a.score - b.score);
+    return scored.slice(0, 8).map((x) => x.f);
+  }, [at, files]);
+
+  const open = at !== null && matches.length > 0;
+  const active = Math.min(index, Math.max(matches.length - 1, 0));
+
+  const sync = () => {
+    const el = inputRef.current;
+    if (!el) return;
+    const next = atQuery(el.value, el.selectionStart ?? el.value.length);
+    setAt((prev) => (prev?.start === next?.start && prev?.query === next?.query ? prev : next));
+    if (next?.query !== at?.query) setIndex(0);
+  };
+  // The draft changes on every keystroke: re-read the "@" before the caret.
+  useEffect(sync, [draft]);
+
+  const pick = (path: string) => {
+    if (!at) return;
+    const el = inputRef.current;
+    const end = at.start + 1 + at.query.length;
+    const before = draft.slice(0, at.start).replace(/\s+$/, '');
+    const after = draft.slice(end).replace(/^\s+/, '');
+    const next = before && after ? `${before} ${after}` : before || after;
+    setAt(null);
+    onPick(path, next);
+    requestAnimationFrame(() => {
+      if (!el) return;
+      el.focus();
+      const caret = before.length + (before && after ? 1 : 0);
+      el.setSelectionRange(caret, caret);
+    });
+  };
+
+  const onKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>): boolean => {
+    if (!open) return false;
+    if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+      e.preventDefault();
+      const d = e.key === 'ArrowDown' ? 1 : -1;
+      setIndex((active + d + matches.length) % matches.length);
+      return true;
+    }
+    if ((e.key === 'Enter' && !e.shiftKey) || e.key === 'Tab') {
+      e.preventDefault();
+      pick(matches[active]!);
+      return true;
+    }
+    if (e.key === 'Escape') {
+      // Close the list, not the drawer.
+      e.preventDefault();
+      e.stopPropagation();
+      setAt(null);
+      return true;
+    }
+    return false;
+  };
+
+  const openFromButton = () => {
+    const el = inputRef.current;
+    if (!el) return;
+    const caret = el.selectionStart ?? draft.length;
+    const lead = caret > 0 && !/\s/.test(draft[caret - 1]!) ? ' ' : '';
+    const next = `${draft.slice(0, caret)}${lead}@${draft.slice(caret)}`;
+    onPick('', next);
+    requestAnimationFrame(() => {
+      el.focus();
+      const c = caret + lead.length + 1;
+      el.setSelectionRange(c, c);
+      setAt({ start: c - 1, query: '' });
+    });
+  };
+
+  const list = open ? (
+    <ul
+      id={listId}
+      role="listbox"
+      aria-label="Changed files"
+      className="ax-mention-list"
+      onMouseDown={(e) => e.preventDefault()}
+    >
+      {matches.map((f, i) => (
+        <li
+          key={f}
+          id={`${listId}-${i}`}
+          role="option"
+          aria-selected={i === active}
+          className={cn('ax-mention-opt', i === active && 'ax-mention-opt-on')}
+          onMouseEnter={() => setIndex(i)}
+          onClick={() => pick(f)}
+        >
+          <span className="truncate font-mono text-xs text-foreground">{baseName(f)}</span>
+          <span className="truncate text-2xs text-muted-foreground">{f}</span>
+        </li>
+      ))}
+    </ul>
+  ) : null;
+
+  return {
+    list,
+    sync,
+    close: () => setAt(null),
+    onKeyDown,
+    openFromButton,
+    inputProps: {
+      role: 'combobox' as const,
+      'aria-expanded': open,
+      'aria-controls': open ? listId : undefined,
+      'aria-activedescendant': open ? `${listId}-${active}` : undefined,
+      'aria-autocomplete': 'list' as const,
+    },
+  };
+}
+
 function ExplainPane({
   source,
   file,
@@ -383,14 +586,27 @@ function ExplainPane({
   const chat = useExplainChat();
   const touch = useCoarsePointer();
   const [draft, setDraft] = useState('');
+  const [picked, setPicked] = useState<string[]>([]);
   const endRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLTextAreaElement>(null);
+  const links = useContext(FileLinksContext);
+  const mention = useMentionPicker({
+    files: (links?.files ?? []).filter((f) => f !== file && !picked.includes(f)),
+    draft,
+    inputRef,
+    onPick: (path, nextDraft) => {
+      if (path) setPicked((prev) => (prev.includes(path) ? prev : [...prev, path].slice(0, 8)));
+      setDraft(nextDraft);
+    },
+  });
 
-  const ask = (question?: string) => {
+  const ask = (question?: string, mentions: string[] = []) => {
     if (chat.isPending) return;
     chat.mutate(
       {
         source,
         file,
+        mentions,
         history: turns
           .slice(-MR_CHAT_MAX_HISTORY)
           .map((t) => ({ role: t.role, text: turnText(t).slice(0, MR_CHAT_MAX_MESSAGE) }))
@@ -401,11 +617,20 @@ function ExplainPane({
         onSuccess: ({ generatedBy, ...out }) =>
           setTurns((prev) => [
             ...prev,
-            ...(question ? [{ role: 'user' as const, text: question }] : []),
+            ...(question
+              ? [
+                  {
+                    role: 'user' as const,
+                    text: question,
+                    ...(mentions.length ? { mentions } : {}),
+                  },
+                ]
+              : []),
             { role: 'assistant', generatedBy, ...out },
           ]),
         onError: () => {
           if (question) setDraft((current) => current || question);
+          if (mentions.length) setPicked((current) => (current.length ? current : mentions));
         },
       },
     );
@@ -429,15 +654,19 @@ function ExplainPane({
     const q = draft.trim();
     if (!q || chat.isPending) return;
     setDraft('');
-    ask(q);
+    const m = picked;
+    setPicked([]);
+    ask(q, m);
   };
   const onKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
+    if (mention.onKeyDown(e)) return;
     if (e.key === 'Enter' && !e.shiftKey && !touch && !e.nativeEvent.isComposing) {
       e.preventDefault();
       send();
     }
   };
   const asked = chat.isPending ? chat.variables.question : undefined;
+  const askedMentions = chat.isPending ? chat.variables.mentions : [];
   const lastAi = [...turns].reverse().find((t) => t.role === 'assistant');
   const suggestions =
     !chat.isPending && lastAi?.role === 'assistant' ? lastAi.followUps.slice(0, 3) : [];
@@ -457,12 +686,7 @@ function ExplainPane({
         <div className="grid gap-6 text-sm leading-relaxed text-foreground/85" aria-live="polite">
           {turns.map((t, i) =>
             t.role === 'user' ? (
-              <p
-                key={i}
-                className="max-w-[85%] justify-self-end rounded-2xl rounded-br-md bg-muted px-3.5 py-2 whitespace-pre-wrap text-foreground"
-              >
-                {t.text}
-              </p>
+              <UserBubble key={i} text={t.text} mentions={t.mentions ?? []} />
             ) : t.answer.trim() ? (
               <div key={i} className="grid gap-2">
                 <Prose text={t.answer} />
@@ -472,11 +696,7 @@ function ExplainPane({
               <Brief key={i} t={t} />
             ),
           )}
-          {asked && (
-            <p className="max-w-[85%] justify-self-end rounded-2xl rounded-br-md bg-muted px-3.5 py-2 whitespace-pre-wrap text-foreground">
-              {asked}
-            </p>
-          )}
+          {asked && <UserBubble text={asked} mentions={askedMentions} />}
           {chat.isPending && <Thinking first={turns.length === 0} />}
           {chat.error && (
             <div className="flex flex-wrap items-center gap-2 text-xs text-destructive">
@@ -502,17 +722,51 @@ function ExplainPane({
             ))}
           </div>
         )}
-        <div className="flex items-end gap-2">
+        {picked.length > 0 && (
+          <div className="flex flex-wrap gap-1.5" aria-label="Files this question is about">
+            {picked.map((p) => (
+              <span key={p} className="ax-mention" title={p}>
+                <AtSign className="size-3 shrink-0 opacity-60" aria-hidden />
+                <span className="truncate">{baseName(p)}</span>
+                <button
+                  type="button"
+                  className="ax-mention-x"
+                  aria-label={`Remove ${p}`}
+                  onClick={() => setPicked((prev) => prev.filter((x) => x !== p))}
+                >
+                  <X className="size-3" aria-hidden />
+                </button>
+              </span>
+            ))}
+          </div>
+        )}
+        <div className="relative flex items-end gap-2">
+          {mention.list}
           <Textarea
+            ref={inputRef}
             value={draft}
             onChange={(e) => setDraft(e.target.value)}
             onKeyDown={onKeyDown}
-            placeholder="Ask about this change…"
+            onSelect={mention.sync}
+            onBlur={mention.close}
+            placeholder="Ask about this change… type @ to bring in another file"
             aria-label="Follow-up question"
             maxLength={2000}
             rows={1}
             className="max-h-32 min-h-10 resize-none bg-background"
+            {...mention.inputProps}
           />
+          <Button
+            size="icon"
+            variant="ghost"
+            aria-label="Mention a changed file"
+            title="Mention a changed file (@)"
+            disabled={(links?.files.length ?? 0) < 2}
+            onMouseDown={(e) => e.preventDefault()}
+            onClick={mention.openFromButton}
+          >
+            <AtSign className="size-4" aria-hidden />
+          </Button>
           <Button
             size="icon"
             aria-label="Send question"

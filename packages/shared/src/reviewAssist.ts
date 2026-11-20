@@ -18,6 +18,8 @@ export const ReviewExplainRequestSchema = z
     source: ReviewAssistSourceSchema,
     file: z.string().min(1).max(1000),
     history: z.array(MrChatMessageSchema).max(MR_CHAT_MAX_HISTORY),
+    /** Other changed files whose diffs the AI should see for this question. */
+    mentions: z.array(z.string().min(1).max(1000)).max(8).default([]),
     /** Absent on the first turn: "why did this file change?". */
     question: z.string().trim().min(1).max(2_000).optional(),
   })
