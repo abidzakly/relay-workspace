@@ -3,7 +3,6 @@ import {
   ExternalLink,
   GitBranch,
   GitCommitHorizontal,
-  Layers,
   MoveRight,
 } from 'lucide-react';
 import { useEffect } from 'react';
@@ -20,6 +19,7 @@ import { reviewOrigin, reviewPath, useCompareReview, useMrReview } from '@/lib/r
 import { safeHref } from '@/lib/utils';
 import { ApproveControl } from '@/review/ApproveControl';
 import { rememberReview } from '@/review/recent';
+import { ReviewModeSwitch, type SwitchableSource } from '@/review/ReviewModeSwitch';
 import { ReviewWorkspace } from '@/review/ReviewWorkspace';
 import { DeskBar } from '@/reviews/DeskBar';
 import '@/review/review.css';
@@ -73,30 +73,27 @@ function GitlabLink({ href }: { href: string | null | undefined }) {
   );
 }
 
-/** "Immersive" = the Review Deck for the same diff. */
-function ImmersiveLink({ source }: { source: DeckSource }) {
-  const { pathname } = useLocation();
+/** Diff | Deck switch for this review; the deck keeps the way back to where the review was opened. */
+function ModeSwitch({ source }: { source: SwitchableSource }) {
+  const { state, search } = useLocation();
   return (
-    <Link
-      to={deckPath(source)}
-      state={{
-        from: `${pathname}?classic=1${
-          source.kind === 'compare'
-            ? `&from=${encodeURIComponent(source.from)}&to=${encodeURIComponent(source.to)}`
-            : ''
-        }`,
-      }}
-      className="rv-icon-btn"
-      aria-label="Immersive review (deck)"
-      title="Immersive review (deck)"
-    >
-      <Layers className="size-4" aria-hidden />
-    </Link>
+    <ReviewModeSwitch
+      source={source}
+      current="diff"
+      origin={reviewOrigin(state, search)?.from ?? null}
+    />
   );
 }
 
+/** Route state that hands this review's origin to the deck (its back arrow). */
+function useOriginState(): { reviewFrom: string } | undefined {
+  const { state, search } = useLocation();
+  const from = reviewOrigin(state, search)?.from;
+  return from ? { reviewFrom: from } : undefined;
+}
+
 /**
- * On phones the deck is the default view; `?classic=1` keeps the full diff (the deck's back link sets it).
+ * On phones the deck is the default view; `?classic=1` keeps the full diff (the mode switch sets it).
  */
 function useDeckByDefault(source: DeckSource | null): string | null {
   const narrow = useNarrow();
@@ -166,6 +163,7 @@ export function MrReviewSession() {
   const loaded = q.data?.mr;
   const deckSource: DeckSource | null = valid ? { kind: 'mr', repoId: repo, iid: n } : null;
   const toDeck = useDeckByDefault(deckSource);
+  const originState = useOriginState();
   useEffect(() => {
     if (!loaded) return;
     rememberReview({
@@ -177,7 +175,7 @@ export function MrReviewSession() {
     });
   }, [loaded]);
   if (toDeck)
-    return <Navigate to={toDeck} replace state={{ from: `/review/${repo}/mr/${n}?classic=1` }} />;
+    return <Navigate to={toDeck} replace state={originState} />;
   // A malformed link never loads: say so instead of waiting forever.
   if (!valid)
     return (
@@ -227,7 +225,7 @@ export function MrReviewSession() {
             }}
           />
           {!mr.repoId.startsWith('~') && (
-            <ImmersiveLink source={{ kind: 'mr', repoId: mr.repoId, iid: mr.iid }} />
+            <ModeSwitch source={{ kind: 'mr', repoId: mr.repoId, iid: mr.iid }} />
           )}
           <GitlabLink href={mr.webUrl} />
         </>
@@ -303,6 +301,7 @@ export function CompareReviewSession() {
   const toDeck = useDeckByDefault(
     from && to && from !== to ? { kind: 'compare', repoId: repo, from, to } : null,
   );
+  const originState = useOriginState();
   const compared = q.data;
   useEffect(() => {
     if (!compared) return;
@@ -315,10 +314,7 @@ export function CompareReviewSession() {
       at: Date.now(),
     });
   }, [compared]);
-  if (toDeck) {
-    const back = `/review/${encodeURIComponent(repo)}/compare?classic=1&from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`;
-    return <Navigate to={toDeck} replace state={{ from: back }} />;
-  }
+  if (toDeck) return <Navigate to={toDeck} replace state={originState} />;
   if (!from || !to || from === to)
     return (
       <Failed
@@ -344,7 +340,7 @@ export function CompareReviewSession() {
       actions={
         <>
           {!d.repoId.startsWith('~') && (
-            <ImmersiveLink source={{ kind: 'compare', repoId: d.repoId, from: d.from, to: d.to }} />
+            <ModeSwitch source={{ kind: 'compare', repoId: d.repoId, from: d.from, to: d.to }} />
           )}
           <GitlabLink href={d.webUrl} />
         </>

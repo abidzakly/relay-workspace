@@ -23,6 +23,7 @@ import {
   type DeckNote,
   type DeckPayload,
   type DeckRequestChangeResult,
+  type DeckSource,
   type DeckState,
   type DeckStatePatch,
   type DeckStatus,
@@ -46,6 +47,8 @@ import {
   useRequestChange,
 } from '@/lib/deckApi';
 import { mrCreatePath } from '@/lib/mrCreateApi';
+import { reviewOrigin } from '@/lib/reviewApi';
+import { isSwitchable, ReviewModeSwitch } from '@/review/ReviewModeSwitch';
 import { useReducedMotion } from '@/workspace/useMedia';
 import { GeneratedBy } from '@/components/GeneratedBy';
 import { BossCard, QuizCardView } from './BossCard';
@@ -334,7 +337,9 @@ function DeskPile({ done }: { done: number }) {
 
 function Deck({
   d,
+  source,
   backTo,
+  origin,
   onReload,
   reloading,
   onRebuild,
@@ -342,7 +347,10 @@ function Deck({
   rebuildError,
 }: {
   d: DeckPayload;
+  source: DeckSource;
   backTo: string;
+  /** Where the review was opened from, when known: carried to the full diff by the mode switch. */
+  origin: string | null;
   onReload: () => void;
   reloading: boolean;
   onRebuild: () => void;
@@ -567,6 +575,9 @@ function Deck({
           </p>
           <p className="truncate text-xs text-muted-foreground">{d.subtitle}</p>
         </div>
+        {isSwitchable(source) && (
+          <ReviewModeSwitch source={source} current="deck" origin={origin} />
+        )}
         <span className="shrink-0 text-xs text-muted-foreground tabular-nums">
           {Math.min(cursor + 1, cards.length)}/{cards.length}
         </span>
@@ -823,12 +834,16 @@ export function DeckView() {
   const source = useMemo(() => deckSourceFrom(kind, id, search), [kind, id, search]);
   const q = useDeck(source);
   const rebuild = useRebuildDeck(source);
+  // Back returns where the review was opened from (Code Review, MR create, the cockpit…), not to the full diff:
+  // the Diff | Deck switch moves between the two views of the same review.
+  const origin =
+    (state as { from?: string } | null)?.from ?? reviewOrigin(state)?.from ?? null;
   const backTo =
-    (state as { from?: string } | null)?.from ??
-    (source?.kind === 'mr'
-      ? `/review/${source.repoId}/mr/${source.iid}`
-      : source?.kind === 'compare'
-        ? `/review/${source.repoId}/compare?from=${encodeURIComponent(source.from)}&to=${encodeURIComponent(source.to)}`
+    origin ??
+    (source?.kind === 'compare'
+      ? '/review?mode=branches'
+      : source?.kind === 'mr'
+        ? '/review'
         : '/cockpit');
 
   if (!source) {
@@ -861,7 +876,9 @@ export function DeckView() {
     <Deck
       key={q.dataUpdatedAt}
       d={q.data}
+      source={source}
       backTo={backTo}
+      origin={origin}
       onReload={() => void q.refetch()}
       reloading={q.isFetching}
       onRebuild={() => rebuild.mutate()}
