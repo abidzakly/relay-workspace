@@ -148,6 +148,8 @@ export const MrChatRequestSchema = z
   .object({
     repo: RepoIdSchema,
     branch: BranchNameSchema,
+    /** The branch the diff is taken against; default the repo's base (as Create MR does). */
+    base: BranchNameSchema.optional(),
     summary: MrSummaryOutputSchema,
     history: z.array(MrChatMessageSchema).max(MR_CHAT_MAX_HISTORY),
     question: z.string().trim().min(1).max(2_000),

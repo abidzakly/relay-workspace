@@ -14,6 +14,7 @@ import {
   MessageSquare,
   Rows3,
   Search,
+  Sparkles,
   Wand2,
   WrapText,
   X,
@@ -23,7 +24,7 @@ import { cn } from '@/lib/utils';
 import { useNarrow, useReducedMotion } from '@/workspace/useMedia';
 import { groupThreads, positionFor, type FileThreads } from './anchor';
 import { buildTree, sortForTree, type DirNode } from './fileTree';
-import { AssistDrawer, type AssistTarget } from './AssistDrawer';
+import { AssistDrawer, type AssistBranch, type AssistTarget } from './AssistDrawer';
 import {
   ChangeBar,
   DiffFileView,
@@ -378,6 +379,8 @@ export interface ReviewWorkspaceProps {
   storageKey: string;
   /** Where Explain / Propose changes read the diff from; null hides them (external repos). */
   assistSource?: ReviewAssistSource | null;
+  /** The branch "Explain branch" summarises (Create MR's summary); null hides it. */
+  assistBranch?: AssistBranch | null;
 }
 
 export function ReviewWorkspace(props: ReviewWorkspaceProps) {
@@ -680,7 +683,7 @@ export function ReviewWorkspace(props: ReviewWorkspaceProps) {
         ? {
             ready: aiReady,
             onExplain: (file) => setAssistTarget({ kind: 'explain', file }),
-            onPropose: (file) => setAssistTarget({ kind: 'propose', file }),
+            onPropose: (file) => setAssistTarget({ kind: 'propose', files: [file] }),
           }
         : undefined,
     [hasAssist, aiReady],
@@ -773,12 +776,24 @@ export function ReviewWorkspace(props: ReviewWorkspaceProps) {
             >
               <WrapText className="size-4" aria-hidden />
             </button>
+            {assist && p.assistBranch && (
+              <button
+                type="button"
+                className="rv-icon-btn"
+                disabled={!assist.ready}
+                onClick={() => setAssistTarget({ kind: 'explain-branch' })}
+                title={assist.ready ? 'Explain the whole branch' : 'AI is not available'}
+                aria-label="Explain the whole branch"
+              >
+                <Sparkles className="size-4" aria-hidden />
+              </button>
+            )}
             {assist && (
               <button
                 type="button"
                 className="rv-icon-btn"
                 disabled={!assist.ready}
-                onClick={() => setAssistTarget({ kind: 'propose', file: null })}
+                onClick={() => setAssistTarget({ kind: 'propose', files: [] })}
                 title={assist.ready ? 'Propose changes to the whole branch' : 'AI is not available'}
                 aria-label="Propose changes to the whole branch"
               >
@@ -977,9 +992,11 @@ export function ReviewWorkspace(props: ReviewWorkspaceProps) {
       {p.assistSource && (
         <AssistDrawer
           source={p.assistSource}
+          branch={p.assistBranch ?? null}
           target={assistTarget}
           files={filePaths}
           onJumpToFile={scrollToFile}
+          onTarget={setAssistTarget}
           onClose={closeAssist}
         />
       )}

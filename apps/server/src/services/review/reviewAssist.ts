@@ -162,10 +162,16 @@ export class ReviewAssistService {
       const d = await this.diff(req.source);
       let scope: string;
       let diff: string;
-      if (req.scope === 'file') {
-        const f = this.file(d, req.file!);
-        scope = `file ${f.path}`;
-        diff = clip(`### ${f.path}\n${fileText(f)}`, MAX_FILE_CHARS);
+      if (req.scope === 'files') {
+        const picked = [...new Set(req.files)].map((p) => this.file(d, p));
+        scope =
+          picked.length === 1
+            ? `file ${picked[0]!.path}`
+            : `${picked.length} files: ${picked.map((f) => f.path).join(', ')}`;
+        diff = clip(
+          picked.map((f) => `### ${f.path}\n${clip(fileText(f), MAX_FILE_CHARS)}`).join('\n\n'),
+          MAX_BRANCH_CHARS,
+        );
       } else {
         scope = `whole branch (${d.files.length} files)`;
         diff = clip(
@@ -175,7 +181,15 @@ export class ReviewAssistService {
       }
       const r = await this.d.ai.run(
         'propose-change',
-        { scope, title: titleOf(d), request: req.request, diff },
+        {
+          scope,
+          title: titleOf(d),
+          request: req.request || '(tidak ada: ambil dari diskusi)',
+          conversation: req.conversation.length
+            ? renderChatHistory(req.conversation)
+            : '(tidak ada)',
+          diff,
+        },
         { fresh: true },
       );
       prompt = r.output.prompt.trim();

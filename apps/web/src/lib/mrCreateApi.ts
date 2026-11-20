@@ -51,6 +51,21 @@ export function useMrSummary() {
   });
 }
 
+/**
+ * "Explain branch" in Code Review: Create MR's summary as a query (kept for the session, so reopening is instant).
+ * The server's AI cache shares the answer with Create MR when `base` is the repo's base.
+ */
+export function useBranchSummary(repo: string, branch: string, base: string | undefined) {
+  return useQuery({
+    queryKey: ['mr-summary', repo, branch, base ?? ''] as const,
+    queryFn: () =>
+      post<MrSummaryResult>('/api/mr-create/summary', { repo, branch, ...(base ? { base } : {}) }),
+    staleTime: Infinity,
+    gcTime: 30 * 60_000,
+    retry: false,
+  });
+}
+
 export function useMrChat() {
   return useMutation<MrChatResult, Error, MrChatRequest>({
     mutationFn: (b) => post('/api/mr-create/chat', b),
