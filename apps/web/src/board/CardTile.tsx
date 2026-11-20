@@ -30,7 +30,15 @@ const AGENT_LABEL: Partial<Record<CardTileModel['column'], string>> = {
   Backlog: 'Start early with agent',
   'Next Up': 'Start with agent',
   'In Progress': 'Continue with agent',
+  Issues: 'Fix with agent',
 };
+
+/** Why this tile cannot start an agent, or null: the same rule as the tile's own agent button. */
+export function agentStartBlock(tile: CardTileModel): string | null {
+  if (!AGENT_LABEL[tile.column]) return `Cards in ${tile.column} cannot start an agent`;
+  if (!tile.card.branchName) return 'No Branch formula: this card cannot start';
+  return null;
+}
 
 const tileTone = (severity: CardTileModel['severity']): string =>
   severity === 'critical'
@@ -159,7 +167,7 @@ export function CardTile({
   highlighted: boolean;
   onJump: (cardId: string) => void;
   /** Board select mode (bulk start): a checkbox on the tile. Disabled = the card cannot be started. */
-  select?: { checked: boolean; disabled: boolean; onToggle: () => void };
+  select?: { checked: boolean; disabled: boolean; reason?: string; onToggle: () => void };
 }) {
   const { card, mr, link, severity, family, parentChip, statusMismatch } = tile;
   const chip = LINK_CHIP[link];
@@ -183,7 +191,7 @@ export function CardTile({
               type="checkbox"
               className="mr-1 size-4 accent-foreground disabled:opacity-40"
               aria-label={`Select ${card.title}`}
-              title={select.disabled ? 'No Branch formula: this card cannot start' : undefined}
+              title={select.disabled ? select.reason : undefined}
               checked={select.checked}
               disabled={select.disabled}
               onChange={select.onToggle}
