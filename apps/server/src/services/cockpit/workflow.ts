@@ -5,6 +5,7 @@ import {
   type BaseSuggestResult,
   type CardContentPreview,
   type CardStartAttachment,
+  type CommitMessageResult,
   type DeckSource,
   type ExplainThreadResult,
   parseFigmaUrl,
@@ -27,6 +28,7 @@ import type { ReadyForMrService } from '../readyForMr';
 import { threadCode } from '../threadCode';
 import type { CardContentService, CardContent } from './cardContent';
 import type { CockpitHost } from './host';
+import type { CommitResult } from './branchOps';
 import type { ExistingBranch } from './workflowOps';
 import type { CockpitSessionService, SessionView } from './sessionService';
 import {
@@ -206,6 +208,75 @@ export class CockpitWorkflowService {
     return r;
   }
 
+  /** `origin/<base>` of the workspace's repository: what "the branch's own commits" are counted from. */
+  private originBase(workspaceId: string): string {
+    const repoId = this.d.workspaces.get(workspaceId).repoId;
+    const base = (repoId ? this.d.config.getRepo(repoId)?.baseBranch : null) ?? 'main';
+    return `origin/${base}`;
+  }
+
+  /**
+   * Keeps a workspace's uncommitted changes as a commit (Create MR, on a dirty tree): a new commit with `message`, or
+   * amended into the branch's last commit. Refused while an agent runs in it, like `cleanTree`.
+   */
+  async commitTree(
+    workspaceId: string,
+    opts: { message?: string | undefined; amend: boolean },
+  ): Promise<CommitResult> {
+    await this.refuseWhileAgentRuns(workspaceId);
+    const r = await this.d.host.wsCommit(this.d.workspaces.ref(workspaceId), {
+      ...opts,
+      base: this.originBase(workspaceId),
+    });
+    this.d.log.info({ workspaceId, sha: r.sha, amended: r.amended }, 'workspace tree committed');
+    return r;
+  }
+
+  /** "Smart commit": an AI-written message for the workspace's uncommitted changes, in the style of its recent commits. */
+  async commitMessage(workspaceId: string): Promise<CommitMessageResult> {
+    const ref = this.d.workspaces.ref(workspaceId);
+    const [d, log] = await Promise.all([
+      this.d.host.wsDiff(ref, 'working'),
+      this.d.host.wsLog(ref, this.originBase(workspaceId)).catch(() => []),
+    ]);
+    if (d.files.length === 0) {
+      throw new ActionError(409, 'clean', 'There is nothing to commit.');
+    }
+    const diff = d.files
+      .map((f) => `### ${f.path}\n${f.diff ?? (f.binary ? '(binary)' : '(too large)')}`)
+      .join('\n\n')
+      .slice(0, 150_000);
+    const recent =
+      log
+        .slice(0, 10)
+        .map((c) => `- ${c.subject}`)
+        .join('\n') || '(none)';
+    const { output, generatedBy } = await this.d.ai.run('commit-message', { diff, recent });
+    return { message: output.message.trim(), generatedBy };
+  }
+
+  /** Test bench "Check out": puts the workspace on `branch`. Refuses a dirty tree (`ws_dirty`) or a running agent. */
+  async checkoutBranch(
+    workspaceId: string,
+    branch: string,
+  ): Promise<{ branch: string; synced: boolean }> {
+    const { synced } = await this.ensureBranch(workspaceId, branch);
+    this.d.log.info({ workspaceId, branch, synced }, 'workspace branch checked out');
+    return { branch, synced };
+  }
+
+  /**
+   * The workspace to use for `branch`: a worktree of the repo workspace that has it checked out already (git keeps a
+   * branch in one worktree only, so the repo workspace cannot switch to it), else the repo workspace itself.
+   */
+  private async holderOf(repoWorkspaceId: string, branch: string): Promise<string> {
+    for (const wt of this.d.workspaces.worktreesOf(repoWorkspaceId)) {
+      const status = await this.d.host.wsStatus(this.d.workspaces.ref(wt.id)).catch(() => null);
+      if (status?.branch === branch) return wt.id;
+    }
+    return repoWorkspaceId;
+  }
+
   /** Puts a workspace on a branch, refusing when that would pull it from under a running agent. */
   private async ensureBranch(workspaceId: string, branch: string): Promise<{ synced: boolean }> {
     const ref = this.d.workspaces.ref(workspaceId);
@@ -217,8 +288,8 @@ export class CockpitWorkflowService {
   /** The workspace an agent works on for a deck, on the deck's branch. Null = no workspace holds the repo. */
   async prepareDeckBranch(source: DeckSource): Promise<{ workspaceId: string } | null> {
     if (source.kind === 'local') return { workspaceId: source.workspaceId };
-    const workspaceId = this.d.workspaces.forRepo(source.repoId);
-    if (!workspaceId) return null;
+    const repoWorkspaceId = this.d.workspaces.forRepo(source.repoId);
+    if (!repoWorkspaceId) return null;
     let branch = source.kind === 'compare' ? source.to : null;
     if (source.kind === 'mr') {
       const mr = this.d.store.db
@@ -229,7 +300,9 @@ export class CockpitWorkflowService {
       if (!mr) throw new ActionError(404, 'mr_not_found', 'This MR is not in the cache.');
       branch = mr.sourceBranch;
     }
-    if (branch) await this.ensureBranch(workspaceId, branch);
+    if (!branch) return { workspaceId: repoWorkspaceId };
+    const workspaceId = await this.holderOf(repoWorkspaceId, branch);
+    await this.ensureBranch(workspaceId, branch);
     return { workspaceId };
   }
 
@@ -432,8 +505,8 @@ export class CockpitWorkflowService {
     attachments: number;
     failedAttachments: number;
   }> {
-    const workspaceId = this.d.workspaces.forRepo(input.repoId);
-    if (!workspaceId) {
+    const repoWorkspaceId = this.d.workspaces.forRepo(input.repoId);
+    if (!repoWorkspaceId) {
       throw new ActionError(
         409,
         'no_workspace',
@@ -456,6 +529,7 @@ export class CockpitWorkflowService {
     const diffs = await svc.getMrDiffs(input.iid).catch(() => null);
     const code = discussion.position ? threadCode(discussion.position, diffs?.files ?? null) : null;
 
+    const workspaceId = await this.holderOf(repoWorkspaceId, mr.sourceBranch);
     const { synced } = await this.ensureBranch(workspaceId, mr.sourceBranch);
     const ref = this.d.workspaces.ref(workspaceId);
 

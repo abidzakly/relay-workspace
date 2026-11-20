@@ -1,5 +1,5 @@
 import type { AgentEffort, TestRunProfile } from '@relay/shared';
-import type { SquashResult, WsCommit } from './branchOps';
+import type { CommitResult, SquashResult, WsCommit } from './branchOps';
 import type {
   CockpitSession,
   DiffFile,
@@ -159,6 +159,11 @@ export interface CockpitHost {
     ref: WsRef,
     mode: 'stash' | 'discard',
   ): Promise<{ mode: 'stash' | 'discard'; stash: string | null }>;
+  /** Commits all working-tree changes as a new commit, or amends them into the branch's last commit. */
+  wsCommit(
+    ref: WsRef,
+    opts: { message?: string | undefined; amend: boolean; base: string },
+  ): Promise<CommitResult>;
   /** Puts an existing branch (an MR's source) in the working tree; `synced` = it matches or contains origin's tip. */
   wsCheckoutBranch(ref: WsRef, branch: string): Promise<{ branch: string; synced: boolean }>;
   /** Stores a file for an agent inside `.git/` (never committed); returns its absolute path on the Mac. */

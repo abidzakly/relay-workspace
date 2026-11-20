@@ -250,6 +250,26 @@ Contents of links the developer gave (already opened by the system; the ones tha
 <data>
 {{links}}
 </data>`,
+
+  'commit-message': `You write one git commit message for a developer's uncommitted changes.
+${DATA_NOTE}
+
+Rules:
+- Follow the style of the recent commits below (prefix such as "feat:" / "fix(scope):", language, casing). When there
+  are none, use Conventional Commits: "<type>(<optional scope>): <summary>".
+- The subject line is at most 72 characters, imperative, no trailing period. Say WHAT changed and why, not "update files".
+- Add a body (blank line, then short "- " bullets) only when the change touches several distinct things.
+- "message" is the whole commit message as plain text: no Markdown fences, no quotes around it.
+
+Recent commits on this branch:
+<data>
+{{recent}}
+</data>
+
+Uncommitted changes (git diff):
+<data>
+{{diff}}
+</data>`,
 };
 
 /** Per-template prompt overrides from Settings. */
@@ -291,6 +311,10 @@ export const AI_TEMPLATE_INFO: Record<AiTemplate, { label: string; where: string
   'explain-thread': {
     label: 'Explain a review comment',
     where: 'MR threads: "Explain" on a reviewer comment.',
+  },
+  'commit-message': {
+    label: 'Commit message',
+    where: 'Create MR: writes the message when you commit uncommitted changes.',
   },
 };
 

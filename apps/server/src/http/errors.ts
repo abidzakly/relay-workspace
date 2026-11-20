@@ -1,6 +1,7 @@
 import type { FastifyError, FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { ZodError, type ZodType } from 'zod';
 import { ActionError } from '../services/actionError';
+import { CockpitHostError } from '../services/cockpit/host';
 
 /** An error whose message is safe to show to the client. */
 export class HttpError extends Error {
@@ -54,6 +55,15 @@ export function installErrorHandling(app: FastifyInstance): void {
         issues: err.issues.map((i) => ({ path: i.path.join('.'), message: i.message })),
       };
       return reply.code(400).send(body);
+    }
+    // The host's errors carry a status and a secret-free message (git's own words included): show them, not 'internal'.
+    if (err instanceof CockpitHostError) {
+      if (err.status >= 500) req.log.error({ err }, 'cockpit host error');
+      return reply.code(err.status).send({
+        error: err.code,
+        message: err.message,
+        ...(err.details !== undefined ? { details: err.details } : {}),
+      } satisfies ErrorBody);
     }
     if (err instanceof HttpError) {
       return reply.code(err.status).send({

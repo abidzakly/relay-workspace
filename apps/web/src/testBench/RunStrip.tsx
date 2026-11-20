@@ -1,5 +1,6 @@
 import {
   Flame,
+  GitBranch,
   Loader2,
   Play,
   RotateCcw,
@@ -12,8 +13,9 @@ import { Link } from 'react-router';
 import type { FlutterRunMode } from '@relay/shared';
 import { Button } from '@/components/ui/button';
 import { Select } from '@/components/ui/select';
-import { describeError } from '@/lib/api';
-import { useWorkspaces, useWsStatus } from '@/lib/cockpitApi';
+import { DirtyTreePanel } from '@/cockpit/DirtyTreePanel';
+import { ApiError, describeError } from '@/lib/api';
+import { useWorkspaces, useWsCheckout, useWsStatuses } from '@/lib/cockpitApi';
 import {
   pickedFlavor,
   readRunPrefs,
@@ -44,12 +46,25 @@ export function RunStrip({
   onOpenLog: () => void;
 }) {
   const workspaces = useWorkspaces();
-  const ws = (workspaces.data ?? []).find((w) => w.repoId === repo) ?? null;
-  const status = useWsStatus(ws?.id ?? null);
+  // The repo's workspaces, worktrees included. Run in the one that already has the branch (git keeps a branch in one
+  // worktree only), else in the repo workspace.
+  const candidates = (workspaces.data ?? []).filter((w) => w.repoId === repo);
+  const statuses = useWsStatuses(candidates.map((w) => w.id));
+  const onBranch = candidates.findIndex((_w, i) => statuses[i]?.data?.branch === branch);
+  const wsIndex =
+    onBranch >= 0
+      ? onBranch
+      : Math.max(
+          0,
+          candidates.findIndex((w) => w.kind === 'repo'),
+        );
+  const ws = candidates[wsIndex] ?? null;
+  const status = statuses[wsIndex] ?? { data: undefined };
   const sessions = useSessions();
   const targets = useRunTargets(ws?.id ?? null);
   const start = useStartSession();
   const kill = useKillSession();
+  const checkout = useWsCheckout();
   const [flavor, setFlavor] = useState('');
   const [mode, setMode] = useState<FlutterRunMode>('debug');
   useEffect(() => {
@@ -63,6 +78,8 @@ export function RunStrip({
   );
   const wrongBranch =
     status.data?.branch && status.data.branch !== branch ? status.data.branch : null;
+  const treeDirty = checkout.error instanceof ApiError && checkout.error.code === 'ws_dirty';
+  const doCheckout = () => ws && checkout.mutate({ workspaceId: ws.id, branch });
   const flavors = targets.data?.flavors ?? [];
   const chosen = pickedFlavor(flavors, flavor);
   const canRun = !!targets.data && (flavors.length > 0 ? chosen !== '' : targets.data.plainMain);
@@ -83,11 +100,49 @@ export function RunStrip({
   return (
     <div className="grid gap-2">
       {wrongBranch && (
-        <p className="flex items-start gap-1.5 text-xs text-warning">
-          <TriangleAlert aria-hidden className="mt-0.5 size-3.5 shrink-0" />
-          {ws.name} has <span className="font-mono">{wrongBranch}</span> checked out, not this
-          branch. Check it out before running.
-        </p>
+        <div className="grid gap-2">
+          <div className="flex flex-wrap items-start gap-2">
+            <p className="flex min-w-0 flex-1 items-start gap-1.5 text-xs text-warning">
+              <TriangleAlert aria-hidden className="mt-0.5 size-3.5 shrink-0" />
+              <span className="min-w-0 wrap-anywhere">
+                {ws.name} has <span className="font-mono">{wrongBranch}</span> checked out, not this
+                branch. Check it out before running.
+              </span>
+            </p>
+            <Button
+              size="sm"
+              variant="outline"
+              className="shrink-0"
+              disabled={checkout.isPending || !!run}
+              title={run ? 'Stop the running app first' : `Check out ${branch} in ${ws.name}`}
+              onClick={doCheckout}
+            >
+              {checkout.isPending ? (
+                <Loader2 className="size-4 motion-safe:animate-spin" />
+              ) : (
+                <GitBranch className="size-4" />
+              )}
+              Check out now
+            </Button>
+          </div>
+          {treeDirty ? (
+            <DirtyTreePanel
+              key={ws.id}
+              purpose="checkout"
+              target={branch}
+              workspaceId={ws.id}
+              disabled={checkout.isPending}
+              onCleared={() => {
+                checkout.reset();
+                doCheckout();
+              }}
+            />
+          ) : (
+            checkout.error && (
+              <p className="text-xs text-destructive">{describeError(checkout.error)}</p>
+            )
+          )}
+        </div>
       )}
       <div className="flex flex-wrap items-center gap-1.5">
         {run ? (

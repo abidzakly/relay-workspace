@@ -1,4 +1,4 @@
-import type { SquashResult, WsCommit } from './branchOps';
+import type { CommitResult, SquashResult, WsCommit } from './branchOps';
 import {
   AgentRefusedError,
   AgentUnreachableError,
@@ -202,6 +202,13 @@ export class RemoteCockpitHost implements CockpitHost {
     mode: 'stash' | 'discard',
   ): Promise<{ mode: 'stash' | 'discard'; stash: string | null }> {
     return this.ws('clean-tree', { ref, clean: mode });
+  }
+
+  wsCommit(
+    ref: WsRef,
+    opts: { message?: string | undefined; amend: boolean; base: string },
+  ): Promise<CommitResult> {
+    return this.ws('commit', { ref, ...opts });
   }
 
   wsCheckoutBranch(ref: WsRef, branch: string): Promise<{ branch: string; synced: boolean }> {

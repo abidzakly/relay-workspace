@@ -70,6 +70,8 @@ export interface MrCreateDeps {
     branch: string,
     parentBranch: string | null,
   ) => Promise<{ oldHead: string; newHead: string; squashed: number; pushed: boolean } | null>;
+  /** The workspace holding the branch, with its uncommitted changes. null = no workspace has the branch checked out. */
+  workingTree?: (repoId: string, branch: string) => Promise<MrCreatePreview['workspace']>;
   /** Test Bench gate: a `ready` run on the current HEAD. Without it, no device test is asked. */
   testGate?: (repoId: string, branch: string) => Promise<{ testOk: boolean; stale: boolean }>;
   /**
@@ -218,6 +220,7 @@ export class MrCreateService {
       deckStale: deckReview.stale,
       existingMrIid: existing?.iid ?? null,
       ...(await this.testState(repoId, branch)),
+      workspace: (await this.d.workingTree?.(repoId, branch).catch(() => null)) ?? null,
     };
   }
 

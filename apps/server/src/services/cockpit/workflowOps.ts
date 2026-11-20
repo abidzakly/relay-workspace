@@ -191,8 +191,10 @@ export async function checkoutBranch(
         409,
       );
     }
-    if (await hasRef(cwd, `refs/heads/${branch}`)) await git(cwd, ['checkout', branch]);
-    else await git(cwd, ['checkout', '--track', '-b', branch, `origin/${branch}`]);
+    if (await hasRef(cwd, `refs/heads/${branch}`)) {
+      await refuseCheckedOutElsewhere(cwd, branch);
+      await git(cwd, ['checkout', branch]);
+    } else await git(cwd, ['checkout', '--track', '-b', branch, `origin/${branch}`]);
   }
   if (!(await hasRef(cwd, `refs/remotes/origin/${branch}`))) return { branch, synced: false };
   try {

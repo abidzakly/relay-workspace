@@ -78,6 +78,20 @@ export const MrCreatePreviewSchema = z.object({
   testOk: z.boolean().default(false),
   /** The run was `ready` but on an older commit. */
   testStale: z.boolean().default(false),
+  /**
+   * The Cockpit workspace that has the branch checked out (null = none, or the Mac is unreachable). Create MR squashes
+   * there, which refuses uncommitted changes to tracked files: `dirty` lets the page offer commit / stash / discard.
+   */
+  workspace: z
+    .object({
+      workspaceId: z.string(),
+      /** `git status` codes as the workspace reports them; `??` = untracked. */
+      dirty: z.array(z.object({ path: z.string(), code: z.string() })),
+      /** The branch's newest own commit: what "amend" folds the changes into. null = no own commit. */
+      lastCommit: z.object({ sha: z.string(), subject: z.string() }).nullable(),
+    })
+    .nullable()
+    .default(null),
 });
 export type MrCreatePreview = z.infer<typeof MrCreatePreviewSchema>;
 

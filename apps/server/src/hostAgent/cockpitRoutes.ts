@@ -59,6 +59,12 @@ const WsSchemas = {
   }),
   'checkout-branch': z.object({ ref: RefSchema, branch: z.string().min(1).max(255) }),
   'clean-tree': z.object({ ref: RefSchema, clean: z.enum(['stash', 'discard']) }),
+  commit: z.object({
+    ref: RefSchema,
+    message: z.string().max(10_000).optional(),
+    amend: z.boolean(),
+    base: z.string().min(1).max(262),
+  }),
   'add-worktree': z.object({
     ref: RefSchema,
     branch: z.string().min(1).max(255),
@@ -180,6 +186,7 @@ export function registerCockpitAgentRoutes(app: FastifyInstance, host: LocalCock
         z.infer<(typeof WsSchemas)['start-branch']> &
         z.infer<(typeof WsSchemas)['add-worktree']> &
         z.infer<(typeof WsSchemas)['clean-tree']> &
+        z.infer<(typeof WsSchemas)['commit']> &
         z.infer<(typeof WsSchemas)['save-attachment']> &
         z.infer<(typeof WsSchemas)['squash-for-mr']> &
         z.infer<(typeof WsSchemas)['cleanup-apply']> &
@@ -223,6 +230,8 @@ export function registerCockpitAgentRoutes(app: FastifyInstance, host: LocalCock
             return await host.wsCheckoutBranch(b.ref, b.branch);
           case 'clean-tree':
             return await host.wsCleanTree(b.ref, b.clean);
+          case 'commit':
+            return await host.wsCommit(b.ref, { message: b.message, amend: b.amend, base: b.base });
           case 'add-worktree':
             return await host.wsAddWorktree(b.ref, b.branch, b.base, b.existing);
           case 'remove-worktree':

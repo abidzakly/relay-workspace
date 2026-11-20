@@ -18,6 +18,7 @@ export const AI_TEMPLATES = [
   'turn-summary',
   'base-suggest',
   'explain-thread',
+  'commit-message',
 ] as const;
 export const AiTemplateSchema = z.enum(AI_TEMPLATES);
 export type AiTemplate = z.infer<typeof AiTemplateSchema>;
@@ -189,6 +190,14 @@ export const ExplainThreadResultSchema = ExplainThreadOutputSchema.extend({
 });
 export type ExplainThreadResult = z.infer<typeof ExplainThreadResultSchema>;
 
+/** A commit message for the uncommitted changes in a workspace ("smart commit" on Create MR). */
+export const CommitMessageOutputSchema = z.object({ message: z.string() });
+export type CommitMessageOutput = z.infer<typeof CommitMessageOutputSchema>;
+export const CommitMessageResultSchema = CommitMessageOutputSchema.extend({
+  generatedBy: AiGeneratedBySchema,
+});
+export type CommitMessageResult = z.infer<typeof CommitMessageResultSchema>;
+
 export const AI_OUTPUT_SCHEMAS = {
   triage: TriageOutputSchema,
   'quiz-cards': QuizCardsOutputSchema,
@@ -201,6 +210,7 @@ export const AI_OUTPUT_SCHEMAS = {
   'turn-summary': TurnSummaryOutputSchema,
   'base-suggest': BaseSuggestOutputSchema,
   'explain-thread': ExplainThreadOutputSchema,
+  'commit-message': CommitMessageOutputSchema,
 } as const satisfies Record<AiTemplate, z.ZodType>;
 export type AiOutput<T extends AiTemplate> = z.infer<(typeof AI_OUTPUT_SCHEMAS)[T]>;
 
@@ -211,6 +221,9 @@ export function aiOutputProblem(template: AiTemplate, out: unknown): string | nu
     if (s < 0 || s > 3) return 'score must be 0–3';
   }
   if (template === 'mr-chat' && !(out as MrChatOutput).answer.trim()) return 'the answer is empty';
+  if (template === 'commit-message' && !(out as CommitMessageOutput).message.trim()) {
+    return 'the message is empty';
+  }
   if (template === 'quiz-cards') {
     for (const c of (out as QuizCardsOutput).cards) {
       if (c.choices.length > 0 && !c.choices.includes(c.answer))
