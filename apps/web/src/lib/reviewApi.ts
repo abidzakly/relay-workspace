@@ -58,7 +58,8 @@ export function useBranches(repo: string, search: string) {
       ),
     enabled: Boolean(repo),
     staleTime: 60_000,
-    placeholderData: (prev) => prev,
+    // Keep the last list while a new search loads, but never another repository's branches.
+    placeholderData: (prev, prevQuery) => (prevQuery?.queryKey[2] === repo ? prev : undefined),
   });
 }
 

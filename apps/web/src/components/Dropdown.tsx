@@ -51,6 +51,11 @@ interface Common<T extends string> {
   className?: string;
   disabled?: boolean;
   searchable?: boolean;
+  /**
+   * With `searchable`: called with the filter text as it changes (and with '' when the menu closes), so a caller can
+   * fetch matches from a server for lists too long to load at once. The menu still filters what it has.
+   */
+  onQueryChange?: (query: string) => void;
   /** Extra content under the options (e.g. "empty" text). */
   footer?: ReactNode;
 }
@@ -86,6 +91,7 @@ export function Dropdown<T extends string>(props: SingleProps<T> | MultiProps<T>
     className,
     disabled,
     searchable,
+    onQueryChange,
     footer,
     id: triggerId,
     name,
@@ -174,6 +180,14 @@ export function Dropdown<T extends string>(props: SingleProps<T> | MultiProps<T>
     if (open && searchable) search.current?.focus();
     if (!open) setQuery('');
   }, [open, searchable]);
+
+  const queryListener = useRef(onQueryChange);
+  useLayoutEffect(() => {
+    queryListener.current = onQueryChange;
+  });
+  useEffect(() => {
+    queryListener.current?.(query);
+  }, [query]);
 
   const openMenu = () => {
     if (disabled) return;
