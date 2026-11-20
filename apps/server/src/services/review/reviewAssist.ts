@@ -102,7 +102,7 @@ export class ReviewAssistService {
       others: clip(others.join('\n'), 4_000) || '(tidak ada)',
       diff: clip(fileText(f), MAX_FILE_CHARS),
     });
-    return { answer: output.answer, generatedBy };
+    return { ...output, generatedBy };
   }
 
   private async agentWorkspace(source: ReviewAssistSource): Promise<string | null> {

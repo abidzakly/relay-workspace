@@ -163,6 +163,21 @@ export type MrSummaryResult = z.infer<typeof MrSummaryResultSchema>;
 export const MrChatOutputSchema = z.object({ answer: z.string() });
 export type MrChatOutput = z.infer<typeof MrChatOutputSchema>;
 export const MrChatResultSchema = MrChatOutputSchema.extend({ generatedBy: AiGeneratedBySchema });
+
+/**
+ * Code Review "Explain": the first turn fills the brief (tldr + the four lists) and leaves `answer` empty; a follow-up
+ * fills `answer` and leaves the brief empty. `followUps` = 2-3 short questions the reviewer may ask next.
+ */
+export const ExplainChangeOutputSchema = z.object({
+  tldr: z.string(),
+  changed: z.array(z.string()),
+  why: z.array(z.string()),
+  effects: z.array(z.string()),
+  checks: z.array(z.string()),
+  answer: z.string(),
+  followUps: z.array(z.string()),
+});
+export type ExplainChangeOutput = z.infer<typeof ExplainChangeOutputSchema>;
 export type MrChatResult = z.infer<typeof MrChatResultSchema>;
 
 export const TurnSummaryOutputSchema = z.object({
@@ -213,7 +228,7 @@ export const AI_OUTPUT_SCHEMAS = {
   'base-suggest': BaseSuggestOutputSchema,
   'explain-thread': ExplainThreadOutputSchema,
   'commit-message': CommitMessageOutputSchema,
-  'explain-change-chat': MrChatOutputSchema,
+  'explain-change-chat': ExplainChangeOutputSchema,
   'propose-change': RequestChangeOutputSchema,
 } as const satisfies Record<AiTemplate, z.ZodType>;
 export type AiOutput<T extends AiTemplate> = z.infer<(typeof AI_OUTPUT_SCHEMAS)[T]>;
@@ -224,11 +239,10 @@ export function aiOutputProblem(template: AiTemplate, out: unknown): string | nu
     const s = (out as GradeTeachbackOutput).score;
     if (s < 0 || s > 3) return 'score must be 0–3';
   }
-  if (
-    (template === 'mr-chat' || template === 'explain-change-chat') &&
-    !(out as MrChatOutput).answer.trim()
-  ) {
-    return 'the answer is empty';
+  if (template === 'mr-chat' && !(out as MrChatOutput).answer.trim()) return 'the answer is empty';
+  if (template === 'explain-change-chat') {
+    const o = out as ExplainChangeOutput;
+    if (!o.answer.trim() && !o.tldr.trim()) return 'the explanation is empty';
   }
   if (template === 'propose-change' && !(out as RequestChangeOutput).prompt.trim()) {
     return 'the prompt is empty';

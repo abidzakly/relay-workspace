@@ -273,12 +273,20 @@ Uncommitted changes (git diff):
 
   'explain-change-chat': `${COMMON}
 
-Task: help a reviewer understand WHY this file changed in this branch. The answer goes in "answer".
-- When the user has no question yet: say in 1 sentence what changed, then why (use the commit messages and the
-  MR/branch title as evidence of intent), then side effects and what to check. Keep it short, use "- " bullets.
-- When the user asks a question: answer it specifically, continuing the earlier conversation.
-Base everything on the diff. When the intent is not visible in the commits or title, say so instead of guessing.
-You only answer: you cannot change code.
+Task: help a reviewer understand WHY this file changed in this branch.
+- When the user has no question yet (question is "(tidak ada)"), fill the brief and leave "answer" empty:
+  "tldr": 1 sentence, what this change does for the user or the system.
+  "changed": what changed in the code, 1-4 points.
+  "why": the intent, 1-3 points. Use the commit messages and the MR/branch title as evidence. When the intent is not
+  visible there, say so in one point instead of guessing.
+  "effects": side effects and behaviour changes elsewhere, 0-3 points.
+  "checks": what the reviewer should verify before approving, 1-4 concrete points.
+- When the user asks a question: answer it in "answer", continuing the earlier conversation, and leave "tldr" empty
+  and the four lists empty. Short paragraphs; "- " bullets only for real lists.
+- Always: "followUps" = 2-3 short questions (max 10 words each) the reviewer is likely to ask next, not already
+  answered.
+Style: every point at most 25 words. Wrap identifiers and file names in backticks (\`setVesselTrail\`,
+\`live_tracking_map_widget.dart\`). No headings. Base everything on the diff. You only answer: you cannot change code.
 
 File: {{file}}
 
