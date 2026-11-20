@@ -180,6 +180,7 @@ const DiffQuery = z.object({
 const FileQuery = z.object({ path: z.string().min(1).max(1024) });
 
 const PreviewQuery = z.object({ repo: RepoIdSchema, branch: BranchNameSchema });
+const SummaryBody = PreviewQuery.extend({ base: BranchNameSchema.optional() });
 
 const DeckParams = z.object({ id: z.string().regex(/^[0-9a-f]{24}$/) });
 
@@ -401,8 +402,8 @@ export function registerCockpitRoutes(app: FastifyInstance, deps: CockpitDeps): 
     return run(() => deps.mrCreate.preview(q.repo, q.branch));
   });
   app.post('/api/mr-create/summary', async (req) => {
-    const q = parseWith(PreviewQuery, req.body);
-    return run(() => deps.mrCreate.summary(q.repo, q.branch));
+    const q = parseWith(SummaryBody, req.body);
+    return run(() => deps.mrCreate.summary(q.repo, q.branch, q.base));
   });
   app.post('/api/mr-create/chat', async (req) => {
     const body = parseWith(MrChatRequestSchema, req.body);

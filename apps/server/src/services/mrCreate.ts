@@ -235,12 +235,16 @@ export class MrCreateService {
   }
 
   /** The AI engine plus the live card and diff of a branch, shared by the summary and its chat. */
-  private async aiContext(repoId: string, branch: string) {
+  /**
+   * The AI's view of a branch. With the default base (the repo's) the prompt is the same one Create MR sends, so the
+   * AI cache answers Code Review's "Explain branch" and Create MR's summary from one run.
+   */
+  private async aiContext(repoId: string, branch: string, base?: string) {
     const ai = this.d.ai;
     if (!ai) throw new MrCreateError(409, 'ai_unavailable', 'AI is not configured.');
     const repo = this.d.config.getRepo(repoId);
     const svc = this.svc(repoId);
-    const compare = await svc.compare(repo!.baseBranch, branch).catch(mapGitlabError);
+    const compare = await svc.compare(base || repo!.baseBranch, branch).catch(mapGitlabError);
     const card = listCards(this.d.store).find((c) => c.branchName?.trim() === branch);
     const diff = compare.files
       .map((f) => `### ${f.path}\n${f.diff ?? '(binary / terlalu besar)'}`)
@@ -250,15 +254,15 @@ export class MrCreateService {
   }
 
   /** `mr-summary` for the confirmation screen. The MR description stays the Notion URL. */
-  async summary(repoId: string, branch: string): Promise<MrSummaryResult> {
-    const { ai, card, diff } = await this.aiContext(repoId, branch);
+  async summary(repoId: string, branch: string, base?: string): Promise<MrSummaryResult> {
+    const { ai, card, diff } = await this.aiContext(repoId, branch, base);
     const { output, generatedBy } = await ai.run('mr-summary', { card, diff });
     return { ...output, generatedBy };
   }
 
   /** `mr-chat`: a follow-up on the summary. The client holds the conversation; nothing is stored here. */
   async chat(req: MrChatRequest): Promise<MrChatResult> {
-    const { ai, card, diff } = await this.aiContext(req.repo, req.branch);
+    const { ai, card, diff } = await this.aiContext(req.repo, req.branch, req.base);
     const { output, generatedBy } = await ai.run('mr-chat', {
       question: req.question,
       history: renderChatHistory(req.history),

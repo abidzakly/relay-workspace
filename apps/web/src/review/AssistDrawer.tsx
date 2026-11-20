@@ -37,13 +37,23 @@ import { GeneratedBy } from '@/components/GeneratedBy';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { describeError } from '@/lib/api';
+import { useBranchSummary, useMrChat } from '@/lib/mrCreateApi';
 import { useExplainChat, useProposeChange } from '@/lib/reviewAssistApi';
 import { cn } from '@/lib/utils';
 import { useCoarsePointer, useNarrow } from '@/workspace/useMedia';
 
 /** What the drawer shows: a file's Explain chat, or Propose changes for a file (`file`) or the whole branch (null). */
 export type AssistTarget =
-  { kind: 'explain'; file: string } | { kind: 'propose'; file: string | null };
+  | { kind: 'explain'; file: string }
+  | { kind: 'explain-branch' }
+  | { kind: 'propose'; file: string | null };
+
+/** The branch "Explain branch" summarises: Create MR's view (`base` = what it is compared with). */
+export interface AssistBranch {
+  repo: string;
+  branch: string;
+  base?: string;
+}
 
 type Turn =
   | { role: 'user'; text: string; mentions?: string[] }
@@ -67,12 +77,15 @@ const FileLinksContext = createContext<FileLinks | null>(null);
  */
 export function AssistDrawer({
   source,
+  branch,
   target,
   files,
   onJumpToFile,
   onClose,
 }: {
   source: ReviewAssistSource;
+  /** For "Explain branch"; null hides it. */
+  branch: AssistBranch | null;
   target: AssistTarget | null;
   /** Paths of the changed files. */
   files: readonly string[];
@@ -81,6 +94,7 @@ export function AssistDrawer({
 }) {
   const narrow = useNarrow();
   const [chats, setChats] = useState<ReadonlyMap<string, Turn[]>>(() => new Map());
+  const [branchTurns, setBranchTurns] = useState<BranchTurn[]>([]);
   const last = useRef<AssistTarget | null>(null);
   if (target) last.current = target;
   const shown = target ?? last.current;
@@ -145,6 +159,9 @@ export function AssistDrawer({
                   setChats((prev) => new Map(prev).set(shown.file, fn(prev.get(shown.file) ?? [])))
                 }
               />
+            )}
+            {shown?.kind === 'explain-branch' && branch && (
+              <BranchExplainPane branch={branch} turns={branchTurns} setTurns={setBranchTurns} />
             )}
             {shown?.kind === 'propose' && (
               <ProposePane key={shown.file ?? '\0branch'} source={source} file={shown.file} />
@@ -288,13 +305,19 @@ function Section({ label, points }: { label: string; points: readonly string[] }
 }
 
 /** "Before you approve": the reviewer ticks what they checked (kept with the conversation's turn). */
-function Checklist({ points }: { points: readonly string[] }) {
+function Checklist({
+  points,
+  label = 'Before you approve',
+}: {
+  points: readonly string[];
+  label?: string;
+}) {
   const [done, setDone] = useState<ReadonlySet<number>>(new Set());
   if (points.length === 0) return null;
   return (
     <section className="grid gap-1.5">
       <h3 className="ax-label flex items-center justify-between">
-        Before you approve
+        {label}
         <span className="tabular-nums normal-case">
           {done.size}/{points.length}
         </span>
@@ -572,6 +595,184 @@ function useMentionPicker({
   };
 }
 
+/**
+ * The follow-up box shared by the Explain panes: suggestion chips, optional @-mentions of other changed files, and
+ * Enter to send. On a failed send, `restore` puts the question (and its files) back.
+ */
+function Composer({
+  pending,
+  suggestions,
+  onAsk,
+  mentionFiles,
+  placeholder,
+  actions,
+}: {
+  pending: boolean;
+  suggestions: readonly string[];
+  onAsk: (question: string, mentions: string[], restore: () => void) => void;
+  /** Files that can be @-mentioned; absent = no mentions (the whole branch is already in view). */
+  mentionFiles?: readonly string[];
+  placeholder: string;
+  /** Extra actions under the box (e.g. "Change this…"). */
+  actions?: ReactNode;
+}) {
+  const touch = useCoarsePointer();
+  const [draft, setDraft] = useState('');
+  const [picked, setPicked] = useState<string[]>([]);
+  const inputRef = useRef<HTMLTextAreaElement>(null);
+  const canMention = (mentionFiles?.length ?? 0) > 0;
+  const mention = useMentionPicker({
+    files: (mentionFiles ?? []).filter((f) => !picked.includes(f)),
+    draft,
+    inputRef,
+    onPick: (path, nextDraft) => {
+      if (path) setPicked((prev) => (prev.includes(path) ? prev : [...prev, path].slice(0, 8)));
+      setDraft(nextDraft);
+    },
+  });
+
+  const ask = (q: string, m: string[]) => {
+    if (pending) return;
+    onAsk(q, m, () => {
+      setDraft((current) => current || q);
+      if (m.length) setPicked((current) => (current.length ? current : m));
+    });
+  };
+  const send = () => {
+    const q = draft.trim();
+    if (!q || pending) return;
+    setDraft('');
+    const m = picked;
+    setPicked([]);
+    ask(q, m);
+  };
+  const onKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
+    if (canMention && mention.onKeyDown(e)) return;
+    if (e.key === 'Enter' && !e.shiftKey && !touch && !e.nativeEvent.isComposing) {
+      e.preventDefault();
+      send();
+    }
+  };
+  const shown = pending ? [] : suggestions.slice(0, 3);
+
+  return (
+    <footer className="grid gap-2 border-t border-hairline px-4 pt-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] sm:px-5">
+      {shown.length > 0 && (
+        <div className="flex flex-wrap gap-1.5" aria-label="Suggested questions">
+          {shown.map((q) => (
+            <button key={q} type="button" className="ax-suggest" onClick={() => ask(q, [])}>
+              <CornerDownRight className="size-3 shrink-0 opacity-60" aria-hidden />
+              {q}
+            </button>
+          ))}
+        </div>
+      )}
+      {picked.length > 0 && (
+        <div className="flex flex-wrap gap-1.5" aria-label="Files this question is about">
+          {picked.map((p) => (
+            <span key={p} className="ax-mention" title={p}>
+              <AtSign className="size-3 shrink-0 opacity-60" aria-hidden />
+              <span className="truncate">{baseName(p)}</span>
+              <button
+                type="button"
+                className="ax-mention-x"
+                aria-label={`Remove ${p}`}
+                onClick={() => setPicked((prev) => prev.filter((x) => x !== p))}
+              >
+                <X className="size-3" aria-hidden />
+              </button>
+            </span>
+          ))}
+        </div>
+      )}
+      <div className="relative flex items-end gap-2">
+        {canMention && mention.list}
+        <Textarea
+          ref={inputRef}
+          value={draft}
+          onChange={(e) => setDraft(e.target.value)}
+          onKeyDown={onKeyDown}
+          {...(canMention
+            ? { onSelect: mention.sync, onBlur: mention.close, ...mention.inputProps }
+            : {})}
+          placeholder={placeholder}
+          aria-label="Follow-up question"
+          maxLength={2000}
+          rows={1}
+          className="max-h-32 min-h-10 resize-none bg-background"
+        />
+        {canMention && (
+          <Button
+            size="icon"
+            variant="ghost"
+            aria-label="Mention a changed file"
+            title="Mention a changed file (@)"
+            onMouseDown={(e) => e.preventDefault()}
+            onClick={mention.openFromButton}
+          >
+            <AtSign className="size-4" aria-hidden />
+          </Button>
+        )}
+        <Button
+          size="icon"
+          aria-label="Send question"
+          disabled={!draft.trim() || pending}
+          onClick={send}
+        >
+          <SendHorizontal className="size-4" />
+        </Button>
+      </div>
+      {actions}
+    </footer>
+  );
+}
+
+/** The scrolling conversation area; follows new turns to the bottom. */
+function ChatScroll({
+  count,
+  pending,
+  children,
+}: {
+  count: number;
+  pending: boolean;
+  children: ReactNode;
+}) {
+  const endRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (count > 1 || pending) endRef.current?.scrollIntoView({ block: 'end', behavior: 'smooth' });
+  }, [count, pending]);
+  return (
+    <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 py-5 sm:px-5">
+      <div className="grid gap-6 text-sm leading-relaxed text-foreground/85" aria-live="polite">
+        {children}
+      </div>
+      <div ref={endRef} />
+    </div>
+  );
+}
+
+function FailedFirst({ error, onRetry }: { error: Error; onRetry?: () => void }) {
+  return (
+    <div className="flex flex-wrap items-center gap-2 text-xs text-destructive">
+      {describeError(error)}
+      {onRetry && (
+        <Button size="sm" variant="outline" onClick={onRetry}>
+          <RotateCcw className="size-3.5" aria-hidden /> Try again
+        </Button>
+      )}
+    </div>
+  );
+}
+
+const historyOf = (turns: readonly { role: 'user' | 'assistant' }[], text: (i: number) => string) =>
+  turns
+    .slice(-MR_CHAT_MAX_HISTORY)
+    .map((t, i, all) => ({
+      role: t.role,
+      text: text(turns.length - all.length + i).slice(0, MR_CHAT_MAX_MESSAGE),
+    }))
+    .filter((m) => m.text.trim());
+
 function ExplainPane({
   source,
   file,
@@ -584,33 +785,16 @@ function ExplainPane({
   setTurns: (fn: (prev: Turn[]) => Turn[]) => void;
 }) {
   const chat = useExplainChat();
-  const touch = useCoarsePointer();
-  const [draft, setDraft] = useState('');
-  const [picked, setPicked] = useState<string[]>([]);
-  const endRef = useRef<HTMLDivElement>(null);
-  const inputRef = useRef<HTMLTextAreaElement>(null);
   const links = useContext(FileLinksContext);
-  const mention = useMentionPicker({
-    files: (links?.files ?? []).filter((f) => f !== file && !picked.includes(f)),
-    draft,
-    inputRef,
-    onPick: (path, nextDraft) => {
-      if (path) setPicked((prev) => (prev.includes(path) ? prev : [...prev, path].slice(0, 8)));
-      setDraft(nextDraft);
-    },
-  });
 
-  const ask = (question?: string, mentions: string[] = []) => {
+  const ask = (question?: string, mentions: string[] = [], restore?: () => void) => {
     if (chat.isPending) return;
     chat.mutate(
       {
         source,
         file,
         mentions,
-        history: turns
-          .slice(-MR_CHAT_MAX_HISTORY)
-          .map((t) => ({ role: t.role, text: turnText(t).slice(0, MR_CHAT_MAX_MESSAGE) }))
-          .filter((m) => m.text.trim()),
+        history: historyOf(turns, (i) => turnText(turns[i]!)),
         ...(question ? { question } : {}),
       },
       {
@@ -628,10 +812,7 @@ function ExplainPane({
               : []),
             { role: 'assistant', generatedBy, ...out },
           ]),
-        onError: () => {
-          if (question) setDraft((current) => current || question);
-          if (mentions.length) setPicked((current) => (current.length ? current : mentions));
-        },
+        onError: () => restore?.(),
       },
     );
   };
@@ -644,32 +825,9 @@ function ExplainPane({
     ask();
   }, []);
 
-  useEffect(() => {
-    if (turns.length > 1 || chat.isPending) {
-      endRef.current?.scrollIntoView({ block: 'end', behavior: 'smooth' });
-    }
-  }, [turns.length, chat.isPending]);
-
-  const send = () => {
-    const q = draft.trim();
-    if (!q || chat.isPending) return;
-    setDraft('');
-    const m = picked;
-    setPicked([]);
-    ask(q, m);
-  };
-  const onKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
-    if (mention.onKeyDown(e)) return;
-    if (e.key === 'Enter' && !e.shiftKey && !touch && !e.nativeEvent.isComposing) {
-      e.preventDefault();
-      send();
-    }
-  };
   const asked = chat.isPending ? chat.variables.question : undefined;
   const askedMentions = chat.isPending ? chat.variables.mentions : [];
   const lastAi = [...turns].reverse().find((t) => t.role === 'assistant');
-  const suggestions =
-    !chat.isPending && lastAi?.role === 'assistant' ? lastAi.followUps.slice(0, 3) : [];
 
   return (
     <>
@@ -682,101 +840,127 @@ function ExplainPane({
         }
         file={file}
       />
-      <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 py-5 sm:px-5">
-        <div className="grid gap-6 text-sm leading-relaxed text-foreground/85" aria-live="polite">
-          {turns.map((t, i) =>
-            t.role === 'user' ? (
-              <UserBubble key={i} text={t.text} mentions={t.mentions ?? []} />
-            ) : t.answer.trim() ? (
-              <div key={i} className="grid gap-2">
-                <Prose text={t.answer} />
-                <GeneratedBy by={t.generatedBy} />
-              </div>
-            ) : (
-              <Brief key={i} t={t} />
-            ),
-          )}
-          {asked && <UserBubble text={asked} mentions={askedMentions} />}
-          {chat.isPending && <Thinking first={turns.length === 0} />}
-          {chat.error && (
-            <div className="flex flex-wrap items-center gap-2 text-xs text-destructive">
-              {describeError(chat.error)}
-              {turns.length === 0 && (
-                <Button size="sm" variant="outline" onClick={() => ask()}>
-                  <RotateCcw className="size-3.5" aria-hidden /> Try again
-                </Button>
-              )}
+      <ChatScroll count={turns.length} pending={chat.isPending}>
+        {turns.map((t, i) =>
+          t.role === 'user' ? (
+            <UserBubble key={i} text={t.text} mentions={t.mentions ?? []} />
+          ) : t.answer.trim() ? (
+            <div key={i} className="grid gap-2">
+              <Prose text={t.answer} />
+              <GeneratedBy by={t.generatedBy} />
             </div>
-          )}
-        </div>
-        <div ref={endRef} />
-      </div>
-      <footer className="grid gap-2 border-t border-hairline px-4 pt-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] sm:px-5">
-        {suggestions.length > 0 && (
-          <div className="flex flex-wrap gap-1.5" aria-label="Suggested questions">
-            {suggestions.map((q) => (
-              <button key={q} type="button" className="ax-suggest" onClick={() => ask(q)}>
-                <CornerDownRight className="size-3 shrink-0 opacity-60" aria-hidden />
-                {q}
-              </button>
-            ))}
-          </div>
+          ) : (
+            <Brief key={i} t={t} />
+          ),
         )}
-        {picked.length > 0 && (
-          <div className="flex flex-wrap gap-1.5" aria-label="Files this question is about">
-            {picked.map((p) => (
-              <span key={p} className="ax-mention" title={p}>
-                <AtSign className="size-3 shrink-0 opacity-60" aria-hidden />
-                <span className="truncate">{baseName(p)}</span>
-                <button
-                  type="button"
-                  className="ax-mention-x"
-                  aria-label={`Remove ${p}`}
-                  onClick={() => setPicked((prev) => prev.filter((x) => x !== p))}
-                >
-                  <X className="size-3" aria-hidden />
-                </button>
-              </span>
-            ))}
-          </div>
+        {asked && <UserBubble text={asked} mentions={askedMentions} />}
+        {chat.isPending && <Thinking first={turns.length === 0} />}
+        {chat.error && (
+          <FailedFirst error={chat.error} onRetry={turns.length === 0 ? () => ask() : undefined} />
         )}
-        <div className="relative flex items-end gap-2">
-          {mention.list}
-          <Textarea
-            ref={inputRef}
-            value={draft}
-            onChange={(e) => setDraft(e.target.value)}
-            onKeyDown={onKeyDown}
-            onSelect={mention.sync}
-            onBlur={mention.close}
-            placeholder="Ask about this change… type @ to bring in another file"
-            aria-label="Follow-up question"
-            maxLength={2000}
-            rows={1}
-            className="max-h-32 min-h-10 resize-none bg-background"
-            {...mention.inputProps}
-          />
-          <Button
-            size="icon"
-            variant="ghost"
-            aria-label="Mention a changed file"
-            title="Mention a changed file (@)"
-            disabled={(links?.files.length ?? 0) < 2}
-            onMouseDown={(e) => e.preventDefault()}
-            onClick={mention.openFromButton}
-          >
-            <AtSign className="size-4" aria-hidden />
-          </Button>
-          <Button
-            size="icon"
-            aria-label="Send question"
-            disabled={!draft.trim() || chat.isPending}
-            onClick={send}
-          >
-            <SendHorizontal className="size-4" />
-          </Button>
-        </div>
-      </footer>
+      </ChatScroll>
+      <Composer
+        pending={chat.isPending}
+        suggestions={lastAi?.role === 'assistant' ? lastAi.followUps : []}
+        onAsk={(q, m, restore) => ask(q, m, restore)}
+        mentionFiles={(links?.files ?? []).filter((f) => f !== file)}
+        placeholder="Ask about this change… type @ to bring in another file"
+      />
+    </>
+  );
+}
+
+/** A turn of the whole-branch chat (Create MR's `mr-chat`). */
+export type BranchTurn =
+  { role: 'user'; text: string } | { role: 'assistant'; text: string; generatedBy: AiGeneratedBy };
+
+/**
+ * "Explain branch": Create MR's AI summary of the branch, then a chat about it. Same templates, model choice and AI
+ * cache as Create MR, so a branch summarised there opens here at once (and the other way round).
+ */
+function BranchExplainPane({
+  branch,
+  turns,
+  setTurns,
+}: {
+  branch: AssistBranch;
+  turns: BranchTurn[];
+  setTurns: (fn: (prev: BranchTurn[]) => BranchTurn[]) => void;
+}) {
+  const summary = useBranchSummary(branch.repo, branch.branch, branch.base);
+  const chat = useMrChat();
+  const s = summary.data;
+
+  const ask = (question: string, restore: () => void) => {
+    if (!s || chat.isPending) return;
+    chat.mutate(
+      {
+        repo: branch.repo,
+        branch: branch.branch,
+        ...(branch.base ? { base: branch.base } : {}),
+        summary: { summary: s.summary, bullets: s.bullets, risks: s.risks },
+        history: historyOf(turns, (i) => turns[i]!.text),
+        question,
+      },
+      {
+        onSuccess: ({ answer, generatedBy }) =>
+          setTurns((prev) => [
+            ...prev,
+            { role: 'user', text: question },
+            { role: 'assistant', text: answer, generatedBy },
+          ]),
+        onError: restore,
+      },
+    );
+  };
+  const asked = chat.isPending ? chat.variables.question : undefined;
+
+  return (
+    <>
+      <PaneHeader
+        icon={<Sparkles className="size-3.5" aria-hidden />}
+        title={
+          <>
+            What <span className="font-mono text-[0.8125rem]">{branch.branch}</span> does
+          </>
+        }
+        file={null}
+      />
+      <ChatScroll count={turns.length} pending={chat.isPending}>
+        {summary.isPending && <Thinking first />}
+        {summary.error && (
+          <FailedFirst error={summary.error} onRetry={() => void summary.refetch()} />
+        )}
+        {s && (
+          <article className="grid gap-5">
+            <p className="text-[0.9375rem] leading-relaxed font-medium text-pretty text-foreground">
+              <Inline text={s.summary} />
+            </p>
+            <Section label="Main changes" points={s.bullets} />
+            <Checklist label="Before you merge" points={s.risks} />
+            <GeneratedBy by={s.generatedBy} />
+          </article>
+        )}
+        {turns.map((t, i) =>
+          t.role === 'user' ? (
+            <UserBubble key={i} text={t.text} mentions={[]} />
+          ) : (
+            <div key={i} className="grid gap-2">
+              <Prose text={t.text} />
+              <GeneratedBy by={t.generatedBy} />
+            </div>
+          ),
+        )}
+        {asked && <UserBubble text={asked} mentions={[]} />}
+        {chat.isPending && <Thinking first={false} />}
+        {chat.error && <FailedFirst error={chat.error} />}
+      </ChatScroll>
+      <Composer
+        pending={chat.isPending || !s}
+        suggestions={[]}
+        onAsk={(q, _m, restore) => ask(q, restore)}
+        placeholder="Ask about this branch…"
+      />
     </>
   );
 }

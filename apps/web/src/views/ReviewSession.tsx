@@ -188,6 +188,11 @@ export function MrReviewSession() {
       assistSource={
         mr.repoId.startsWith('~') ? null : { kind: 'mr', repoId: mr.repoId, iid: mr.iid }
       }
+      assistBranch={
+        mr.repoId.startsWith('~')
+          ? null
+          : { repo: mr.repoId, branch: mr.sourceBranch, base: mr.targetBranch }
+      }
       title={
         <div className="grid min-w-0 gap-0.5">
           <span className="flex min-w-0 items-center gap-2 text-xs text-muted-foreground">
@@ -329,6 +334,9 @@ export function CompareReviewSession() {
         d.repoId.startsWith('~')
           ? null
           : { kind: 'compare', repoId: d.repoId, from: d.from, to: d.to }
+      }
+      assistBranch={
+        d.repoId.startsWith('~') ? null : { repo: d.repoId, branch: d.to, base: d.from }
       }
       title={
         <div className="grid min-w-0 gap-0.5">
