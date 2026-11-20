@@ -103,6 +103,41 @@ export function useThreadAgent() {
   });
 }
 
+export interface ReviseResult {
+  workspaceId: string;
+  sessionId: string;
+  branch: string;
+  attachments: number;
+  failedAttachments: number;
+}
+
+/** The brief from the Make more changes / Propose changes dialog. */
+export interface ReviseBrief {
+  agent?: 'claude' | 'cursor';
+  model?: string;
+  extraPrompt?: string;
+  figmaUrl?: string;
+  attachments?: CardStartAttachment[];
+}
+
+/** "Make more changes" on a draft MR: a new agent session on its branch with the user's brief; the caller navigates. */
+export function useMrRevise() {
+  const qc = useQueryClient();
+  return useMutation<ReviseResult, Error, ReviseBrief & { repoId: string; iid: number }>({
+    mutationFn: (b) => post('/api/cockpit/mr-revise', b),
+    onSettled: () => void qc.invalidateQueries({ queryKey: sessionKeys.list }),
+  });
+}
+
+/** "Propose changes" on Create MR: the same, on a branch that has no MR yet (no branch picker). */
+export function useBranchRevise() {
+  const qc = useQueryClient();
+  return useMutation<ReviseResult, Error, ReviseBrief & { repoId: string; branch: string }>({
+    mutationFn: (b) => post('/api/cockpit/branch-revise', b),
+    onSettled: () => void qc.invalidateQueries({ queryKey: sessionKeys.list }),
+  });
+}
+
 export function useCardStart() {
   const qc = useQueryClient();
   return useMutation<

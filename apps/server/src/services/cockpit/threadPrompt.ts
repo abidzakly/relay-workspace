@@ -16,6 +16,13 @@ export const RULESET_FILES = ['ruleset/ruleset.md', 'ruleset/agent-notion-gitlab
 const PROMPT_MAX = 50_000;
 const ATTACHMENTS_MAX = 10;
 
+const SOURCE_LABEL = { card: 'from the card', figma: 'from Figma', mine: 'from me' } as const;
+
+/** How to read the Figma spec files saved for the agent. */
+const FIGMA_SPEC_NOTE = `The Figma spec files (figma-*.json) hold the exact design values, read live from the Figma file. Take sizes, spacing, colours and typography from them, never by measuring the rendered images:
+- \`node\`: the design node and all its visible layers. Each has \`bounds\` (x, y, width, height) and \`styles\`: fills, strokes, strokeWeight, effects (shadows, blurs), cornerRadius / cornerRadii, opacity, autoLayout (direction, gap, alignment, sizing), padding, constraints, clipsContent. Text layers add \`characters\` and fontFamily, fontStyle, fontWeight, fontSize, lineHeight, letterSpacing, textAlignHorizontal / textAlignVertical, textDecoration. Colours are hex with a separate 0..1 \`opacity\`.
+- \`styles\` and \`variables\`: the file's named styles and design tokens. Map a value to the matching token or theme constant in this repository instead of hard-coding it when one exists.`;
+
 export interface CardStartBody {
   markdown: string;
   truncated: boolean;
@@ -66,9 +73,7 @@ ${extra}
 ${files.map((f) => `- ${f.path}  (${f.source === 'card' ? 'from the card' : f.source === 'figma' ? 'from Figma' : 'from me'}: ${f.label})`).join('\n')}`);
   }
   if (files.some((f) => f.source === 'figma')) {
-    sections.push(`The Figma spec files (figma-*.json) hold the exact design values, read live from the Figma file. Take sizes, spacing, colours and typography from them, never by measuring the rendered images:
-- \`node\`: the design node and all its visible layers. Each has \`bounds\` (x, y, width, height) and \`styles\`: fills, strokes, strokeWeight, effects (shadows, blurs), cornerRadius / cornerRadii, opacity, autoLayout (direction, gap, alignment, sizing), padding, constraints, clipsContent. Text layers add \`characters\` and fontFamily, fontStyle, fontWeight, fontSize, lineHeight, letterSpacing, textAlignHorizontal / textAlignVertical, textDecoration. Colours are hex with a separate 0..1 \`opacity\`.
-- \`styles\` and \`variables\`: the file's named styles and design tokens. Map a value to the matching token or theme constant in this repository instead of hard-coding it when one exists.`);
+    sections.push(FIGMA_SPEC_NOTE);
   }
   if (failed.length > 0) {
     sections.push(`Attachments I could not get to you. Tell me in the plan that you have not seen them:
@@ -341,4 +346,73 @@ ${commit}
 
 This session starts in plan mode. Present a short plan first (no verification, analyze or test steps), and change files only after I approve it.`;
   return text.length > PROMPT_MAX ? `${text.slice(0, PROMPT_MAX)}\n… (truncated)` : text;
+}
+
+/**
+ * "Make more changes" on a draft MR, or "Propose changes" on Create MR (`mr` null): a new session on the branch, with
+ * my brief. Plans first, adds commits, and never pushes: I review and test the commits before they reach the MR.
+ */
+export function mrRevisePrompt(i: {
+  /** Null = "Propose changes" on Create MR: the branch has no MR yet. */
+  mr: {
+    iid: number;
+    title: string;
+    webUrl: string | null;
+  } | null;
+  /** The branch the session works on (the MR's source branch). */
+  branch: string;
+  /** What the branch will merge into (the MR's target, or the repo base). */
+  base: string;
+  /** The Notion card linked to the MR / branch, as background. */
+  card: { title: string; url: string | null } | null;
+  /** The local branch could not be fast-forwarded to origin. */
+  branchSynced: boolean;
+  /** The user's instructions, typed in the Make more changes dialog. */
+  extraPrompt: string | null;
+  /** Absolute paths on this machine. */
+  attachments: readonly {
+    path: string;
+    source: 'card' | 'mine' | 'figma';
+    label: string;
+  }[];
+  failedAttachments: readonly string[];
+}): string {
+  const b = i.branch;
+  const extra = i.extraPrompt?.trim() ?? '';
+  const what = i.mr
+    ? `Make more changes on draft MR !${i.mr.iid} "${i.mr.title}" (${b} → ${i.base}).${i.mr.webUrl ? `\n${i.mr.webUrl}` : ''}`
+    : `Propose changes on branch ${b} before its MR is created (it will merge into ${i.base}).`;
+  const head = `${what}
+${i.card ? `Card: ${i.card.title}${i.card.url ? ` (${i.card.url})` : ''}\n` : ''}Branch ${b} is checked out.${i.branchSynced ? '' : ` It could not be fast-forwarded to origin/${b}: compare them before you start.`}
+The work already done is on this branch: read it first (git log origin/${i.base}..HEAD and the diff).`;
+  const sections: string[] = [];
+  sections.push(
+    extra
+      ? `What I want changed (this wins over the card${i.mr ? ' and the MR description' : ''} when they disagree):
+<my-instructions>
+${extra}
+</my-instructions>`
+      : 'I gave no instructions: ask me what to change before you plan.',
+  );
+  if (i.attachments.length > 0) {
+    sections.push(`Attachments saved on this machine. Open every one before you plan (images included):
+${i.attachments.map((f) => `- ${f.path}  (${SOURCE_LABEL[f.source]}: ${f.label})`).join('\n')}`);
+  }
+  if (i.attachments.some((f) => f.source === 'figma')) sections.push(FIGMA_SPEC_NOTE);
+  if (i.failedAttachments.length > 0) {
+    sections.push(`Attachments I could not get to you. Tell me in the plan that you have not seen them:
+${i.failedAttachments.map((f) => `- ${f}`).join('\n')}`);
+  }
+  const rules = `Follow ${RULESET_FILES[0]} in this repository for project conventions.
+
+These points override the workflow file for this session:
+- This session starts in plan mode. Present a plan first: what to change and where, and any open questions. Change files only after I approve it.
+- Work on ${b} only. Do not create, switch or rename branches, and do not ask me which branch to use.
+- Change only what my instructions ask for. Build on the existing commits: do not redo or revert earlier work unless I ask.
+- Add your work as NEW commits on top of ${b}. Do not amend, squash, rebase or force-push.
+- ${i.mr ? 'Do NOT push. Do not comment on, edit or mark the MR ready on GitLab, and do not run mrc. I review and test the commits first, then push myself.' : 'Do NOT push, do not run mrc and do not create the MR. I review and test the commits first, then create the MR myself.'}
+- Stop after the commit and summarize what you changed, commit by commit.
+${NO_VERIFY}`;
+  // Bounded: instructions are capped at 8 000 chars and attachments at a few dozen lines.
+  return [head, ...sections, rules].join('\n\n');
 }

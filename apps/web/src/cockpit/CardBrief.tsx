@@ -1,5 +1,12 @@
 import { ChevronDown, FileText, Loader2, Paperclip, RefreshCw, X } from 'lucide-react';
-import { useEffect, useRef, useState, type ClipboardEvent, type DragEvent } from 'react';
+import {
+  useEffect,
+  useRef,
+  useState,
+  type ClipboardEvent,
+  type DragEvent,
+  type ReactNode,
+} from 'react';
 import { parseFigmaUrl, type CardStartAttachment } from '@relay/shared';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -76,65 +83,13 @@ export function CardBrief({
 }) {
   const content = useCardContent(cardId);
   const [open, setOpen] = useState(false);
-  const [dragging, setDragging] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const input = useRef<HTMLInputElement>(null);
-  const latest = useRef(value);
-  latest.current = value;
-
-  // Thumbnails are object URLs: released when the dialog unmounts.
-  useEffect(
-    () => () => {
-      for (const f of latest.current.files) if (f.preview) URL.revokeObjectURL(f.preview);
-    },
-    [],
-  );
-
-  const add = (list: Iterable<File>) => {
-    const files = [...value.files];
-    const problems: string[] = [];
-    for (const file of list) {
-      if (files.length >= BRIEF_FILES_MAX) {
-        problems.push(`At most ${BRIEF_FILES_MAX} files.`);
-        break;
-      }
-      if (file.size > BRIEF_FILE_MAX_BYTES) {
-        problems.push(`${file.name || 'The pasted file'} is over 5 MB.`);
-        continue;
-      }
-      if (file.size === 0) continue;
-      files.push({
-        id: `${file.name}-${file.size}-${file.lastModified}-${Math.random()}`,
-        file,
-        preview: file.type.startsWith('image/') ? URL.createObjectURL(file) : null,
-      });
-    }
-    setError(problems.length > 0 ? problems.join(' ') : null);
-    onChange({ ...value, files });
-  };
-
-  const remove = (id: string) => {
-    const f = value.files.find((x) => x.id === id);
-    if (f?.preview) URL.revokeObjectURL(f.preview);
-    onChange({ ...value, files: value.files.filter((x) => x.id !== id) });
-  };
-
-  const onPaste = (e: ClipboardEvent) => {
-    const files = [...e.clipboardData.files];
-    if (files.length === 0) return;
-    e.preventDefault();
-    add(files);
-  };
-  const onDrop = (e: DragEvent) => {
-    e.preventDefault();
-    setDragging(false);
-    if (!disabled) add(e.dataTransfer.files);
-  };
-
   const c = content.data;
-  const figmaProblem = figmaLinkProblem(value.figmaUrl);
   return (
-    <div className="grid gap-3" onPaste={onPaste}>
+    <BriefFields
+      value={value}
+      onChange={onChange}
+      {...(disabled !== undefined ? { disabled } : {})}
+    >
       <section className="rounded-surface border border-hairline">
         <button
           type="button"
@@ -215,6 +170,86 @@ export function CardBrief({
           </div>
         )}
       </section>
+    </BriefFields>
+  );
+}
+
+/**
+ * The part of a brief the user writes: instructions, Figma links and files (paste, drop or pick).
+ * `children` go on top (Start: the card preview); a paste anywhere in the block adds files.
+ */
+export function BriefFields({
+  value,
+  onChange,
+  disabled,
+  instructionsPlaceholder = 'Context the card does not say: scope limits, where to look, what to avoid…',
+  children,
+}: {
+  value: Brief;
+  onChange: (b: Brief) => void;
+  disabled?: boolean;
+  instructionsPlaceholder?: string;
+  children?: ReactNode;
+}) {
+  const [dragging, setDragging] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const input = useRef<HTMLInputElement>(null);
+  const latest = useRef(value);
+  latest.current = value;
+
+  // Thumbnails are object URLs: released when the dialog unmounts.
+  useEffect(
+    () => () => {
+      for (const f of latest.current.files) if (f.preview) URL.revokeObjectURL(f.preview);
+    },
+    [],
+  );
+
+  const add = (list: Iterable<File>) => {
+    const files = [...value.files];
+    const problems: string[] = [];
+    for (const file of list) {
+      if (files.length >= BRIEF_FILES_MAX) {
+        problems.push(`At most ${BRIEF_FILES_MAX} files.`);
+        break;
+      }
+      if (file.size > BRIEF_FILE_MAX_BYTES) {
+        problems.push(`${file.name || 'The pasted file'} is over 5 MB.`);
+        continue;
+      }
+      if (file.size === 0) continue;
+      files.push({
+        id: `${file.name}-${file.size}-${file.lastModified}-${Math.random()}`,
+        file,
+        preview: file.type.startsWith('image/') ? URL.createObjectURL(file) : null,
+      });
+    }
+    setError(problems.length > 0 ? problems.join(' ') : null);
+    onChange({ ...value, files });
+  };
+
+  const remove = (id: string) => {
+    const f = value.files.find((x) => x.id === id);
+    if (f?.preview) URL.revokeObjectURL(f.preview);
+    onChange({ ...value, files: value.files.filter((x) => x.id !== id) });
+  };
+
+  const onPaste = (e: ClipboardEvent) => {
+    const files = [...e.clipboardData.files];
+    if (files.length === 0) return;
+    e.preventDefault();
+    add(files);
+  };
+  const onDrop = (e: DragEvent) => {
+    e.preventDefault();
+    setDragging(false);
+    if (!disabled) add(e.dataTransfer.files);
+  };
+
+  const figmaProblem = figmaLinkProblem(value.figmaUrl);
+  return (
+    <div className="grid gap-3" onPaste={onPaste}>
+      {children}
 
       <label className="grid gap-1 text-xs text-muted-foreground">
         Your instructions (optional)
@@ -223,7 +258,7 @@ export function CardBrief({
           maxLength={BRIEF_PROMPT_MAX}
           disabled={disabled}
           onChange={(e) => onChange({ ...value, extraPrompt: e.target.value })}
-          placeholder="Context the card does not say: scope limits, where to look, what to avoid…"
+          placeholder={instructionsPlaceholder}
           className="min-h-24 text-sm text-foreground"
         />
       </label>

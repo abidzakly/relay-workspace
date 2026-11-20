@@ -1,13 +1,13 @@
 import { cockpitAttachments } from '../../db/schema';
 import type { AppDb } from '../../db/open';
 
-export type AttachmentKind = 'card' | 'thread' | 'finding';
+export type AttachmentKind = 'card' | 'thread' | 'finding' | 'mr';
 
 export interface AttachmentRecord {
   group: string;
   workspaceId: string;
   kind: AttachmentKind;
-  /** Card id, `<repoId>!<iid>#<discussionId>`, or finding id. */
+  /** Card id, `<repoId>!<iid>#<discussionId>`, finding id, or `<repoId>!<iid>` (Make more changes). */
   refId: string;
 }
 

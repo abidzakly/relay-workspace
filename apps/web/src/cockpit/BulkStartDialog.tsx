@@ -1,4 +1,4 @@
-import { Check, GitFork, Loader2, Rocket, X } from 'lucide-react';
+import { Check, ChevronDown, GitFork, Loader2, Rocket, X } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router';
 import { BULK_START_MAX, type StateCard, type Workspace } from '@relay/shared';
@@ -11,7 +11,6 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
-import { Input } from '@/components/ui/input';
 import { Select } from '@/components/ui/select';
 import { RepoMark } from '@/components/RepoMark';
 import { ApiError, describeError } from '@/lib/api';
@@ -20,7 +19,13 @@ import { useWorkspaces } from '@/lib/cockpitApi';
 import { emit } from '@/lib/reward/engine';
 import { useSettings } from '@/lib/settingsApi';
 import { useBases, useCardStart } from '@/lib/workflowApi';
-import { figmaLinkProblem } from './CardBrief';
+import {
+  briefAttachments,
+  CardBrief,
+  EMPTY_BRIEF,
+  figmaLinkProblem,
+  type Brief,
+} from './CardBrief';
 import { ExistingBranchPrompt, type ExistingBranchChoice } from './ExistingBranchPrompt';
 
 /**
@@ -39,8 +44,8 @@ interface Row {
   agent: Agent;
   /** '' = not loaded yet: the workspace's base branch once its options arrive. */
   base: string;
-  /** Figma node links for this card's agent, on top of the ones in the card. */
-  figmaUrl: string;
+  /** What this card's agent gets on top of the card: instructions, Figma links, files. */
+  brief: Brief;
 }
 
 type Outcome =
@@ -107,7 +112,7 @@ function Body({ cards, onClose }: { cards: StateCard[]; onClose: () => void }) {
           workspaces[0]!.id,
         agent: preferred,
         base: '',
-        figmaUrl: '',
+        brief: EMPTY_BRIEF,
       })),
     );
   }, [cards, workspaces, preferred, rows.length]);
@@ -121,7 +126,7 @@ function Body({ cards, onClose }: { cards: StateCard[]; onClose: () => void }) {
     (o) => o.state === 'started' || o.state === 'failed' || o.state === 'skipped',
   );
   const ready =
-    rows.length > 0 && rows.every((r) => r.base !== '' && !figmaLinkProblem(r.figmaUrl));
+    rows.length > 0 && rows.every((r) => r.base !== '' && !figmaLinkProblem(r.brief.figmaUrl));
 
   const go = async () => {
     setRunning(true);
@@ -130,6 +135,15 @@ function Body({ cards, onClose }: { cards: StateCard[]; onClose: () => void }) {
     for (const r of rows) {
       setOutcomes((o) => ({ ...o, [r.card.id]: { state: 'running' } }));
       try {
+        // Files are read before the status write: a bad file must not leave the card In Progress with no agent.
+        let attachments: Awaited<ReturnType<typeof briefAttachments>>;
+        try {
+          attachments = await briefAttachments(r.brief.files);
+        } catch (e) {
+          throw new Error(`Could not read a file: ${(e as Error).message}`, { cause: e });
+        }
+        const extraPrompt = r.brief.extraPrompt.trim();
+        const figmaUrl = r.brief.figmaUrl.trim();
         if (!/in progress/i.test(r.card.status ?? '')) {
           const request = { kind: 'status' as const, cardId: r.card.id, to: 'In Progress' };
           const p = await preview.mutateAsync(request);
@@ -143,7 +157,9 @@ function Body({ cards, onClose }: { cards: StateCard[]; onClose: () => void }) {
             agent: r.agent,
             worktree: 'auto',
             ...(existing ? { existing } : {}),
-            ...(r.figmaUrl.trim() ? { figmaUrl: r.figmaUrl.trim() } : {}),
+            ...(extraPrompt ? { extraPrompt } : {}),
+            ...(figmaUrl ? { figmaUrl } : {}),
+            ...(attachments.length > 0 ? { attachments } : {}),
           });
         let res: Awaited<ReturnType<typeof startRow>>;
         try {
@@ -267,7 +283,7 @@ function BulkRow({
 }) {
   const bases = useBases(row.workspaceId);
   const ws = workspaces.find((w) => w.id === row.workspaceId);
-  const figmaProblem = figmaLinkProblem(row.figmaUrl);
+  const figmaProblem = figmaLinkProblem(row.brief.figmaUrl);
   // The workspace's own base branch is the default, as in the single start.
   useEffect(() => {
     if (row.base === '' && bases.data?.[0]) onChange({ base: bases.data[0].name });
@@ -355,23 +371,41 @@ function BulkRow({
               ))}
             </Select>
           </div>
-          <label className="grid gap-1 text-xs text-muted-foreground">
-            Figma link (optional)
-            <Input
-              value={row.figmaUrl}
-              maxLength={4_000}
-              disabled={locked}
-              onChange={(e) => onChange({ figmaUrl: e.target.value })}
-              placeholder="https://www.figma.com/design/…?node-id=12-34"
-              aria-invalid={!!figmaProblem}
-              className="text-sm text-foreground"
-            />
-            {figmaProblem && <span className="text-destructive">{figmaProblem}</span>}
-          </label>
+          <details className="group rounded-surface border border-hairline" open={!!figmaProblem}>
+            <summary className="flex cursor-pointer list-none items-center gap-2 px-3 py-2 text-sm">
+              <ChevronDown
+                className="size-4 shrink-0 text-muted-foreground transition-transform group-open:rotate-180"
+                aria-hidden
+              />
+              <span className="font-medium">Brief for the agent</span>
+              <span className="min-w-0 flex-1 truncate text-xs text-muted-foreground">
+                {briefSummary(row.brief)}
+              </span>
+              {figmaProblem && <span className="text-xs text-destructive">check Figma link</span>}
+            </summary>
+            <div className="border-t border-hairline p-3">
+              <CardBrief
+                cardId={row.card.id}
+                value={row.brief}
+                onChange={(brief) => onChange({ brief })}
+                disabled={locked}
+              />
+            </div>
+          </details>
         </div>
       )}
     </li>
   );
+}
+
+/** One line on what the agent gets on top of the card. */
+function briefSummary(b: Brief): string {
+  const parts = [
+    b.extraPrompt.trim() && 'instructions',
+    b.figmaUrl.trim() && 'Figma',
+    b.files.length > 0 && `${b.files.length} file${b.files.length === 1 ? '' : 's'}`,
+  ].filter(Boolean);
+  return parts.length > 0 ? parts.join(' · ') : 'What the agent reads, your instructions, files';
 }
 
 function OutcomeMark({ outcome }: { outcome: Outcome | undefined }) {

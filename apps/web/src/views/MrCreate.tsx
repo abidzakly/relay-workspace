@@ -11,6 +11,7 @@ import {
   Smartphone,
   Sparkles,
   TriangleAlert,
+  Wand2,
   X,
 } from 'lucide-react';
 import { useState, type KeyboardEvent } from 'react';
@@ -30,6 +31,7 @@ import { MicButton } from '@/components/MicButton';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
+import { MrReviseDialog } from '@/components/mr/MrReviseDialog';
 import { DirtyTreePanel } from '@/cockpit/DirtyTreePanel';
 import { ApiError, describeError } from '@/lib/api';
 import { useApplyWrite, usePreviewWrite } from '@/lib/cardApi';
@@ -339,6 +341,7 @@ export function MrCreate() {
   const [reason, setReason] = useState('');
   const [skipTest, setSkipTest] = useState(false);
   const [testReason, setTestReason] = useState('');
+  const [proposing, setProposing] = useState(false);
 
   if (!repo || !branch) {
     return <Alert variant="destructive">Invalid address.</Alert>;
@@ -396,11 +399,30 @@ export function MrCreate() {
     <div className="mx-auto grid w-full max-w-2xl min-w-0 gap-4 p-1 sm:p-4">
       <header className="flex min-w-0 items-end gap-2">
         {back}
-        <div className="min-w-0">
+        <div className="min-w-0 flex-1">
           <PageTitle>Create MR</PageTitle>
           <p className="truncate font-mono text-xs text-muted-foreground">{branch}</p>
         </div>
+        {p.existingMrIid === null && !create.data && (
+          <button
+            type="button"
+            onClick={() => setProposing(true)}
+            aria-label="Propose changes with an agent"
+            title="Propose changes: a new agent session on this branch, before the MR is created"
+            className="inline-flex h-11 shrink-0 items-center gap-1.5 rounded-lg border border-hairline px-3 text-sm font-medium transition-[background-color,transform] duration-150 hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:outline-none active:scale-[0.97]"
+          >
+            <Wand2 className="size-4" aria-hidden />
+            <span className="hidden sm:inline">Propose changes</span>
+          </button>
+        )}
       </header>
+      <MrReviseDialog
+        repo={repo}
+        iid={null}
+        branch={branch}
+        open={proposing}
+        onClose={() => setProposing(false)}
+      />
 
       {p.existingMrIid === null && (
         <MrSteps

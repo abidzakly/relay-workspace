@@ -119,6 +119,36 @@ const ThreadAgentBody = z
   })
   .strict();
 
+/** "Make more changes" on a draft MR. */
+const MrReviseBody = z
+  .object({
+    repoId: RepoIdSchema,
+    iid: z.number().int().positive(),
+    /** Unset = Settings' coding agent / plan model. */
+    agent: z.enum(['claude', 'cursor']).optional(),
+    model: z
+      .string()
+      .regex(/^[a-z0-9.-]{1,64}$/i)
+      .optional(),
+    extraPrompt: z.string().max(8_000).optional(),
+    figmaUrl: z.string().max(4_000).optional(),
+    attachments: CardStartBody.shape.attachments,
+  })
+  .strict();
+
+const BranchReviseBody = MrReviseBody.omit({ iid: true })
+  .extend({ branch: BranchNameSchema })
+  .strict();
+
+const CommitTreeBody = z
+  .object({
+    /** Required for a new commit; ignored by an amend, which keeps the last commit's message. */
+    message: z.string().trim().max(10_000).optional(),
+    amend: z.boolean(),
+  })
+  .strict()
+  .refine((b) => b.amend || !!b.message, { message: 'A commit message is required.' });
+
 const ThreadExplainBody = z
   .object({
     repoId: RepoIdSchema,
@@ -137,15 +167,6 @@ const EmuParams = z.object({
 
 const WsParams = z.object({ id: WorkspaceIdSchema });
 const CleanTreeBody = z.object({ mode: z.enum(['stash', 'discard']) }).strict();
-const CommitTreeBody = z
-  .object({
-    /** Required for a new commit; ignored by an amend, which keeps the last commit's message. */
-    message: z.string().trim().max(10_000).optional(),
-    amend: z.boolean(),
-  })
-  .strict()
-  .refine((b) => b.amend || !!b.message, { message: 'A commit message is required.' });
-
 const CheckoutBody = z.object({ branch: z.string().trim().min(1).max(255) }).strict();
 const DiffQuery = z.object({
   mode: z.enum(['working', 'branch', 'turn']).default('working'),
@@ -350,6 +371,14 @@ export function registerCockpitRoutes(app: FastifyInstance, deps: CockpitDeps): 
   app.post('/api/cockpit/thread-agent', async (req) => {
     const b = parseWith(ThreadAgentBody, req.body);
     return run(() => deps.workflow.threadAgent(b));
+  });
+  app.post('/api/cockpit/mr-revise', { bodyLimit: 72 * 1024 * 1024 }, async (req) => {
+    const b = parseWith(MrReviseBody, req.body);
+    return run(() => deps.workflow.mrRevise(b));
+  });
+  app.post('/api/cockpit/branch-revise', { bodyLimit: 72 * 1024 * 1024 }, async (req) => {
+    const b = parseWith(BranchReviseBody, req.body);
+    return run(() => deps.workflow.branchRevise(b));
   });
   app.post('/api/cockpit/thread-explain', async (req) => {
     const b = parseWith(ThreadExplainBody, req.body);

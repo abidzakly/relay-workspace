@@ -187,7 +187,7 @@ export class CockpitSessionService {
     workspaceId: string,
     pick: { kind?: 'claude' | 'cursor'; model?: string } = {},
   ): Promise<CockpitSession> {
-    const kind = pick.kind ?? this.d.preferredAgent?.() ?? 'claude';
+    const kind = pick.kind ?? this.preferredKind();
     const s = await this.start({
       workspaceId,
       kind,
@@ -196,6 +196,11 @@ export class CockpitSessionService {
       ...(pick.model ? { model: pick.model } : {}),
     });
     return s;
+  }
+
+  /** Settings → AI coding agent. */
+  preferredKind(): 'claude' | 'cursor' {
+    return this.d.preferredAgent?.() ?? 'claude';
   }
 
   /** "Send to agent now" from the deck: the workspace's agent session (a new Claude one if none runs). */

@@ -264,6 +264,11 @@ function attachmentDoneReason(
     if (db.resolvedThreads.has(row.refId)) return 'Its review thread is resolved';
     return null;
   }
+  if (row.kind === 'mr') {
+    const state = db.mrState.get(row.refId);
+    if (state === 'merged' || state === 'closed') return `Its MR is ${state}`;
+    return null;
+  }
   if (row.kind === 'finding') {
     const status = db.findings.get(row.refId);
     if (status === 'verified' || status === 'wontfix') return `Its test finding is ${status}`;
