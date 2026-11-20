@@ -77,7 +77,7 @@ function NewSession({
   ];
   return (
     <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
-      <DialogContent className="top-auto bottom-0 max-w-none translate-y-0 rounded-t-sheet rounded-b-none sm:bottom-auto sm:top-1/2 sm:max-w-md sm:-translate-y-1/2 sm:rounded-sheet">
+      <DialogContent className="top-auto bottom-0 w-full sm:w-[calc(100%-1.5rem)] max-w-none translate-y-0 rounded-t-sheet rounded-b-none sm:bottom-auto sm:top-1/2 sm:max-w-md sm:-translate-y-1/2 sm:rounded-sheet">
         <DialogHeader>
           <DialogTitle>New session</DialogTitle>
         </DialogHeader>
@@ -88,12 +88,12 @@ function NewSession({
               type="button"
               onClick={() => setWs(w.id)}
               className={cn(
-                'flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-sm',
+                'flex max-w-full min-w-0 items-center gap-1.5 rounded-full border px-3 py-1.5 text-sm',
                 ws === w.id && cn('ring-2', WS_RING[w.color]),
               )}
             >
               <RepoMark color={w.color} />
-              {w.name}
+              <span className="min-w-0 truncate">{w.name}</span>
             </button>
           ))}
         </div>

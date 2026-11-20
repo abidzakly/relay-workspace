@@ -5,6 +5,7 @@ import { TimeAgo } from '@/components/TimeAgo';
 import { Button } from '@/components/ui/button';
 import { ShareControls } from './ShareControls';
 import { SigningUpload } from './SigningUpload';
+import { WRAP_BADGE } from '@/components/MrBits';
 
 const STATUS: Record<
   JobStatus,
@@ -73,10 +74,16 @@ export function BuildRow({
       <div className="flex flex-wrap items-center gap-2">
         {active && <Printer aria-hidden className="size-4 text-primary-ink" />}
         <Badge variant={status.variant}>{cancelling ? 'cancelling' : status.label}</Badge>
-        <span className="font-medium">{repoName}</span>
-        <Badge variant="outline">{job.mode}</Badge>
-        {job.flavor && <span className="font-mono text-xs">{job.flavor}</span>}
-        {job.version && <span className="font-mono text-xs">v{job.version}</span>}
+        <span className="min-w-0 font-medium wrap-anywhere">{repoName}</span>
+        <Badge variant="outline" className={WRAP_BADGE}>
+          {job.mode}
+        </Badge>
+        {job.flavor && (
+          <span className="min-w-0 font-mono text-xs wrap-anywhere">{job.flavor}</span>
+        )}
+        {job.version && (
+          <span className="min-w-0 font-mono text-xs wrap-anywhere">v{job.version}</span>
+        )}
         {job.dryRun && <Badge variant="warning">dry run</Badge>}
         {job.parentJobId && <Badge variant="secondary">from a release</Badge>}
         {preview.length > 0 && <Badge variant="warning">QA preview</Badge>}

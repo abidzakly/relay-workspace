@@ -324,8 +324,18 @@
   html.dark {
     color-scheme: dark;
   }
+  /* Phone safety net: nothing may widen the page sideways (clip keeps sticky headers working). */
+  html,
+  body {
+    overflow-x: clip;
+  }
+  /* A grid item's min-width defaults to its content: long names would grow it past the screen and defeat truncate. */
+  :where(.grid) > * {
+    min-width: 0;
+  }
   body {
     @apply bg-background text-foreground antialiased;
+    overflow-wrap: break-word;
     font-family: var(--font-sans);
     font-feature-settings: 'ss01', 'cv11';
     transition: background-color 600ms var(--ease-editorial);

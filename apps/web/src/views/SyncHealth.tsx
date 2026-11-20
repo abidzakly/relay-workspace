@@ -27,6 +27,7 @@ import { cn } from '@/lib/utils';
 import { PageTitle } from '@/components/PageTitle';
 import { ThreadBridge } from '@/health/ThreadBridge';
 import { useVisual } from '@/lib/visuals';
+import { WRAP_BADGE } from '@/components/MrBits';
 
 const RANK: Record<Severity, number> = { ok: 0, info: 1, warn: 2, action: 3, critical: 4 };
 const worst = (a: Severity, b: Severity): Severity => (RANK[a] >= RANK[b] ? a : b);
@@ -560,8 +561,10 @@ export function SyncHealth() {
                     key={u.cardId}
                     className="flex flex-wrap items-center gap-2 rounded-md border p-2"
                   >
-                    <Badge variant="secondary">{u.reason.replace(/_/g, ' ')}</Badge>
-                    <span className="font-medium">{u.title}</span>
+                    <Badge variant="secondary" className={WRAP_BADGE}>
+                      {u.reason.replace(/_/g, ' ')}
+                    </Badge>
+                    <span className="min-w-0 font-medium wrap-anywhere">{u.title}</span>
                     <span className="text-xs text-muted-foreground">
                       {u.status ?? 'no status'} · {u.mrState === 'none' ? 'no MR' : u.mrState}
                     </span>

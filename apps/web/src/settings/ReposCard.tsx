@@ -19,6 +19,7 @@ import { useDeleteRepo, useRepos, useSetRepoEnabled, useTestRepo } from '@/lib/s
 import { cn } from '@/lib/utils';
 import { RepoDialog } from './RepoDialog';
 import { ErrorAlert, SectionCard } from './SectionCard';
+import { WRAP_BADGE } from '@/components/MrBits';
 
 function webhookUrl(settings: GlobalConfigPublic, id: string): string | null {
   const base = settings.publicBaseUrl?.replace(/\/+$/, '');
@@ -51,7 +52,9 @@ function RepoRow({
           </div>
           <div className="mt-1.5 flex flex-wrap gap-1.5">
             <Badge variant="outline">project {repo.gitlab.projectId}</Badge>
-            <Badge variant="outline">base {repo.baseBranch}</Badge>
+            <Badge variant="outline" className={WRAP_BADGE}>
+              base {repo.baseBranch}
+            </Badge>
             <Badge variant="outline">{repo.approvalMode}</Badge>
             <Badge variant={repo.gitlab.tokenSet ? 'success' : 'destructive'}>
               {repo.gitlab.tokenSet ? 'token saved' : 'no token'}

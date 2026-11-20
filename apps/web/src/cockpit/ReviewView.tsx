@@ -34,7 +34,9 @@ export function ReviewView({ ws }: { ws: Workspace }) {
       {st.data && (
         <div className="flex flex-wrap items-center gap-2 text-sm">
           <GitBranch className="size-4 text-muted-foreground" />
-          <span className="font-mono text-xs">{st.data.branch ?? '(detached)'}</span>
+          <span className="min-w-0 font-mono text-xs wrap-anywhere">
+            {st.data.branch ?? '(detached)'}
+          </span>
           {st.data.ahead > 0 && <Badge variant="outline">↑{st.data.ahead}</Badge>}
           {st.data.behind > 0 && <Badge variant="warning">↓{st.data.behind}</Badge>}
           {st.data.dirty.length > 0 && (

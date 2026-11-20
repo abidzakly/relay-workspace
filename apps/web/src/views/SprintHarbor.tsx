@@ -216,7 +216,10 @@ export function SprintHarbor() {
                     )}
                     <ul className="grid grid-cols-2 gap-1 text-xs">
                       {DOCK_STAGES.map((st) => (
-                        <li key={st} className="rounded-md bg-muted px-2 py-1">
+                        <li
+                          key={st}
+                          className="min-w-0 rounded-md bg-muted px-2 py-1 wrap-anywhere"
+                        >
                           {STAGE_LABEL[st].split(' (')[0]}:{' '}
                           <b>{current.tasks.filter((t) => t.stage === st).length}</b>
                         </li>

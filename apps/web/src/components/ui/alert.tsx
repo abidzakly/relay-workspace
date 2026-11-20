@@ -25,5 +25,5 @@ export function AlertTitle({ className, ...props }: ComponentProps<'div'>) {
   return <div className={cn('mb-1 type-micro', className)} {...props} />;
 }
 export function AlertDescription({ className, ...props }: ComponentProps<'div'>) {
-  return <div className={cn('text-sm opacity-90', className)} {...props} />;
+  return <div className={cn('text-sm opacity-90 wrap-anywhere', className)} {...props} />;
 }

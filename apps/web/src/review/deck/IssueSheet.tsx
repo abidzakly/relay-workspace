@@ -58,7 +58,7 @@ export function IssueSheet({
 
   return (
     <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
-      <DialogContent className="top-auto bottom-0 max-h-[88dvh] max-w-none translate-y-0 rounded-t-sheet rounded-b-none p-4 sm:bottom-auto sm:top-1/2 sm:max-w-2xl sm:-translate-y-1/2 sm:rounded-sheet">
+      <DialogContent className="top-auto bottom-0 w-full sm:w-[calc(100%-1.5rem)] max-h-[88dvh] max-w-none translate-y-0 rounded-t-sheet rounded-b-none p-4 sm:bottom-auto sm:top-1/2 sm:max-w-2xl sm:-translate-y-1/2 sm:rounded-sheet">
         <DialogHeader>
           <DialogTitle>Mark an issue</DialogTitle>
           <DialogDescription className="truncate font-mono text-xs">{hunk.file}</DialogDescription>

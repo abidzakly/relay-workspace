@@ -94,7 +94,7 @@ function StepRow({ step }: { step: JobStep }) {
         <s.mark aria-hidden />
         {step.status}
       </Badge>
-      <span className="font-mono text-xs">{step.name}</span>
+      <span className="min-w-0 font-mono text-xs wrap-anywhere">{step.name}</span>
       {placeholder && <span className="text-xs text-muted-foreground">nothing ran yet</span>}
       {step.finishedAt !== null && (
         <TimeAgo at={step.finishedAt} className="text-xs text-muted-foreground" />

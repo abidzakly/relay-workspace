@@ -330,7 +330,7 @@ export function TestBench() {
       <div
         role="tablist"
         aria-label="Test Bench panes"
-        className="flex rounded-control border p-0.5 lg:hidden"
+        className="flex rounded-control border p-0.5 xl:hidden"
       >
         {PANES.map(({ id, label, icon: Icon }) => (
           <button
@@ -349,8 +349,8 @@ export function TestBench() {
         ))}
       </div>
 
-      <div className="grid min-w-0 gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(18rem,22rem)_minmax(0,1fr)] lg:items-start">
-        <div className={cn('min-w-0', pane !== 'checks' && 'hidden lg:block')}>
+      <div className="grid min-w-0 gap-6 xl:grid-cols-[minmax(0,1fr)_minmax(18rem,22rem)_minmax(0,1fr)] xl:items-start">
+        <div className={cn('min-w-0', pane !== 'checks' && 'hidden xl:block')}>
           <AcChecklist
             repo={repo}
             branch={branch}
@@ -364,8 +364,8 @@ export function TestBench() {
 
         <div
           className={cn(
-            'grid min-w-0 grid-cols-[minmax(0,1fr)] content-start gap-3 lg:sticky lg:top-4',
-            pane !== 'phone' && 'hidden lg:grid',
+            'grid min-w-0 grid-cols-[minmax(0,1fr)] content-start gap-3 xl:sticky xl:top-4',
+            pane !== 'phone' && 'hidden xl:grid',
           )}
         >
           <Dropdown
@@ -464,7 +464,7 @@ export function TestBench() {
           )}
         </div>
 
-        <div className={cn('min-w-0', pane !== 'design' && 'hidden lg:block')}>
+        <div className={cn('min-w-0', pane !== 'design' && 'hidden xl:block')}>
           <FigmaPanel
             repo={repo}
             branch={branch}

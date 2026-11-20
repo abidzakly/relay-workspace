@@ -776,7 +776,7 @@ function Deck({
       )}
 
       <Dialog open={fullFile !== null} onOpenChange={(o) => !o && setFullFile(null)}>
-        <DialogContent className="top-auto bottom-0 max-h-[90dvh] max-w-none translate-y-0 rounded-t-sheet rounded-b-none p-3 sm:bottom-auto sm:top-1/2 sm:max-w-4xl sm:-translate-y-1/2 sm:rounded-sheet">
+        <DialogContent className="top-auto bottom-0 w-full sm:w-[calc(100%-1.5rem)] max-h-[90dvh] max-w-none translate-y-0 rounded-t-sheet rounded-b-none p-3 sm:bottom-auto sm:top-1/2 sm:max-w-4xl sm:-translate-y-1/2 sm:rounded-sheet">
           <DialogHeader>
             <DialogTitle className="truncate font-mono text-sm">{fullFile}</DialogTitle>
           </DialogHeader>
