@@ -8,11 +8,13 @@ import {
   type CommitMessageResult,
   type DeckSource,
   type ExplainThreadResult,
+  isSafeBranchName,
   parseFigmaUrl,
 } from '@relay/shared';
 import type { ConfigStore } from '../../config/store';
 import type { AppDb } from '../../db';
-import { cardBodies, mrs, reviewDecks } from '../../db/schema';
+import { cardBodies, links, mrs, reviewDecks } from '../../db/schema';
+import { idKey } from '../familyTree';
 import type { FigmaNodeSpec, FigmaService } from '../figma/figmaService';
 import type { FigmaSnapshotStore } from '../figma/snapshotStore';
 import type { Logger } from '../../util/logger';
@@ -27,7 +29,7 @@ import { listCards } from '../notionStore';
 import type { ReadyForMrService } from '../readyForMr';
 import { threadCode } from '../threadCode';
 import type { CardContentService, CardContent } from './cardContent';
-import type { CockpitHost } from './host';
+import type { CockpitHost, WsRef } from './host';
 import type { CommitResult } from './branchOps';
 import type { ExistingBranch } from './workflowOps';
 import type { CockpitSessionService, SessionView } from './sessionService';
@@ -35,6 +37,7 @@ import {
   cardStartPrompt,
   explainThreadVars,
   extractUploads,
+  mrRevisePrompt,
   threadPrompt,
   type ThreadAgentMode,
 } from './threadPrompt';
@@ -60,6 +63,25 @@ const SUGGEST_FILES_MAX = 60;
 
 const AGENT_KINDS = new Set(['claude', 'cursor']);
 
+type BriefSource = 'card' | 'mine' | 'figma';
+
+/** What the user put in the Make more changes / Propose changes dialog. */
+interface ReviseBrief {
+  agent?: 'claude' | 'cursor' | undefined;
+  model?: string | undefined;
+  extraPrompt?: string | undefined;
+  figmaUrl?: string | undefined;
+  attachments?: readonly CardStartAttachment[] | undefined;
+}
+
+interface ReviseResult {
+  workspaceId: string;
+  sessionId: string;
+  branch: string;
+  attachments: number;
+  failedAttachments: number;
+}
+
 export class CockpitWorkflowService {
   constructor(
     private readonly d: {
@@ -81,7 +103,7 @@ export class CockpitWorkflowService {
       onAttachments?: (a: {
         group: string;
         workspaceId: string;
-        kind: 'card' | 'thread' | 'finding';
+        kind: 'card' | 'thread' | 'finding' | 'mr';
         refId: string;
       }) => void;
     },
@@ -586,6 +608,173 @@ export class CockpitWorkflowService {
     };
   }
 
+  /**
+   * "Make more changes" on a draft MR: a NEW agent session on the MR's branch with the user's brief (instructions,
+   * Figma links, Postrack endpoints, files). The agent plans first, then adds commits; it never pushes, so the user can
+   * review and test before anything reaches the MR. The MR is re-read from GitLab: only an open draft qualifies.
+   */
+  async mrRevise(input: ReviseBrief & { repoId: string; iid: number }): Promise<ReviseResult> {
+    const workspaceId = this.reviseWorkspace(input.repoId);
+    const mr = this.d.store.db
+      .select()
+      .from(mrs)
+      .where(and(eq(mrs.repoId, input.repoId), eq(mrs.iid, input.iid)))
+      .get();
+    if (!mr) throw new ActionError(404, 'mr_not_found', 'This MR is not in the cache.');
+    const live = await this.gitlab(input.repoId).getMrDetail(input.iid).catch(mapGitlabError);
+    if (live.state !== 'opened' || !live.draft) {
+      throw new ActionError(
+        409,
+        'mr_not_draft',
+        live.state !== 'opened'
+          ? `This MR is ${live.state} in GitLab. Make more changes is only for draft MRs.`
+          : 'This MR is ready for review in GitLab. Make more changes is only for draft MRs.',
+      );
+    }
+    const card = this.linkedCard(input.repoId, input.iid);
+    const refId = `${input.repoId}!${input.iid}`;
+    return this.reviseOnBranch(workspaceId, input, {
+      mr: { iid: live.iid, title: live.title, webUrl: live.webUrl ?? mr.webUrl },
+      branch: live.sourceBranch,
+      base: live.targetBranch,
+      card,
+      figmaOwner: card?.id ?? `mr:${refId}`,
+      attachmentsFor: { kind: 'mr', refId },
+    });
+  }
+
+  /**
+   * "Propose changes" on Create MR: the same brief as Make more changes, on a branch that has no MR yet. The session
+   * works on that branch only (no branch picker, no new branch), adds commits and never pushes.
+   */
+  async branchRevise(
+    input: ReviseBrief & { repoId: string; branch: string },
+  ): Promise<ReviseResult> {
+    if (!isSafeBranchName(input.branch)) {
+      throw new ActionError(422, 'bad_ref', 'Unsafe branch name.');
+    }
+    const workspaceId = this.reviseWorkspace(input.repoId);
+    const base = this.d.config.getRepo(input.repoId)?.baseBranch ?? 'main';
+    const c = listCards(this.d.store).find((x) => x.branchName?.trim() === input.branch) ?? null;
+    const card = c ? { id: c.id, title: c.title, url: c.url ?? null } : null;
+    return this.reviseOnBranch(workspaceId, input, {
+      mr: null,
+      branch: input.branch,
+      base,
+      card,
+      figmaOwner: card?.id ?? `branch:${input.repoId}:${input.branch}`,
+      // Kept until the card is done; without a card, the generic attachment cleanup takes them.
+      attachmentsFor: card ? { kind: 'card', refId: card.id } : null,
+    });
+  }
+
+  private reviseWorkspace(repoId: string): string {
+    const workspaceId = this.d.workspaces.forRepo(repoId);
+    if (!workspaceId) {
+      throw new ActionError(
+        409,
+        'no_workspace',
+        'No Cockpit workspace is linked to this repository. Add one in Settings → Workspaces.',
+      );
+    }
+    return workspaceId;
+  }
+
+  /** Puts the workspace on `branch`, saves the brief and starts the agent with the revise prompt. */
+  private async reviseOnBranch(
+    repoWorkspaceId: string,
+    input: ReviseBrief,
+    t: {
+      mr: { iid: number; title: string; webUrl: string | null } | null;
+      branch: string;
+      base: string;
+      card: { id: string; title: string; url: string | null } | null;
+      figmaOwner: string;
+      attachmentsFor: { kind: 'mr' | 'card'; refId: string } | null;
+    },
+  ): Promise<ReviseResult> {
+    // Checked before anything changes on disk.
+    const mine = (input.attachments ?? []).map((a, n) => ({ ...decodeAttachment(a), n: n + 1 }));
+    const agent = input.agent ?? this.d.sessions.preferredKind();
+
+    const workspaceId = await this.holderOf(repoWorkspaceId, t.branch);
+    const ref = this.d.workspaces.ref(workspaceId);
+    const dirty = (await this.d.host.wsStatus(ref)).dirty.length > 0;
+    if (dirty) {
+      throw new ActionError(
+        409,
+        'ws_dirty',
+        'The working tree has uncommitted changes: commit, stash or discard them first.',
+        { workspaceId },
+      );
+    }
+    const { synced } = await this.ensureBranch(workspaceId, t.branch);
+
+    const group = createHash('sha256')
+      .update(`revise:${workspaceId}:${t.branch}:${Date.now()}`)
+      .digest('hex')
+      .slice(0, 16);
+    const attachments: { path: string; source: BriefSource; label: string }[] = [];
+    const failed: string[] = [];
+    await this.saveBrief(ref, group, {
+      figmaOwner: t.figmaOwner,
+      figmaTargets: this.figmaTargets(t.figmaOwner, null, input.figmaUrl ?? null),
+      mine,
+      attachments,
+      failed,
+    });
+    if (attachments.length > 0 && t.attachmentsFor) {
+      this.d.onAttachments?.({ group, workspaceId, ...t.attachmentsFor });
+    }
+
+    const s = await this.d.sessions.startPreferred(workspaceId, {
+      kind: agent,
+      ...(input.model ? { model: input.model } : {}),
+    });
+    // Cursor runs in its TUI, which needs a moment to draw before the first prompt.
+    if (agent === 'cursor') await new Promise((r) => setTimeout(r, 2_500));
+    await this.d.sessions.prompt(
+      s.id,
+      mrRevisePrompt({
+        mr: t.mr,
+        branch: t.branch,
+        base: t.base,
+        card: t.card ? { title: t.card.title, url: t.card.url } : null,
+        branchSynced: synced,
+        extraPrompt: input.extraPrompt ?? null,
+        attachments,
+        failedAttachments: failed,
+      }),
+    );
+    return {
+      workspaceId,
+      sessionId: s.id,
+      branch: t.branch,
+      attachments: attachments.length,
+      failedAttachments: failed.length,
+    };
+  }
+
+  /** The Notion card linked to an MR (a non-conflicting link first), or null. */
+  private linkedCard(
+    repoId: string,
+    iid: number,
+  ): { id: string; title: string; url: string | null } | null {
+    const rows = this.d.store.db
+      .select()
+      .from(links)
+      .where(and(eq(links.repoId, repoId), eq(links.mrIid, iid)))
+      .all()
+      .sort((a, b) => Number(a.conflict) - Number(b.conflict));
+    if (rows.length === 0) return null;
+    const cards = new Map(listCards(this.d.store).map((c) => [idKey(c.id), c] as const));
+    for (const r of rows) {
+      const c = cards.get(idKey(r.cardId));
+      if (c) return { id: c.id, title: c.title, url: c.url ?? null };
+    }
+    return null;
+  }
+
   /** What Start with agent will send from the Notion card, for the dialog. */
   async cardContentPreview(
     cardId: string,
@@ -612,6 +801,81 @@ export class CockpitWorkflowService {
       parentError: c.parentError,
       links: [...new Set([...c.card.links, ...(c.parent?.links ?? [])])].slice(0, 20),
     };
+  }
+
+  /**
+   * Saves what the user put in a brief (Start dialog, Make more changes) next to the workspace for the agent: Figma
+   * node specs and renders, and the user's own files. Appends to `attachments` / `failed`.
+   */
+  private async saveBrief(
+    ref: WsRef,
+    group: string,
+    i: {
+      /** Whose Figma snapshots are read and saved: the card id, or `mr:<repo>!<iid>`. */
+      figmaOwner: string;
+      figmaTargets: readonly { fileKey: string; nodeId: string; label: string | null }[];
+      mine: readonly (CardStartAttachment & { n: number })[];
+      attachments: { path: string; source: BriefSource; label: string }[];
+      failed: string[];
+    },
+  ): Promise<void> {
+    for (const t of i.figmaTargets) {
+      const id = t.nodeId.replace(':', '-');
+      const where = `Figma node ${t.nodeId}${t.label ? ` (${t.label})` : ''}`;
+      let got: Awaited<ReturnType<CockpitWorkflowService['figmaNode']>>;
+      try {
+        got = await this.figmaNode(i.figmaOwner, t.fileKey, t.nodeId);
+      } catch (e) {
+        i.failed.push(`${where} (${(e as Error).message})`);
+        continue;
+      }
+      const note = got.savedAt
+        ? `, saved ${new Date(got.savedAt).toISOString().slice(0, 16).replace('T', ' ')} UTC while Figma was connected; the design may have changed since`
+        : '';
+      try {
+        const json = JSON.stringify(got.spec, null, 1);
+        if (json.length > FIGMA_SPEC_MAX_BYTES) {
+          throw new Error(`its spec is ${Math.round(json.length / 1e6)} MB, over the 5 MB limit`);
+        }
+        const { path } = await this.d.host.wsSaveAttachment(
+          ref,
+          group,
+          `figma-${id}.json`,
+          Buffer.from(json).toString('base64'),
+        );
+        i.attachments.push({ path, source: 'figma', label: `${where}: full spec${note}` });
+      } catch (e) {
+        i.failed.push(`${where} spec (${(e as Error).message})`);
+      }
+      if (!got.png) {
+        i.failed.push(`${where} image (Figma did not render it)`);
+        continue;
+      }
+      try {
+        const { path } = await this.d.host.wsSaveAttachment(
+          ref,
+          group,
+          `figma-${id}.png`,
+          got.png.toString('base64'),
+        );
+        i.attachments.push({ path, source: 'figma', label: `${where}: rendered image${note}` });
+      } catch (e) {
+        i.failed.push(`${where} image (${(e as Error).message})`);
+      }
+    }
+    for (const m of i.mine) {
+      try {
+        const { path } = await this.d.host.wsSaveAttachment(
+          ref,
+          group,
+          `user-${m.n}-${m.name}`,
+          m.dataBase64,
+        );
+        i.attachments.push({ path, source: 'mine', label: m.name });
+      } catch (e) {
+        i.failed.push(`${m.name} (${(e as Error).message})`);
+      }
+    }
   }
 
   async cardStart(input: {
@@ -690,7 +954,7 @@ export class CockpitWorkflowService {
       .update(`${card.id}:${Date.now()}`)
       .digest('hex')
       .slice(0, 16);
-    const attachments: { path: string; source: 'card' | 'mine' | 'figma'; label: string }[] = [];
+    const attachments: { path: string; source: BriefSource; label: string }[] = [];
     const failed: string[] = [];
     if (content && this.d.cardContent && content.assets.length > 0) {
       const dl = await this.d.cardContent.downloadAssets(content);
@@ -709,63 +973,13 @@ export class CockpitWorkflowService {
         }
       }
     }
-    for (const t of this.figmaTargets(card.id, content, input.figmaUrl ?? null)) {
-      const id = t.nodeId.replace(':', '-');
-      const where = `Figma node ${t.nodeId}${t.label ? ` (${t.label})` : ''}`;
-      let got: Awaited<ReturnType<CockpitWorkflowService['figmaNode']>>;
-      try {
-        got = await this.figmaNode(card.id, t.fileKey, t.nodeId);
-      } catch (e) {
-        failed.push(`${where} (${(e as Error).message})`);
-        continue;
-      }
-      const note = got.savedAt
-        ? `, saved ${new Date(got.savedAt).toISOString().slice(0, 16).replace('T', ' ')} UTC while Figma was connected; the design may have changed since`
-        : '';
-      try {
-        const json = JSON.stringify(got.spec, null, 1);
-        if (json.length > FIGMA_SPEC_MAX_BYTES) {
-          throw new Error(`its spec is ${Math.round(json.length / 1e6)} MB, over the 5 MB limit`);
-        }
-        const { path } = await this.d.host.wsSaveAttachment(
-          ref,
-          group,
-          `figma-${id}.json`,
-          Buffer.from(json).toString('base64'),
-        );
-        attachments.push({ path, source: 'figma', label: `${where}: full spec${note}` });
-      } catch (e) {
-        failed.push(`${where} spec (${(e as Error).message})`);
-      }
-      if (!got.png) {
-        failed.push(`${where} image (Figma did not render it)`);
-        continue;
-      }
-      try {
-        const { path } = await this.d.host.wsSaveAttachment(
-          ref,
-          group,
-          `figma-${id}.png`,
-          got.png.toString('base64'),
-        );
-        attachments.push({ path, source: 'figma', label: `${where}: rendered image${note}` });
-      } catch (e) {
-        failed.push(`${where} image (${(e as Error).message})`);
-      }
-    }
-    for (const m of mine) {
-      try {
-        const { path } = await this.d.host.wsSaveAttachment(
-          ref,
-          group,
-          `user-${m.n}-${m.name}`,
-          m.dataBase64,
-        );
-        attachments.push({ path, source: 'mine', label: m.name });
-      } catch (e) {
-        failed.push(`${m.name} (${(e as Error).message})`);
-      }
-    }
+    await this.saveBrief(ref, group, {
+      figmaOwner: card.id,
+      figmaTargets: this.figmaTargets(card.id, content, input.figmaUrl ?? null),
+      mine,
+      attachments,
+      failed,
+    });
     if (attachments.length > 0)
       this.d.onAttachments?.({
         group,

@@ -8,6 +8,7 @@ import {
   Plus,
   ScanSearch,
   TriangleAlert,
+  Wand2,
   X,
 } from 'lucide-react';
 import { AnimatePresence, motion } from 'motion/react';
@@ -30,6 +31,7 @@ import {
 import { TimeAgo } from '@/components/TimeAgo';
 import { describeError } from '@/lib/api';
 import { useMrDetail } from '@/lib/mrApi';
+import { MrReviseDialog } from '@/components/mr/MrReviseDialog';
 import { NewComment, Thread, type ThreadContext } from '@/components/mr/Thread';
 import { reviewLink } from '@/lib/reviewApi';
 import { safeHref } from '@/lib/utils';
@@ -273,6 +275,9 @@ export function MrDetail() {
   const reduced = useReducedMotion();
   const close = () => navigate({ pathname: '/mrs', search });
   const webHref = safeHref(q.data?.mr.webUrl);
+  // Only a draft MR takes more agent work: a ready one is with its reviewers.
+  const canRevise = q.data?.mr.state === 'opened' && q.data.mr.draft;
+  const [revising, setRevising] = useState(false);
   const slide = reduced ? { opacity: 0 } : { opacity: 0, x: 48 };
 
   return (
@@ -323,6 +328,18 @@ export function MrDetail() {
                         {q.data?.mr.title ?? `${repo} !${iid}`}
                       </DialogPrimitive.Title>
                     </div>
+                    {canRevise && (
+                      <button
+                        type="button"
+                        onClick={() => setRevising(true)}
+                        aria-label="Make more changes with an agent"
+                        title="Make more changes: a new agent session on this draft MR's branch"
+                        className="inline-flex h-11 shrink-0 items-center gap-1.5 rounded-lg border border-hairline px-3 text-sm font-medium transition-[background-color,transform] duration-150 hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:outline-none active:scale-[0.97]"
+                      >
+                        <Wand2 className="size-4" aria-hidden />
+                        <span className="hidden sm:inline">Make more changes</span>
+                      </button>
+                    )}
                     <Link
                       {...reviewLink(repo, n, `/mrs/${repo}/${iid}${search}`, 'MR detail')}
                       aria-label="Review in Code Reviewer"
@@ -371,6 +388,15 @@ export function MrDetail() {
                     </div>
                   )}
                 </header>
+                {canRevise && q.data && (
+                  <MrReviseDialog
+                    repo={repo}
+                    iid={n}
+                    branch={q.data.mr.sourceBranch}
+                    open={revising}
+                    onClose={() => setRevising(false)}
+                  />
+                )}
 
                 <div className="flex min-w-0 flex-col gap-4 p-4 sm:p-5">
                   {q.isPending && (

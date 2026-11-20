@@ -124,9 +124,9 @@ export const healthDismissals = sqliteTable('health_dismissals', {
 export const cockpitAttachments = sqliteTable('cockpit_attachments', {
   group: text('group').primaryKey(),
   workspaceId: text('workspace_id').notNull(),
-  /** 'card' | 'thread' | 'finding' */
+  /** 'card' | 'thread' | 'finding' | 'mr' */
   kind: text('kind').notNull(),
-  /** Card id, `<repoId>!<iid>#<discussionId>`, or finding id. */
+  /** Card id, `<repoId>!<iid>#<discussionId>`, finding id, or `<repoId>!<iid>`. */
   refId: text('ref_id').notNull(),
   createdAt: integer('created_at').notNull(),
 });
