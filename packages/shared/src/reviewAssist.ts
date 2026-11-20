@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { AiGeneratedBySchema } from './ai';
+import { AiGeneratedBySchema, ExplainChangeOutputSchema } from './ai';
 import { MR_CHAT_MAX_HISTORY, MrChatMessageSchema } from './mrCreate';
 import { DeckSourceSchema } from './reviewDeck';
 
@@ -24,8 +24,7 @@ export const ReviewExplainRequestSchema = z
   .strict();
 export type ReviewExplainRequest = z.infer<typeof ReviewExplainRequestSchema>;
 
-export const ReviewExplainResultSchema = z.object({
-  answer: z.string(),
+export const ReviewExplainResultSchema = ExplainChangeOutputSchema.extend({
   generatedBy: AiGeneratedBySchema,
 });
 export type ReviewExplainResult = z.infer<typeof ReviewExplainResultSchema>;

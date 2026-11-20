@@ -668,6 +668,8 @@ export function ReviewWorkspace(props: ReviewWorkspaceProps) {
   }, [active, mode, narrow, setMode, toggleCollapsed, markViewed, stepFile, nextHunk, nextThread]);
 
   const mr = p.mr;
+  const filePaths = useMemo(() => p.files.map((f) => f.path), [p.files]);
+  const closeAssist = useCallback(() => setAssistTarget(null), []);
   const aiStatus = useAiStatus();
   const aiReady = aiStatus.data ? aiStatus.data.engine !== 'none' : false;
   const [assistTarget, setAssistTarget] = useState<AssistTarget | null>(null);
@@ -976,7 +978,9 @@ export function ReviewWorkspace(props: ReviewWorkspaceProps) {
         <AssistDrawer
           source={p.assistSource}
           target={assistTarget}
-          onClose={() => setAssistTarget(null)}
+          files={filePaths}
+          onJumpToFile={scrollToFile}
+          onClose={closeAssist}
         />
       )}
     </div>
