@@ -10,6 +10,7 @@ import {
   SseHelloSchema,
   type AppEvent,
 } from '@relay/shared';
+import { calendarKeys } from './calendarApi';
 import { gamificationKeys } from './gamificationApi';
 import { kpiKeys } from './kpiApi';
 import { mrKeys } from './mrApi';
@@ -131,6 +132,8 @@ export function invalidationsFor(event: AppEvent): Invalidation {
       return [gamificationKeys.root];
     case 'reviews.changed':
       return [reviewsKeys.desk];
+    case 'calendar.changed':
+      return [calendarKeys.root];
     case 'cockpit.changed':
       return [['cockpit', event.what], notificationKeys.root];
     case 'testbench.changed':

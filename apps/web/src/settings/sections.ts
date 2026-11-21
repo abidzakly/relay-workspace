@@ -105,6 +105,12 @@ export const SETTINGS_SECTIONS: SettingsSection[] = [
     ],
   },
   {
+    id: 'calendar',
+    group: 'connections',
+    title: 'Google Calendar',
+    keywords: ['google', 'calendar', 'meeting', 'meet', 'oauth', 'client id', 'alert', 'floating'],
+  },
+  {
     id: 'ai',
     group: 'connections',
     title: 'AI engines',

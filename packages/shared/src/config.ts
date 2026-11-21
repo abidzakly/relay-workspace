@@ -36,6 +36,8 @@ export const NOTIFICATION_EVENTS = [
   'readyForMr',
   /** A cockpit agent session finished / waits for input. */
   'agentDone',
+  /** Google Calendar: a meeting you have not declined has started. */
+  'meetingStarted',
   /** Reviews: you were asked to review, or mentioned, on a merge request. */
   'reviewRequested',
 ] as const;

@@ -279,6 +279,7 @@ const STALE_AFTER_MS: Record<string, number> = {
   pipelineFailed: 3 * DAY,
   readyForMr: 3 * DAY,
   agentDone: HOUR,
+  meetingStarted: HOUR,
   reviewRequested: 3 * DAY,
   mismatch: 7 * DAY,
 };

@@ -38,6 +38,7 @@ export * from './mrCreate';
 export * from './cockpit';
 export * from './testBench';
 export * from './device';
+export * from './calendar';
 export * from './cleanup';
 export * from './identity';
 export * from './features';
