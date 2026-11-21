@@ -10,8 +10,9 @@ export type HelperState = 'start' | 'working' | 'needs-you' | 'idle' | 'finished
 
 /** What a session's helper is doing, from the server's own fields. A kill has no clean exit, so it reads as failed. */
 export function helperState(
-  s: Pick<CockpitSession, 'state' | 'waiting' | 'exitCode' | 'lastOutputAt'>,
+  s: Pick<CockpitSession, 'state' | 'waiting' | 'exitCode' | 'lastOutputAt' | 'restorable'>,
 ): HelperState {
+  if (s.state === 'exited' && s.restorable) return 'idle';
   if (s.state === 'exited') return s.exitCode === 0 ? 'finished' : 'failed';
   if (s.waiting) return 'needs-you';
   if (s.lastOutputAt === null) return 'start';

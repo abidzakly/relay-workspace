@@ -149,6 +149,8 @@ export interface ClaudeConversationOptions {
   execEffort?: string;
   /** `ask` (default): the user picks at Approve. `auto`: switch silently. */
   execSwitch?: 'ask' | 'auto';
+  /** The mode the CLI was started in (`--permission-mode`). Default `plan`. */
+  startMode?: ConversationMode;
   /** Tests inject a fake child. */
   spawnChild?: (
     file: string,
@@ -172,6 +174,10 @@ export class ClaudeConversation implements NodePtyProcess {
   private dataListener: ((data: string) => void) | null = null;
   private exitListener: ((e: { exitCode: number }) => void) | null = null;
   private statusListener: ((s: ConversationStatus) => void) | null = null;
+  private resumeListener: ((id: string) => void) | null = null;
+  private modeListener: ((m: ConversationMode) => void) | null = null;
+  /** The CLI's own session id (`system/init`), for `--resume` after a restart. */
+  private resumeId: string | null = null;
   /** Events from before a listener attached. */
   private backlog: string[] = [];
   private turnsInFlight = 0;
@@ -188,6 +194,7 @@ export class ClaudeConversation implements NodePtyProcess {
     this.execModel = o.execModel;
     this.execEffort = o.execEffort;
     this.execSwitch = o.execSwitch ?? 'ask';
+    this.mode = o.startMode ?? 'plan';
     const start =
       o.spawnChild ??
       ((file, args, opts) => {
@@ -230,6 +237,17 @@ export class ClaudeConversation implements NodePtyProcess {
 
   onStatus(listener: (s: ConversationStatus) => void): void {
     this.statusListener = listener;
+  }
+
+  /** The CLI's session id, once known: what `--resume` needs after a restart. */
+  onResumeId(listener: (id: string) => void): void {
+    this.resumeListener = listener;
+    if (this.resumeId) listener(this.resumeId);
+  }
+
+  /** Every permission-mode change, so a restart resumes in the same mode. */
+  onMode(listener: (m: ConversationMode) => void): void {
+    this.modeListener = listener;
   }
 
   /** The session's input: one `ConversationCommand` as JSON. Anything else is ignored, it cannot reach the agent. */
@@ -287,6 +305,7 @@ export class ClaudeConversation implements NodePtyProcess {
         break;
       case 'mode':
         this.mode = cmd.mode;
+        this.modeListener?.(this.mode);
         this.control({ subtype: 'set_permission_mode', mode: cmd.mode });
         this.emit({ k: 'mode', mode: cmd.mode });
         break;
@@ -351,6 +370,7 @@ export class ClaudeConversation implements NodePtyProcess {
     });
     if (mode) {
       this.mode = mode;
+      this.modeListener?.(this.mode);
       this.emit({ k: 'mode', mode });
       if (this.execSwitch === 'auto' || cmd.execModel === true) this.switchToExec();
       else if (this.execModel) {
@@ -386,6 +406,14 @@ export class ClaudeConversation implements NodePtyProcess {
       return;
     }
     switch (e.type) {
+      case 'system': {
+        const id = str(e.session_id);
+        if (id && id !== this.resumeId) {
+          this.resumeId = id;
+          this.resumeListener?.(id);
+        }
+        break;
+      }
       case 'assistant':
         if (!e.parent_tool_use_id) this.onAssistant(rec(e.message));
         break;

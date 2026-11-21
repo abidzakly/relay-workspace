@@ -48,6 +48,8 @@ export function cardStartPrompt(card: {
   attachments?: readonly { path: string; source: 'card' | 'mine' | 'figma'; label: string }[];
   /** Attachments that could not be saved or downloaded. */
   failedAttachments?: readonly string[];
+  /** Stacked start: the branch was made from another card's branch, after that card's agent pushed its work. */
+  stackedOn?: { title: string; branch: string } | null;
 }): string {
   const push = card.replaced
     ? `git push --force-with-lease -u origin ${card.branchName}`
@@ -84,7 +86,7 @@ ${failed.map((f) => `- ${f}`).join('\n')}`);
 These points override the workflow file for this session:
 - The card status is already "In Progress" and the branch already exists: skip the steps that set them up.
 - Finish by pushing: ${push}
-${card.reused ? `- The branch existed before this start: look at its commits (git log ${card.base}..HEAD) and build on them instead of starting over.\n` : ''}${card.replaced ? `- The branch existed before and was just reset to ${card.base}; origin may still hold the old commits. Do not merge or pull them in: the force push replaces them.\n` : ''}- Do NOT create a merge request and do not run mrc. I review the pushed branch first and open the MR myself.
+${card.stackedOn ? `- This branch stacks on ${card.stackedOn.branch} (card "${card.stackedOn.title}"): its work is already here. Build on top of it, do not redo or revert it. The MR will target ${card.stackedOn.branch}.\n` : ''}${card.reused ? `- The branch existed before this start: look at its commits (git log ${card.base}..HEAD) and build on them instead of starting over.\n` : ''}${card.replaced ? `- The branch existed before and was just reset to ${card.base}; origin may still hold the old commits. Do not merge or pull them in: the force push replaces them.\n` : ''}- Do NOT create a merge request and do not run mrc. I review the pushed branch first and open the MR myself.
 
 This session starts in plan mode. Read the card, the attachments and the relevant code, then present a plan for my approval:
 1. **Requirements**: a numbered list of everything this card asks for, merged from ALL of it: acceptance criteria, requirements, tasks, notes, description, to-dos, tables, images and my instructions. Acceptance criteria are often only a subset: an item that appears only in another section is still a requirement. Merge duplicates. Tag each one [card], [parent], [image] or [mine] by where it comes from, and mark [not in AC] when the card has acceptance criteria that do not cover it.

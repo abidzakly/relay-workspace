@@ -14,6 +14,7 @@ import {
   type RunTargets,
   type SessionKind,
   type TestRunProfile,
+  type ConversationMode,
   isConversationKind,
 } from '@relay/shared';
 import type { Logger } from '../../util/logger';
@@ -24,6 +25,7 @@ import { ClaudeConversation } from './claudeConversation';
 import { CursorConversation } from './cursorConversation';
 import { CURSOR_BIN, CURSOR_MODEL } from './cursorCli';
 import { CockpitHostError } from './host';
+import type { PersistedSpec, SessionStore } from './sessionStore';
 import { defaultShell, launchSpec, signalTree, which } from '../../util/platform';
 
 /**
@@ -100,6 +102,17 @@ interface Live {
   ring: RingBuffer;
   listeners: Set<(e: SessionEvent) => void>;
   bytesSinceInput: number;
+  /** Set for an agent session kept on disk: how to start it again. */
+  spec?: PersistedSpec;
+  /** The user ended it: nothing of it is kept any more. */
+  ended?: boolean;
+}
+
+interface Spawned {
+  proc: NodePtyProcess;
+  title: string;
+  /** Throwaway files of the run, removed when the process exits. */
+  cleanup: () => void;
 }
 
 export interface StartInput {
@@ -119,6 +132,10 @@ export interface StartInput {
   execModel?: string | undefined;
   execEffort?: AgentEffort | undefined;
   execSwitch?: 'ask' | 'auto' | undefined;
+  /** Shown in the session list (the card title for a card's agent). Unset = the program's name. */
+  title?: string | undefined;
+  /** The board card this session works on. */
+  cardId?: string | undefined;
 }
 
 /** Flavored `lib/main_*.dart`, and whether `lib/main.dart` is the only entrypoint. */
@@ -391,10 +408,36 @@ export class SessionManager {
     private readonly log: Logger,
     private readonly now: () => number = Date.now,
     pty?: NodePtyModule | null,
+    /** Agent sessions kept on disk until ended. Unset = memory only. */
+    private readonly store: SessionStore | null = null,
   ) {
     this.pty = pty === undefined ? loadNodePty(log) : pty;
     this.timer = setInterval(() => this.tick(), 1_000);
     this.timer.unref();
+    this.restore();
+  }
+
+  /** Sessions from before a restart: their chat replays, their process starts again on the next message. */
+  private restore(): void {
+    if (!this.store) return;
+    for (const p of this.store.loadAll()) {
+      if (this.sessions.has(p.info.id)) continue;
+      const ring = new RingBuffer();
+      if (p.events) ring.append(p.events);
+      this.sessions.set(p.info.id, {
+        info: {
+          ...p.info,
+          state: 'exited',
+          waiting: false,
+          restorable: true,
+        },
+        proc: null,
+        ring,
+        listeners: new Set(),
+        bytesSinceInput: 0,
+        spec: p.spec,
+      });
+    }
   }
 
   private emit(s: Live, e: SessionEvent): void {
@@ -409,7 +452,12 @@ export class SessionManager {
 
   private setState(s: Live, patch: Partial<CockpitSession>): void {
     s.info = { ...s.info, ...patch };
+    this.persist(s);
     this.emit(s, { t: 'state', session: s.info });
+  }
+
+  private persist(s: Live): void {
+    if (s.spec && !s.ended) this.store?.saveMeta(s.info, s.spec);
   }
 
   /** Idle detection + pruning of long-exited sessions. */
@@ -417,6 +465,8 @@ export class SessionManager {
     const now = this.now();
     for (const [id, s] of this.sessions) {
       if (s.info.state === 'exited') {
+        // A kept agent session stays until the user ends it.
+        if (s.spec && !s.ended) continue;
         if (now - (s.info.lastOutputAt ?? s.info.startedAt) > EXITED_TTL_MS)
           this.sessions.delete(id);
         continue;
@@ -431,12 +481,16 @@ export class SessionManager {
     }
   }
 
-  start(i: StartInput): CockpitSession {
-    if (!this.pty && !isConversationKind(i.kind))
-      throw new CockpitHostError('pty_unavailable', 'node-pty is not installed on the host.', 409);
+  private checkCapacity(): void {
     const alive = [...this.sessions.values()].filter((s) => s.info.state !== 'exited').length;
     if (alive >= MAX_SESSIONS)
       throw new CockpitHostError('too_many_sessions', 'Too many sessions: close one first.', 409);
+  }
+
+  start(i: StartInput): CockpitSession {
+    if (!this.pty && !isConversationKind(i.kind))
+      throw new CockpitHostError('pty_unavailable', 'node-pty is not installed on the host.', 409);
+    this.checkCapacity();
     if (i.testRun && i.kind !== 'claude' && i.kind !== 'cursor') {
       throw new CockpitHostError(
         'validation',
@@ -444,6 +498,54 @@ export class SessionManager {
         422,
       );
     }
+    const spawned = this.spawn(i);
+    const id = randomUUID();
+    // A device test runs on a throwaway token and directory: nothing of it is kept.
+    const spec: PersistedSpec | undefined =
+      this.store && !i.testRun && (i.kind === 'claude' || i.kind === 'cursor')
+        ? {
+            cwd: i.cwd,
+            wsId: i.wsId,
+            kind: i.kind,
+            ...(i.model ? { model: i.model } : {}),
+            ...(i.execModel ? { execModel: i.execModel } : {}),
+            ...(i.execEffort ? { execEffort: i.execEffort } : {}),
+            ...(i.execSwitch ? { execSwitch: i.execSwitch } : {}),
+          }
+        : undefined;
+    const s: Live = {
+      info: {
+        id,
+        workspaceId: i.wsId,
+        kind: i.kind,
+        title: i.title?.trim() || spawned.title,
+        state: isConversationKind(i.kind) ? 'idle' : 'running',
+        waiting: false,
+        exitCode: null,
+        startedAt: this.now(),
+        lastOutputAt: null,
+        cols: i.cols,
+        rows: i.rows,
+        ...(i.cardId ? { cardId: i.cardId } : {}),
+      },
+      proc: null,
+      ring: new RingBuffer(),
+      listeners: new Set(),
+      bytesSinceInput: 0,
+      ...(spec ? { spec } : {}),
+    };
+    this.sessions.set(id, s);
+    this.persist(s);
+    this.wire(s, spawned);
+    this.log.info({ id, kind: i.kind, ws: i.wsId }, 'cockpit session started');
+    return s.info;
+  }
+
+  /** Starts the program of a session. `resume` continues a kept conversation (`--resume`). */
+  private spawn(
+    i: StartInput,
+    resume?: { id: string | undefined; mode: ConversationMode | undefined },
+  ): Spawned {
     const cursorTest = i.testRun && i.kind === 'cursor' ? i.testRun : null;
     const mcpConfig =
       i.testRun && i.kind === 'claude' ? writeTestRunMcpConfig(i.testRun) : undefined;
@@ -457,6 +559,11 @@ export class SessionManager {
       cursorTest?.cursorModel,
       i.model,
     );
+    if (resume && i.kind === 'claude') {
+      const at = cmd.args.indexOf('--permission-mode');
+      if (at >= 0 && resume.mode) cmd.args[at + 1] = resume.mode;
+      if (resume.id) cmd.args.push('--resume', resume.id);
+    }
     const cwd = cursorTest ? writeCursorTestRunDir(cursorTest) : i.cwd;
     let proc: NodePtyProcess;
     try {
@@ -470,7 +577,11 @@ export class SessionManager {
               ...(i.model ? { model: i.model } : {}),
               ...(cursorTest
                 ? { startMode: 'acceptEdits' as const }
-                : { startMode: 'plan' as const, forceAfterPlan: true }),
+                : {
+                    startMode: resume?.mode ?? ('plan' as const),
+                    forceAfterPlan: true,
+                    ...(resume?.id ? { resumeId: resume.id } : {}),
+                  }),
             })
           : i.kind === 'claude'
             ? new ClaudeConversation({
@@ -482,6 +593,7 @@ export class SessionManager {
                 ...(i.execModel ? { execModel: i.execModel } : {}),
                 ...(i.execEffort ? { execEffort: i.execEffort } : {}),
                 ...(i.execSwitch ? { execSwitch: i.execSwitch } : {}),
+                ...(resume?.mode ? { startMode: resume.mode } : {}),
               })
             : this.pty!.spawn(cmd.file, cmd.args, {
                 name: 'xterm-256color',
@@ -499,34 +611,43 @@ export class SessionManager {
         409,
       );
     }
-    const id = randomUUID();
-    const s: Live = {
-      info: {
-        id,
-        workspaceId: i.wsId,
-        kind: i.kind,
-        title: cmd.title,
-        state: isConversationKind(i.kind) ? 'idle' : 'running',
-        waiting: false,
-        exitCode: null,
-        startedAt: this.now(),
-        lastOutputAt: null,
-        cols: i.cols,
-        rows: i.rows,
-      },
+    return {
       proc,
-      ring: new RingBuffer(),
-      listeners: new Set(),
-      bytesSinceInput: 0,
+      title: cmd.title,
+      cleanup: () => {
+        // The run token in the Cursor test dir dies with the session.
+        if (cursorTest) rmSync(cwd, { recursive: true, force: true });
+        // So does the Claude one's MCP config.
+        if (mcpConfig) rmSync(mcpConfig, { force: true });
+      },
     };
-    this.sessions.set(id, s);
+  }
+
+  private wire(s: Live, spawned: Spawned): void {
+    const proc = spawned.proc;
+    s.proc = proc;
     if (isConversation(proc)) {
       proc.onStatus(({ working, waiting }) =>
         this.setState(s, { state: working ? 'running' : 'idle', waiting }),
       );
+      if (s.spec) {
+        proc.onResumeId((resumeId) => {
+          if (!s.spec || s.spec.resumeId === resumeId) return;
+          s.spec = { ...s.spec, resumeId };
+          this.persist(s);
+        });
+        proc.onMode((mode) => {
+          if (!s.spec) return;
+          s.spec = { ...s.spec, mode };
+          this.persist(s);
+        });
+      }
     }
     proc.onData((data) => {
+      // Ignore a process that was replaced (a restart of a kept session).
+      if (s.proc !== proc) return;
       const offset = s.ring.append(data);
+      if (s.spec && !s.ended) this.store?.appendEvents(s.info.id, data);
       s.bytesSinceInput += data.length;
       const wasIdle = s.info.state !== 'running';
       s.info = { ...s.info, lastOutputAt: this.now() };
@@ -536,16 +657,54 @@ export class SessionManager {
       }
     });
     proc.onExit(({ exitCode }) => {
+      spawned.cleanup();
+      if (s.proc !== proc) return;
       s.proc = null;
-      // The run token in the Cursor test dir dies with the session.
-      if (cursorTest) rmSync(cwd, { recursive: true, force: true });
-      // So does the Claude one's MCP config.
-      if (mcpConfig) rmSync(mcpConfig, { force: true });
-      this.setState(s, { state: 'exited', waiting: false, exitCode, lastOutputAt: this.now() });
-      this.emit(s, { t: 'exit', exitCode });
+      this.setState(s, {
+        state: 'exited',
+        waiting: false,
+        exitCode,
+        lastOutputAt: this.now(),
+        ...(s.spec && !s.ended ? { restorable: true } : {}),
+      });
+      // A kept session only pauses: its viewers stay attached for when it resumes.
+      if (!s.info.restorable) this.emit(s, { t: 'exit', exitCode });
     });
-    this.log.info({ id, kind: i.kind, ws: i.wsId }, 'cockpit session started');
-    return s.info;
+  }
+
+  /** Starts the agent of a kept session again, continuing its conversation. */
+  private revive(s: Live): void {
+    const spec = s.spec;
+    if (!spec || s.ended)
+      throw new CockpitHostError('session_exited', 'The session has ended.', 409);
+    if (!existsSync(spec.cwd)) {
+      throw new CockpitHostError(
+        'session_exited',
+        'The folder of this session is gone, so it cannot continue. Start a new one.',
+        409,
+      );
+    }
+    this.checkCapacity();
+    const spawned = this.spawn(
+      {
+        cwd: spec.cwd,
+        wsId: spec.wsId,
+        kind: spec.kind,
+        cols: s.info.cols,
+        rows: s.info.rows,
+        model: spec.model,
+        execModel: spec.execModel,
+        execEffort: spec.execEffort,
+        execSwitch: spec.execSwitch,
+      },
+      { id: spec.resumeId, mode: spec.mode },
+    );
+    const { restorable: _r, ...rest } = s.info;
+    s.info = { ...rest, state: 'idle', waiting: false, exitCode: null };
+    this.wire(s, spawned);
+    this.persist(s);
+    this.emit(s, { t: 'state', session: s.info });
+    this.log.info({ id: s.info.id, kind: spec.kind }, 'cockpit session resumed');
   }
 
   list(): CockpitSession[] {
@@ -560,13 +719,14 @@ export class SessionManager {
 
   input(id: string, data: string): void {
     const s = this.live(id);
-    if (!s.proc) throw new CockpitHostError('session_exited', 'The session has ended.', 409);
+    if (!s.proc) this.revive(s);
+    const proc = s.proc!;
     s.bytesSinceInput = 0;
     // A conversation decides for itself: a mode change, for one, is not the user answering.
-    if (s.info.waiting && !isConversation(s.proc)) {
+    if (s.info.waiting && !isConversation(proc)) {
       this.setState(s, { waiting: false });
     }
-    s.proc.write(data);
+    proc.write(data);
   }
 
   resize(id: string, cols: number, rows: number): void {
@@ -575,9 +735,16 @@ export class SessionManager {
     s.info = { ...s.info, cols, rows };
   }
 
+  /** The user ends the session: its process stops and nothing of it is kept. */
   kill(id: string): void {
     const s = this.live(id);
+    if (s.spec && !s.ended) {
+      s.ended = true;
+      this.store?.remove(id);
+      if (s.info.restorable) s.info = { ...s.info, restorable: false };
+    }
     if (!s.proc) {
+      this.emit(s, { t: 'exit', exitCode: s.info.exitCode });
       this.sessions.delete(id);
       return;
     }
@@ -587,15 +754,24 @@ export class SessionManager {
   /** Replay from `since`, then live events until `detach`. */
   attach(id: string, since: number, listener: (e: SessionEvent) => void): () => void {
     const s = this.live(id);
-    const r = s.ring.since(since);
+    let r = s.ring.since(since);
+    // The ring dropped its start, but a kept session has every event on disk.
+    if (r.reset && s.spec && !s.ended && this.store) {
+      const all = this.store.readEvents(id);
+      if (all.length === s.ring.end) {
+        r = { data: all.slice(since), reset: false, from: since };
+      }
+    }
     if (r.reset) listener({ t: 'reset', offset: r.from });
     if (r.data) listener({ t: 'data', data: r.data, offset: r.from });
     listener({ t: 'state', session: s.info });
-    if (s.info.state === 'exited') listener({ t: 'exit', exitCode: s.info.exitCode });
+    if (s.info.state === 'exited' && !s.info.restorable)
+      listener({ t: 'exit', exitCode: s.info.exitCode });
     s.listeners.add(listener);
     return () => s.listeners.delete(listener);
   }
 
+  /** The host shuts down: processes stop, kept sessions stay on disk. */
   close(): void {
     clearInterval(this.timer);
     for (const s of this.sessions.values()) {

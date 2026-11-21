@@ -51,6 +51,8 @@ function modelOptions(current: string | null) {
 const USER_FOLD_LINES = 6;
 
 function statusOf(s: SessionView, mode: ConversationMode, deciding: boolean) {
+  if (s.state === 'exited' && s.restorable)
+    return { label: 'Paused: reply to continue', dot: 'bg-muted-foreground' };
   if (s.state === 'exited') return { label: 'Session ended', dot: 'bg-muted-foreground' };
   if (deciding) return { label: 'Waiting for your decision', dot: 'bg-primary' };
   if (s.state === 'running') {
@@ -454,7 +456,9 @@ export function ConversationView({ s }: { s: SessionView }) {
   const [error, setError] = useState<string | null>(null);
   const scroller = useRef<HTMLDivElement>(null);
   const stick = useRef(true);
-  const exited = s.state === 'exited';
+  // Paused = the host restarted: the chat is kept and the next message resumes the agent.
+  const paused = s.state === 'exited' && !!s.restorable;
+  const exited = s.state === 'exited' && !paused;
   const deciding = doc.items.some((it) => it.kind === 'ask' && !it.ask.outcome);
   const status = statusOf(s, doc.mode, deciding);
   const working = !exited && s.state === 'running';
@@ -486,7 +490,7 @@ export function ConversationView({ s }: { s: SessionView }) {
           {status.label}
         </span>
         <span className="ml-auto" />
-        {!exited && (
+        {!exited && !paused && (
           <>
             <Select
               aria-label="How the agent works"

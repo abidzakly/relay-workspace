@@ -56,6 +56,7 @@ import { CleanupService } from './services/cleanup/cleanupService';
 import { recordAttachments } from './services/cockpit/attachmentStore';
 import { CardContentService } from './services/cockpit/cardContent';
 import { CockpitWorkflowService } from './services/cockpit/workflow';
+import { CardStartQueueService } from './services/cockpit/cardStartQueue';
 import { defaultClonesRoot, GitExec } from './services/gitExec';
 import { GamificationService } from './services/gamificationService';
 import { HttpClient } from './services/httpClient';
@@ -265,7 +266,9 @@ async function main(): Promise<void> {
   gamification.start();
 
   // Mobile Dev Cockpit: local host, or the Mac through the agent in Docker. AI = Claude CLI, API key as fallback.
-  const cockpitHost = agent ? new RemoteCockpitHost(agent) : new LocalCockpitHost({ log });
+  const cockpitHost = agent
+    ? new RemoteCockpitHost(agent)
+    : new LocalCockpitHost({ log, sessionsDir: join(resolveDataDir(env), 'cockpit-sessions') });
   const ai = new AiService({
     store: app,
     log,
@@ -315,6 +318,9 @@ async function main(): Promise<void> {
     figmaSnapshots,
     onAttachments: (a) => recordAttachments(app, a),
   });
+  // Stacked bulk starts: a card waits for its parent card's branch to be pushed, then starts from it.
+  const startQueue = new CardStartQueueService({ store: app, workflow, workspaces, log, bus });
+  startQueue.start();
   const reviewDiff = createDiffReader({
     config: store,
     cache: app,
@@ -473,6 +479,7 @@ async function main(): Promise<void> {
       workspaces,
       sessions,
       workflow,
+      startQueue,
       cleanup,
       mrCreate: new MrCreateService({
         config: store,

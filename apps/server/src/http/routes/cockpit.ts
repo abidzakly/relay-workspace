@@ -30,6 +30,7 @@ import type { ReadyForMrService } from '../../services/readyForMr';
 import type { WorkspaceService } from '../../services/cockpit/workspaces';
 import type { CockpitSessionService } from '../../services/cockpit/sessionService';
 import type { CockpitWorkflowService } from '../../services/cockpit/workflow';
+import type { CardStartQueueService } from '../../services/cockpit/cardStartQueue';
 import { ActionError } from '../../services/actionError';
 import type { CleanupService } from '../../services/cleanup/cleanupService';
 import { registerCockpitStream } from '../cockpitStream';
@@ -59,6 +60,8 @@ export interface CockpitDeps {
   workspaces: WorkspaceService;
   sessions: CockpitSessionService;
   workflow: CockpitWorkflowService;
+  /** Stacked card starts waiting for their parent card. */
+  startQueue?: CardStartQueueService;
   /** Storage cleanup (no AI). */
   cleanup?: CleanupService;
   testBench?: TestBenchService;
@@ -68,6 +71,31 @@ export interface CockpitDeps {
   aiRun?: AiRunService;
   evidenceDir?: string;
 }
+
+const QueueBody = z
+  .object({
+    cardId: z.string().min(1).max(64),
+    parentCardId: z.string().min(1).max(64),
+    workspaceId: WorkspaceIdSchema,
+    agent: z.enum(['claude', 'cursor']),
+    existing: z.enum(['replace', 'reuse']).optional(),
+    extraPrompt: z.string().max(8_000).optional(),
+    figmaUrl: z.string().max(4_000).optional(),
+    attachments: z
+      .array(
+        z
+          .object({
+            name: z.string().min(1).max(255),
+            dataBase64: z.string().min(1).max(7_000_000),
+          })
+          .strict(),
+      )
+      .max(10)
+      .optional(),
+  })
+  .strict();
+const QueueParams = z.object({ id: z.string().uuid() });
+const QueueStartBody = z.object({ existing: z.enum(['replace', 'reuse']).optional() }).strict();
 
 const CardStartBody = z
   .object({
@@ -347,6 +375,32 @@ export function registerCockpitRoutes(app: FastifyInstance, deps: CockpitDeps): 
   app.post('/api/cockpit/card-start', { bodyLimit: 72 * 1024 * 1024 }, async (req) => {
     const b = parseWith(CardStartBody, req.body);
     return run(() => deps.workflow.cardStart(b));
+  });
+  // Stacked starts: a card waits for another card's branch to be pushed, then starts from it.
+  app.get('/api/cockpit/card-start/queue', async () =>
+    run(() => ({ items: deps.startQueue?.list() ?? [] })),
+  );
+  app.post('/api/cockpit/card-start/queue', { bodyLimit: 72 * 1024 * 1024 }, async (req) => {
+    const b = parseWith(QueueBody, req.body);
+    return run(() => {
+      if (!deps.startQueue) throw new ActionError(404, 'not_available', 'Queued starts are off.');
+      return deps.startQueue.enqueue(b);
+    });
+  });
+  app.post('/api/cockpit/card-start/queue/:id/start', async (req) => {
+    const { id } = parseWith(QueueParams, req.params);
+    const b = parseWith(QueueStartBody, req.body ?? {});
+    return run(() => {
+      if (!deps.startQueue) throw new ActionError(404, 'not_available', 'Queued starts are off.');
+      return deps.startQueue.startNow(id, b.existing);
+    });
+  });
+  app.delete('/api/cockpit/card-start/queue/:id', async (req) => {
+    const { id } = parseWith(QueueParams, req.params);
+    return run(() => {
+      deps.startQueue?.cancel(id);
+      return { ok: true };
+    });
   });
   // Storage cleanup: scan writes nothing; apply re-scans and removes only ids that still match a rule.
   app.get('/api/cockpit/cleanup/last', async () =>

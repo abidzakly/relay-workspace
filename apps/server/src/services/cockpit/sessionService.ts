@@ -81,7 +81,11 @@ export class CockpitSessionService {
     return items.map((s) => ({ ...s, turn: this.turns.get(s.id) ?? null }));
   }
 
-  async start(req: SessionStartInput): Promise<CockpitSession> {
+  /** `card`: the session works on that board card; the list shows its title. */
+  async start(
+    req: SessionStartInput,
+    card?: { id: string; title: string },
+  ): Promise<CockpitSession> {
     const parsed = SessionStartSchema.parse(req);
     if (parsed.kind === 'claude' || parsed.kind === 'cursor') {
       // Plan on the big model, execute on the cheaper one. A model picked by the caller other than the plan model
@@ -110,6 +114,7 @@ export class CockpitSessionService {
       execModel: parsed.execModel,
       execEffort: parsed.execEffort,
       execSwitch: parsed.execSwitch,
+      ...(card ? { title: card.title, cardId: card.id } : {}),
     });
     this.changed(s.id);
     this.ensurePolling();

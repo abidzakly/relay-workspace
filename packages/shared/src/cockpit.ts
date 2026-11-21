@@ -170,6 +170,13 @@ export const CockpitSessionSchema = z.object({
   lastOutputAt: EpochMsSchema.nullable(),
   cols: z.number().int(),
   rows: z.number().int(),
+  /** The board card this session works on (started from a card). */
+  cardId: z.string().max(64).optional(),
+  /**
+   * Its process is gone (host restart) but its chat is kept: the next message starts the agent again and resumes the
+   * same conversation. Kept until the user ends the session.
+   */
+  restorable: z.boolean().optional(),
 });
 export type CockpitSession = z.infer<typeof CockpitSessionSchema>;
 
@@ -284,4 +291,23 @@ export interface CardContentPreview {
 export interface CardStartAttachment {
   name: string;
   dataBase64: string;
+}
+
+/** A stacked card start waiting for its parent card's branch to be pushed (bulk start, "after another card"). */
+export interface QueuedCardStart {
+  id: string;
+  cardId: string;
+  cardTitle: string;
+  parentCardId: string;
+  parentTitle: string;
+  /** The parent card's Branch formula: the base of this card's branch. */
+  parentBranch: string | null;
+  workspaceId: string;
+  agent: 'claude' | 'cursor';
+  status: 'queued' | 'starting' | 'started' | 'failed';
+  error: string | null;
+  errorCode: string | null;
+  sessionId: string | null;
+  startedWorkspaceId: string | null;
+  createdAt: number;
 }

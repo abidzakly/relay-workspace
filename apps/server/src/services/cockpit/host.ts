@@ -74,6 +74,10 @@ export interface SessionStartOpts {
   execModel?: string | undefined;
   execEffort?: AgentEffort | undefined;
   execSwitch?: 'ask' | 'auto' | undefined;
+  /** Shown in the session list: the card title for a card's agent. */
+  title?: string | undefined;
+  /** The board card the session works on. */
+  cardId?: string | undefined;
 }
 
 /** Every workspace call names the directory (the host re-validates it against its roots) and the workspace id. */

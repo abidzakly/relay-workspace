@@ -32,7 +32,7 @@ export const AppEventSchema = z.discriminatedUnion('type', [
   /** Mobile Dev Cockpit state moved: ready-for-MR list, agent sessions, workspaces. */
   z.object({
     type: z.literal('cockpit.changed'),
-    what: z.enum(['ready', 'sessions', 'workspaces']),
+    what: z.enum(['ready', 'sessions', 'workspaces', 'queue']),
     /** Session id for `sessions` (agent finished / waits), when one session is meant. */
     id: z.string().max(64).optional(),
   }),
