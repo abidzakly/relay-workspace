@@ -4,6 +4,8 @@ import { registerSystemRoutes } from './routes/system';
 import { NO_PRESETS, type LoadedPresets } from '../config/presets';
 import type { ReviewDeskService } from '../services/reviewDesk';
 import { registerReviewsRoutes } from './routes/reviews';
+import { registerCalendarRoutes } from './routes/calendar';
+import type { CalendarService } from '../services/calendar/calendarService';
 import Fastify, { type FastifyBaseLogger, type FastifyInstance } from 'fastify';
 import type { AuditWriter } from '../audit/auditLog';
 import type { SyncStatus } from '@relay/shared';
@@ -119,6 +121,8 @@ export interface DashboardAppOptions {
   cockpit?: CockpitDeps;
   /** Reviews desk (absent in tests = no Reviews routes). */
   reviewDesk?: ReviewDeskService;
+  /** Google Calendar meetings (absent in tests = no calendar routes). */
+  calendar?: CalendarService;
   /** Release script settings (absent in tests = no routes). */
   scripts?: ScriptConfigService;
   /** SSE tuning (tests / ops); defaults in `http/sse.ts`. */
@@ -260,6 +264,7 @@ export async function buildDashboardApp(opts: DashboardAppOptions): Promise<Fast
     if (opts.gamification) registerGamificationRoutes(app, { gamification: opts.gamification });
     registerMrActionRoutes(app, { actions: mrActions });
     if (opts.reviewDesk) registerReviewsRoutes(app, { desk: opts.reviewDesk, audit: opts.audit });
+    if (opts.calendar) registerCalendarRoutes(app, { calendar: opts.calendar, audit: opts.audit });
     if (opts.scripts) registerScriptRoutes(app, { scripts: opts.scripts, audit: opts.audit });
     registerSystemRoutes(app, opts.presets ?? NO_PRESETS);
     registerCardActionRoutes(app, { actions: cardActions });

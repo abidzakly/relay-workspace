@@ -22,6 +22,7 @@ import { AppearanceCard } from '@/settings/AppearanceCard';
 import { VisualsCard } from '@/settings/VisualsCard';
 import { BackupCard } from '@/settings/BackupCard';
 import { AiCard } from '@/settings/AiCard';
+import { CalendarCard } from '@/settings/CalendarCard';
 import { DriveCard, toDriveDraft } from '@/settings/DriveCard';
 import { GitlabCard, toGitlabDraft } from '@/settings/GitlabCard';
 import { NotificationsCard } from '@/settings/NotificationsCard';
@@ -61,6 +62,7 @@ function cards(s: GlobalConfigPublic): Record<string, ReactNode> {
     reviewer: <ReviewerCard settings={s} />,
     notion: <NotionCard key={`nt:${JSON.stringify(toNotionDraft(s))}`} settings={s} />,
     drive: <DriveCard key={`dr:${JSON.stringify(toDriveDraft(s))}`} settings={s} />,
+    calendar: <CalendarCard settings={s} />,
     ai: <AiCard settings={s} />,
     'ai-prompts': <AiPromptsCard settings={s} />,
     repos: <ReposCard settings={s} />,

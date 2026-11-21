@@ -21,6 +21,7 @@ import { moveLegacyDirs } from './config/legacyDirs';
 import { listenDashboard, listenWebhook } from './http/listen';
 import { buildWebhookApp } from './http/webhookApp';
 import { ReviewDeskService } from './services/reviewDesk';
+import { CalendarService } from './services/calendar/calendarService';
 import { normalizeWebhook } from './services/webhookEvents';
 import { BuildQueue } from './services/buildQueue';
 import { CardActions } from './services/cardActions';
@@ -130,6 +131,15 @@ async function main(): Promise<void> {
   const ready = new ReadyForMrService({ config: store, store: app, http, log, notifier, bus });
   // Reviews (the reviewer's desk): webhook first, a light to-do poll only for projects no webhook reaches.
   const reviewDesk = new ReviewDeskService({ config: store, http, log, audit, bus, notifier });
+  // Google Calendar (read-only): meetings for the floating alert + a push when one starts.
+  const calendar = new CalendarService({
+    config: store,
+    http,
+    bus,
+    notifier,
+    log,
+    redirectUri: `http://127.0.0.1:${env.DASHBOARD_PORT}/api/calendar/oauth/callback`,
+  });
   const webhooks = new WebhookProcessor({
     config: store,
     store: app,
@@ -457,6 +467,7 @@ async function main(): Promise<void> {
   });
   const dashboard = await buildDashboardApp({
     reviewDesk,
+    calendar,
     scripts,
     cockpit: {
       testBench,
@@ -553,6 +564,7 @@ async function main(): Promise<void> {
   ready.start();
   cleanup.start();
   reviewDesk.start();
+  calendar.start();
 
   const shutdown = (signal: string) => {
     log.info({ signal }, 'shutting down');
@@ -563,6 +575,7 @@ async function main(): Promise<void> {
       .then(() => ready.close())
       .then(() => cleanup.stop())
       .then(() => reviewDesk.stop())
+      .then(() => calendar.stop())
       .then(() => sessions.close())
       .then(() => figmaBridge.close())
       .then(() => webhooks.close())

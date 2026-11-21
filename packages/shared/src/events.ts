@@ -47,6 +47,8 @@ export const AppEventSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('settings.changed') }),
   /** The Reviews desk was re-read or a local mark changed. */
   z.object({ type: z.literal('reviews.changed') }),
+  /** Google Calendar: the meetings list, a dismissal or the connection changed. */
+  z.object({ type: z.literal('calendar.changed') }),
   z.object({ type: z.literal('audit.added'), auditId: z.number().int().positive() }),
   z.object({
     type: z.literal('webhook.received'),

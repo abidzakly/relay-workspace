@@ -51,6 +51,11 @@ const EVENT_INFO: Record<NotificationEvent, EventInfo> = {
     label: 'Agent finished',
     description: 'A cockpit agent session finished its turn or waits for your input.',
   },
+  meetingStarted: {
+    label: 'Meeting started',
+    description:
+      'A Google Calendar meeting you have not declined starts (Settings > Google Calendar).',
+  },
   reviewRequested: {
     label: 'Review asked',
     description: 'Someone asked for your review or mentioned you on a merge request (Reviews).',

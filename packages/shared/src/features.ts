@@ -19,6 +19,7 @@ export const FEATURE_IDS = [
   'syncHealth',
   'kpi',
   'sprints',
+  'calendar',
   'reader',
 ] as const;
 export type FeatureId = (typeof FEATURE_IDS)[number];
@@ -140,6 +141,13 @@ export const FEATURES: readonly FeatureInfo[] = [
     description: 'Sprint capacity and what fits in it.',
     routes: ['/sprints'],
     needsNotion: true,
+  },
+  {
+    id: 'calendar',
+    group: 'plan',
+    label: 'Meetings',
+    description: 'Your Google Calendar meetings, with a floating alert while one is under way.',
+    routes: [],
   },
   {
     id: 'reader',

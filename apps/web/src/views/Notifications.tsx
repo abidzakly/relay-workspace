@@ -13,6 +13,7 @@ import {
   GitMerge,
   Loader2,
   type LucideIcon,
+  Video,
   MessageSquare,
   Package,
   Reply,
@@ -71,6 +72,7 @@ const EVENT_ICON: Record<NotificationItem['event'], LucideIcon> = {
   slaBreach: AlarmClock,
   readyForMr: GitBranch,
   agentDone: Bot,
+  meetingStarted: Video,
   reviewRequested: ScanEye,
   test: Bell,
 };
