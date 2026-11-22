@@ -146,3 +146,29 @@ export const readerDocs = sqliteTable(
   },
   (t) => [index('reader_docs_updated_idx').on(t.updatedAt)],
 );
+
+/**
+ * Stacked card starts waiting for their parent: a bulk start can base a card on another card's branch before that
+ * branch has any work. The card's agent starts once the parent's branch is pushed (or the user starts it by hand), from
+ * that branch. `payload` = what the start needs (agent, brief, files).
+ */
+export const cardStartQueue = sqliteTable(
+  'card_start_queue',
+  {
+    id: text('id').primaryKey(),
+    cardId: text('card_id').notNull(),
+    parentCardId: text('parent_card_id').notNull(),
+    /** The repo workspace the card starts in (a worktree is made next to it when busy). */
+    workspaceId: text('workspace_id').notNull(),
+    payload: text('payload', { mode: 'json' }).notNull(),
+    /** 'queued' | 'starting' | 'started' | 'failed' */
+    status: text('status').notNull().default('queued'),
+    error: text('error'),
+    errorCode: text('error_code'),
+    sessionId: text('session_id'),
+    startedWorkspaceId: text('started_workspace_id'),
+    createdAt: createdAtCol(),
+    updatedAt: updatedAtCol(),
+  },
+  (t) => [index('card_start_queue_parent_idx').on(t.parentCardId)],
+);

@@ -116,6 +116,8 @@ export interface CursorConversationOptions {
   startMode?: ConversationMode;
   /** Pass `--force` once out of plan mode (the user's choice for sessions; a device test does without). */
   forceAfterPlan?: boolean;
+  /** A chat to continue (`--resume`), e.g. after the host restarted. */
+  resumeId?: string;
   /** Tests inject a fake child. */
   spawnChild?: (
     file: string,
@@ -133,6 +135,8 @@ export class CursorConversation implements NodePtyProcess {
   private backlog: string[] = [];
   private mode: ConversationMode;
   private chatId: string | null = null;
+  private resumeListener: ((id: string) => void) | null = null;
+  private modeListener: ((m: ConversationMode) => void) | null = null;
   /** Prompts sent while a turn runs; they run in order. */
   private readonly queue: { text: string; mode: ConversationMode }[] = [];
   private turnEnded = false;
@@ -154,6 +158,7 @@ export class CursorConversation implements NodePtyProcess {
   constructor(o: CursorConversationOptions) {
     this.o = o;
     this.mode = o.startMode ?? 'plan';
+    this.chatId = o.resumeId ?? null;
     if (o.model) this.emit({ k: 'model', model: o.model });
     this.emit({ k: 'mode', mode: this.mode });
   }
@@ -175,6 +180,17 @@ export class CursorConversation implements NodePtyProcess {
 
   onStatus(listener: (s: ConversationStatus) => void): void {
     this.statusListener = listener;
+  }
+
+  /** The chat id, once known: what `--resume` needs after a restart. */
+  onResumeId(listener: (id: string) => void): void {
+    this.resumeListener = listener;
+    if (this.chatId) listener(this.chatId);
+  }
+
+  /** Every mode change, so a restart resumes in the same mode. */
+  onMode(listener: (m: ConversationMode) => void): void {
+    this.modeListener = listener;
   }
 
   /** The session's input: one `ConversationCommand` as JSON. Anything else is ignored. */
@@ -244,6 +260,7 @@ export class CursorConversation implements NodePtyProcess {
         break;
       case 'mode':
         this.mode = cmd.mode;
+        this.modeListener?.(this.mode);
         this.emit({ k: 'mode', mode: cmd.mode });
         break;
       case 'model':
@@ -263,6 +280,7 @@ export class CursorConversation implements NodePtyProcess {
     if (cmd.allow) {
       this.emit({ k: 'ask_done', id: cmd.id, outcome: 'approved' });
       this.mode = 'acceptEdits';
+      this.modeListener?.(this.mode);
       this.emit({ k: 'mode', mode: this.mode });
       this.enqueue(
         'The user approved your plan. First call SwitchMode to switch to agent mode (plan mode cannot edit), then carry the plan out.',
@@ -369,7 +387,10 @@ export class CursorConversation implements NodePtyProcess {
     }
     switch (e.type) {
       case 'system':
-        this.chatId ??= str(e.session_id);
+        if (!this.chatId) {
+          this.chatId = str(e.session_id);
+          if (this.chatId) this.resumeListener?.(this.chatId);
+        }
         break;
       case 'assistant':
         this.onAssistant(e);

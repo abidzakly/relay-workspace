@@ -139,6 +139,8 @@ const SessionStart = z.object({
     .optional(),
   execEffort: z.enum(['low', 'medium', 'high', 'xhigh']).optional(),
   execSwitch: z.enum(['ask', 'auto']).optional(),
+  title: z.string().max(300).optional(),
+  cardId: z.string().max(64).optional(),
   cols: z.number().int().min(20).max(500),
   rows: z.number().int().min(5).max(200),
 });

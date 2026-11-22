@@ -4,8 +4,9 @@ import type {
   CardContentPreview,
   CardStartAttachment,
   ExplainThreadResult,
+  QueuedCardStart,
 } from '@relay/shared';
-import { get, post } from './api';
+import { del, get, post } from './api';
 import { sessionKeys } from './sessionApi';
 
 /** Cockpit: attention inbox, integrity gate, card start; agent sessions from reviewer threads. */
@@ -164,5 +165,57 @@ export function useCardStart() {
       // A worktree start adds a workspace.
       void qc.invalidateQueries({ queryKey: ['cockpit', 'workspaces'] });
     },
+  });
+}
+
+const queueKey = ['cockpit', 'queue'] as const;
+
+/** Stacked card starts waiting for their parent card's branch. Refreshed by `cockpit.changed {what: 'queue'}`. */
+export function useStartQueue() {
+  return useQuery({
+    queryKey: queueKey,
+    queryFn: async () =>
+      (await get<{ items: QueuedCardStart[] }>('/api/cockpit/card-start/queue')).items,
+  });
+}
+
+export function useEnqueueCardStart() {
+  const qc = useQueryClient();
+  return useMutation<
+    QueuedCardStart,
+    Error,
+    {
+      cardId: string;
+      parentCardId: string;
+      workspaceId: string;
+      agent: 'claude' | 'cursor';
+      extraPrompt?: string;
+      figmaUrl?: string;
+      attachments?: CardStartAttachment[];
+    }
+  >({
+    mutationFn: (b) => post('/api/cockpit/card-start/queue', b),
+    onSettled: () => void qc.invalidateQueries({ queryKey: queueKey }),
+  });
+}
+
+export function useQueuedStartNow() {
+  const qc = useQueryClient();
+  return useMutation<QueuedCardStart, Error, { id: string; existing?: 'replace' | 'reuse' }>({
+    mutationFn: ({ id, existing }) =>
+      post(`/api/cockpit/card-start/queue/${e(id)}/start`, existing ? { existing } : {}),
+    onSettled: () => {
+      void qc.invalidateQueries({ queryKey: queueKey });
+      void qc.invalidateQueries({ queryKey: sessionKeys.list });
+      void qc.invalidateQueries({ queryKey: ['cockpit', 'workspaces'] });
+    },
+  });
+}
+
+export function useCancelQueuedStart() {
+  const qc = useQueryClient();
+  return useMutation<unknown, Error, string>({
+    mutationFn: (id) => del(`/api/cockpit/card-start/queue/${e(id)}`),
+    onSettled: () => void qc.invalidateQueries({ queryKey: queueKey }),
   });
 }

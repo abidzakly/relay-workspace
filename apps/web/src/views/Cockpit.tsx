@@ -26,6 +26,7 @@ import { FilesView } from '@/cockpit/FilesView';
 import { ReviewView } from '@/cockpit/ReviewView';
 import { RunView } from '@/cockpit/RunView';
 import { AttentionPanel } from '@/cockpit/AttentionPanel';
+import { StartQueue } from '@/cockpit/StartQueue';
 import { Helper, useFinishedSessionReward } from '@/cockpit/Helper';
 import { StartCardDialog } from '@/cockpit/StartCardDialog';
 import { WS_RING } from '@/cockpit/wsColors';
@@ -163,8 +164,8 @@ function SessionTabs({
               : 'text-muted-foreground',
           )}
         >
-          <span>
-            {KIND_LABEL[s.kind]} {i + 1}
+          <span className="max-w-48 truncate" title={s.cardId ? s.title : undefined}>
+            {s.cardId ? s.title : `${KIND_LABEL[s.kind]} ${i + 1}`}
           </span>
           <Helper session={s} />
         </button>
@@ -190,7 +191,8 @@ export function Cockpit() {
   const sessionParam = params.get('session');
   const returnTo = useSessionReturnTo(sessionParam, params.get('returnTo'));
   const fromSession = sessions.find((s) => s.id === sessionParam);
-  const wsId = params.get('ws') ?? fromSession?.workspaceId ?? workspaces[0]?.id ?? null;
+  // The session decides its workspace: a stale `ws` in a link must not hide the session it names.
+  const wsId = fromSession?.workspaceId ?? params.get('ws') ?? workspaces[0]?.id ?? null;
   const ws = workspaces.find((w) => w.id === wsId) ?? null;
   const tab =
     (params.get('tab') as TabId | null) ?? (fromSession?.kind === 'shell' ? 'terminal' : 'agent');
@@ -224,6 +226,27 @@ export function Cockpit() {
     tabSessions.find((s) => s.state !== 'exited') ??
     tabSessions.at(-1) ??
     null;
+  // Every session in one list, newest work first: agents started from the Board sit side by side, wherever their
+  // worktree is.
+  const allSessions = useMemo(
+    () =>
+      [...sessions].sort(
+        (a, b) =>
+          Number(a.state === 'exited' && !a.restorable) -
+            Number(b.state === 'exited' && !b.restorable) || b.startedAt - a.startedAt,
+      ),
+    [sessions],
+  );
+  const wsName = (id: string) => workspaces.find((w) => w.id === id)?.name ?? 'Removed workspace';
+  // A worktree made for a card reads as that card.
+  const cardTitleIn = (id: string) =>
+    sessions.filter((s) => s.workspaceId === id && s.cardId).at(-1)?.title ?? null;
+  const pickSession = (s: (typeof sessions)[number]) =>
+    set({
+      ws: s.workspaceId,
+      session: s.id,
+      tab: s.kind === 'shell' ? 'terminal' : s.kind === 'flutter' ? 'run' : 'agent',
+    });
   const liveIn = (id: string) => sessions.some((x) => x.workspaceId === id && x.state !== 'exited');
   const waitingCount = (id: string) =>
     sessions.filter((s) => s.workspaceId === id && s.waiting).length;
@@ -258,52 +281,53 @@ export function Cockpit() {
     );
   }
 
-  const body = !ws ? null : tab === 'review' ? (
-    <div className="grid gap-5">
-      <AttentionPanel />
-      <ReviewView ws={ws} />
-    </div>
-  ) : tab === 'run' ? (
-    <RunView ws={ws} sessions={sessions} />
-  ) : tab === 'files' ? (
-    <FilesView ws={ws} initialPath={params.get('file')} />
-  ) : (
-    <>
-      <div className="flex items-center gap-2">
-        <SessionTabs
-          sessions={tabSessions}
-          active={active?.id ?? null}
-          onPick={(id) => set({ session: id })}
-        />
-        <Button
-          size="sm"
-          variant="outline"
-          className="ml-auto h-8 shrink-0 rounded-full"
-          onClick={() => setPicker(true)}
-        >
-          <Plus className="size-4" /> Session
-        </Button>
+  const body =
+    !ws && !(tab === 'agent' || tab === 'terminal') ? null : ws && tab === 'review' ? (
+      <div className="grid gap-5">
+        <AttentionPanel />
+        <ReviewView ws={ws} />
       </div>
-      {active ? (
-        isConversationKind(active.kind) ? (
-          <ConversationView key={active.id} s={active} />
-        ) : (
-          <AgentView key={active.id} s={active} returnTo={returnTo(active.id)} />
-        )
-      ) : (
-        <div className="grid flex-1 place-items-center rounded-surface border border-dashed p-8 text-center text-sm text-muted-foreground">
-          <div className="grid justify-items-center gap-3">
-            <p>
-              {tab === 'agent' ? 'No agent session in this workspace yet.' : 'No terminal yet.'}
-            </p>
-            <Button onClick={() => setPicker(true)}>
-              <Plus className="size-4" /> {tab === 'agent' ? 'Start an agent' : 'Open a terminal'}
-            </Button>
-          </div>
+    ) : ws && tab === 'run' ? (
+      <RunView ws={ws} sessions={sessions} />
+    ) : ws && tab === 'files' ? (
+      <FilesView ws={ws} initialPath={params.get('file')} />
+    ) : (
+      <>
+        <div className="flex items-center gap-2">
+          <SessionTabs
+            sessions={tabSessions}
+            active={active?.id ?? null}
+            onPick={(id) => set({ session: id })}
+          />
+          <Button
+            size="sm"
+            variant="outline"
+            className="ml-auto h-8 shrink-0 rounded-full"
+            onClick={() => setPicker(true)}
+          >
+            <Plus className="size-4" /> Session
+          </Button>
         </div>
-      )}
-    </>
-  );
+        {active ? (
+          isConversationKind(active.kind) ? (
+            <ConversationView key={active.id} s={active} />
+          ) : (
+            <AgentView key={active.id} s={active} returnTo={returnTo(active.id)} />
+          )
+        ) : (
+          <div className="grid flex-1 place-items-center rounded-surface border border-dashed p-8 text-center text-sm text-muted-foreground">
+            <div className="grid justify-items-center gap-3">
+              <p>
+                {tab === 'agent' ? 'No agent session in this workspace yet.' : 'No terminal yet.'}
+              </p>
+              <Button onClick={() => setPicker(true)}>
+                <Plus className="size-4" /> {tab === 'agent' ? 'Start an agent' : 'Open a terminal'}
+              </Button>
+            </div>
+          </div>
+        )}
+      </>
+    );
 
   return (
     <div className="mx-auto flex h-[calc(100dvh-4.5rem)] w-full max-w-6xl min-w-0 gap-4 md:h-[calc(100dvh-3rem)]">
@@ -329,9 +353,9 @@ export function Cockpit() {
                 ) : (
                   <RepoMark color={w.color} size="md" />
                 )}
-                <span className="min-w-0 flex-1 truncate">
+                <span className="min-w-0 flex-1 truncate" title={w.name}>
                   {w.kind === 'worktree' && <span className="sr-only">Worktree: </span>}
-                  {w.name}
+                  {(w.kind === 'worktree' && cardTitleIn(w.id)) || w.name}
                 </span>
                 {waitingCount(w.id) > 0 && (
                   <span className="shrink-0 rounded-full bg-primary px-1.5 text-micro font-semibold text-primary-foreground">
@@ -369,22 +393,23 @@ export function Cockpit() {
         </ul>
         <div className="grid grid-cols-1 gap-1">
           <p className="px-1 text-xs text-muted-foreground">Sessions</p>
-          {inWs.map((s) => (
+          {allSessions.map((s) => (
             <button
               key={s.id}
               type="button"
-              onClick={() =>
-                set({
-                  session: s.id,
-                  tab: s.kind === 'shell' ? 'terminal' : s.kind === 'flutter' ? 'run' : 'agent',
-                })
-              }
+              onClick={() => pickSession(s)}
+              title={`${s.title} · ${wsName(s.workspaceId)}`}
               className={cn(
                 'flex items-center gap-2 rounded-lg px-3 py-1.5 text-left text-xs',
                 s.id === active?.id ? 'bg-accent' : 'hover:bg-accent/50',
               )}
             >
-              <span className="min-w-0 flex-1 truncate">{s.title}</span>
+              <span className="grid min-w-0 flex-1">
+                <span className="truncate">{s.title}</span>
+                <span className="truncate text-micro text-muted-foreground">
+                  {KIND_LABEL[s.kind]} · {wsName(s.workspaceId)}
+                </span>
+              </span>
               <Helper session={s} />
             </button>
           ))}
@@ -405,6 +430,7 @@ export function Cockpit() {
             <Rocket className="size-4" /> Start card
           </Button>
         </div>
+        <StartQueue />
         <AttentionPanel compact />
       </aside>
 
@@ -439,6 +465,28 @@ export function Cockpit() {
             </button>
           ))}
         </div>
+        {/* Mobile: every agent session, by card title */}
+        {allSessions.some((s) => isConversationKind(s.kind)) && (
+          <div className="flex gap-1.5 overflow-x-auto [scrollbar-width:none] md:hidden">
+            {allSessions
+              .filter((s) => isConversationKind(s.kind))
+              .map((s) => (
+                <button
+                  key={s.id}
+                  type="button"
+                  onClick={() => pickSession(s)}
+                  className={cn(
+                    'flex h-8 max-w-56 shrink-0 items-center gap-1.5 rounded-full border px-3 text-xs',
+                    s.id === active?.id && 'border-primary bg-primary/10 text-primary-ink',
+                  )}
+                >
+                  <span className="truncate">{s.title}</span>
+                  <Helper session={s} />
+                </button>
+              ))}
+          </div>
+        )}
+        <StartQueue className="md:hidden" />
         {/* Desktop tabs */}
         <nav className="hidden gap-1 border-b md:flex" aria-label="Cockpit">
           {TABS.map((t) => (

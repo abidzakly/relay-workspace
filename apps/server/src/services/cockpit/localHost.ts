@@ -25,6 +25,7 @@ import {
   SessionManager,
   type SessionEvent,
 } from './sessions';
+import { SessionStore } from './sessionStore';
 import type { Logger } from '../../util/logger';
 import { claudeAvailability, runClaudeCli } from './claudeCli';
 import { cursorAvailability, runCursorCli } from './cursorCli';
@@ -56,20 +57,24 @@ export interface LocalCockpitHostOptions {
   log: Logger;
   /** Allowed workspace roots; default from `HOST_AGENT_WORKSPACE_ROOTS` (or `~/Work`). */
   workspaceRoots?: readonly string[];
+  /** Where agent sessions are kept until ended (`<DATA_DIR>/cockpit-sessions`). Unset = memory only. */
+  sessionsDir?: string;
 }
 
 /** Runs everything on this machine. Also the engine behind the host agent's `/v1/cockpit/*` routes. */
 export class LocalCockpitHost implements CockpitHost {
   readonly roots: readonly string[];
   private mgr: SessionManager | null = null;
+  private readonly store: SessionStore | null;
 
   constructor(protected readonly o: LocalCockpitHostOptions) {
     this.roots = o.workspaceRoots ?? parseWorkspaceRoots(process.env.HOST_AGENT_WORKSPACE_ROOTS);
+    this.store = o.sessionsDir ? new SessionStore(o.sessionsDir, o.log) : null;
   }
 
   /** Created on first use: node-pty loads only when a session is wanted. */
   private get manager(): SessionManager {
-    this.mgr ??= new SessionManager(this.o.log);
+    this.mgr ??= new SessionManager(this.o.log, Date.now, undefined, this.store);
     return this.mgr;
   }
 
@@ -160,11 +165,15 @@ export class LocalCockpitHost implements CockpitHost {
       execModel: opts.execModel,
       execEffort: opts.execEffort,
       execSwitch: opts.execSwitch,
+      title: opts.title,
+      cardId: opts.cardId,
     });
   }
 
   sessions(): Promise<CockpitSession[]> {
-    return Promise.resolve(this.mgr ? this.mgr.list() : []);
+    // Kept sessions from before a restart are listed without waiting for a new one.
+    const mgr = this.mgr ?? (this.store?.hasAny() ? this.manager : null);
+    return Promise.resolve(mgr ? mgr.list() : []);
   }
 
   sessionInput(id: string, data: string): Promise<void> {

@@ -18,7 +18,7 @@ import { useApplyWrite, usePreviewWrite } from '@/lib/cardApi';
 import { useWorkspaces } from '@/lib/cockpitApi';
 import { emit } from '@/lib/reward/engine';
 import { useSettings } from '@/lib/settingsApi';
-import { useBases, useCardStart } from '@/lib/workflowApi';
+import { useBases, useCardStart, useEnqueueCardStart } from '@/lib/workflowApi';
 import {
   briefAttachments,
   CardBrief,
@@ -32,6 +32,8 @@ import { ExistingBranchPrompt, type ExistingBranchChoice } from './ExistingBranc
  * Bulk "Start with agent": several cards, each with its own agent. The first card of a workspace starts in it as usual;
  * the next ones (or any card whose workspace is busy or has changes) get a git worktree of their own, so the agents
  * never share a working tree. Each card goes In Progress first, like a single start. One row = one card.
+ * A card can also be based on another card of the same start (a stacked branch): it waits in the start queue until that
+ * card's branch is pushed, then starts from it, so it builds on that card's work.
  */
 
 type Agent = 'claude' | 'cursor';
@@ -44,6 +46,8 @@ interface Row {
   agent: Agent;
   /** '' = not loaded yet: the workspace's base branch once its options arrive. */
   base: string;
+  /** Stacked: start from this other row's card branch once it is pushed. `base` is then unused. */
+  parentCardId: string | null;
   /** What this card's agent gets on top of the card: instructions, Figma links, files. */
   brief: Brief;
 }
@@ -53,9 +57,50 @@ type Outcome =
   | { state: 'running' }
   /** The card's branch already exists: the run waits for the user's choice on this row. */
   | { state: 'asking' }
-  | { state: 'skipped' }
+  | { state: 'skipped'; reason?: string }
+  /** Stacked: waits in the start queue for the parent card's branch. */
+  | { state: 'queued'; parentTitle: string }
   | { state: 'started'; workspaceId: string; worktree: boolean; sessionId: string | null }
   | { state: 'failed'; message: string };
+
+const CARD_BASE = 'card:';
+
+/** Whether `cardId` waits (directly or down a chain) on `on`: picking it as `on`'s parent would make a loop. */
+function waitsOn(rows: readonly Row[], cardId: string, on: string): boolean {
+  const seen = new Set<string>();
+  let cur: string | null = cardId;
+  while (cur && !seen.has(cur)) {
+    if (cur === on) return true;
+    seen.add(cur);
+    cur = rows.find((r) => r.card.id === cur)?.parentCardId ?? null;
+  }
+  return false;
+}
+
+/** Parents before the cards stacked on them; otherwise the row order. */
+function startOrder(rows: readonly Row[]): Row[] {
+  const out: Row[] = [];
+  const done = new Set<string>();
+  let left = [...rows];
+  while (left.length > 0) {
+    const next = left.filter(
+      (r) =>
+        !r.parentCardId ||
+        done.has(r.parentCardId) ||
+        !rows.some((x) => x.card.id === r.parentCardId),
+    );
+    if (next.length === 0) {
+      out.push(...left);
+      break;
+    }
+    for (const r of next) {
+      out.push(r);
+      done.add(r.card.id);
+    }
+    left = left.filter((r) => !done.has(r.card.id));
+  }
+  return out;
+}
 
 const AGENTS: { value: Agent; label: string }[] = [
   { value: 'claude', label: 'Claude' },
@@ -86,6 +131,7 @@ function Body({ cards, onClose }: { cards: StateCard[]; onClose: () => void }) {
   const preview = usePreviewWrite();
   const apply = useApplyWrite();
   const start = useCardStart();
+  const enqueue = useEnqueueCardStart();
   /** Resolves the pending "branch already exists" question, per card. */
   const answers = useRef<Record<string, (a: Answer) => void>>({});
 
@@ -112,18 +158,36 @@ function Body({ cards, onClose }: { cards: StateCard[]; onClose: () => void }) {
           workspaces[0]!.id,
         agent: preferred,
         base: '',
+        parentCardId: null,
         brief: EMPTY_BRIEF,
       })),
     );
   }, [cards, workspaces, preferred, rows.length]);
 
   const setRow = (cardId: string, patch: Partial<Row>) =>
-    setRows((rs) => rs.map((r) => (r.card.id === cardId ? { ...r, ...patch } : r)));
+    setRows((rs) =>
+      rs.map((r) => {
+        if (r.card.id === cardId) {
+          // Another workspace has other branches: a stack on a card of the old one no longer fits.
+          return patch.workspaceId && patch.workspaceId !== r.workspaceId
+            ? { ...r, ...patch, parentCardId: null }
+            : { ...r, ...patch };
+        }
+        // Cards stacked on this one must stay in its workspace.
+        if (patch.workspaceId && r.parentCardId === cardId && r.workspaceId !== patch.workspaceId)
+          return { ...r, parentCardId: null };
+        return r;
+      }),
+    );
 
   const allAgents = (agent: Agent) => setRows((rs) => rs.map((r) => ({ ...r, agent })));
 
   const finished = Object.values(outcomes).some(
-    (o) => o.state === 'started' || o.state === 'failed' || o.state === 'skipped',
+    (o) =>
+      o.state === 'started' ||
+      o.state === 'failed' ||
+      o.state === 'skipped' ||
+      o.state === 'queued',
   );
   const ready =
     rows.length > 0 && rows.every((r) => r.base !== '' && !figmaLinkProblem(r.brief.figmaUrl));
@@ -131,8 +195,26 @@ function Body({ cards, onClose }: { cards: StateCard[]; onClose: () => void }) {
   const go = async () => {
     setRunning(true);
     setOutcomes(Object.fromEntries(rows.map((r) => [r.card.id, { state: 'waiting' } as Outcome])));
-    // One at a time: each start sees the sessions the previous ones opened, so it knows to take a worktree.
-    for (const r of rows) {
+    // How each card ended, for the cards stacked on it (state updates land too late to read here).
+    const ended: Record<string, Outcome['state']> = {};
+    const mark = (cardId: string, o: Outcome) => {
+      ended[cardId] = o.state;
+      setOutcomes((prev) => ({ ...prev, [cardId]: o }));
+    };
+    // One at a time, parents first: each start sees the sessions the previous ones opened, so it knows to take a
+    // worktree.
+    for (const r of startOrder(rows)) {
+      const parent = r.parentCardId ? rows.find((x) => x.card.id === r.parentCardId) : undefined;
+      if (parent) {
+        const p = ended[parent.card.id];
+        if (p !== 'started' && p !== 'queued') {
+          mark(r.card.id, {
+            state: 'skipped',
+            reason: `Not queued: "${parent.card.title}" did not start.`,
+          });
+          continue;
+        }
+      }
       setOutcomes((o) => ({ ...o, [r.card.id]: { state: 'running' } }));
       try {
         // Files are read before the status write: a bad file must not leave the card In Progress with no agent.
@@ -148,6 +230,19 @@ function Body({ cards, onClose }: { cards: StateCard[]; onClose: () => void }) {
           const request = { kind: 'status' as const, cardId: r.card.id, to: 'In Progress' };
           const p = await preview.mutateAsync(request);
           await apply.mutateAsync({ request, confirmToken: p.confirmToken });
+        }
+        if (parent) {
+          await enqueue.mutateAsync({
+            cardId: r.card.id,
+            parentCardId: parent.card.id,
+            workspaceId: r.workspaceId,
+            agent: r.agent,
+            ...(extraPrompt ? { extraPrompt } : {}),
+            ...(figmaUrl ? { figmaUrl } : {}),
+            ...(attachments.length > 0 ? { attachments } : {}),
+          });
+          mark(r.card.id, { state: 'queued', parentTitle: parent.card.title });
+          continue;
         }
         const startRow = (existing?: ExistingBranchChoice) =>
           start.mutateAsync({
@@ -169,23 +264,20 @@ function Body({ cards, onClose }: { cards: StateCard[]; onClose: () => void }) {
           // The status write already ran: only the start is retried, with the user's choice.
           const a = await ask(r.card.id);
           if (a === 'skip') {
-            setOutcomes((o) => ({ ...o, [r.card.id]: { state: 'skipped' } }));
+            mark(r.card.id, { state: 'skipped' });
             continue;
           }
           setOutcomes((o) => ({ ...o, [r.card.id]: { state: 'running' } }));
           res = await startRow(a);
         }
-        setOutcomes((o) => ({
-          ...o,
-          [r.card.id]: {
-            state: 'started',
-            workspaceId: res.workspaceId,
-            worktree: res.worktree,
-            sessionId: res.sessionId,
-          },
-        }));
+        mark(r.card.id, {
+          state: 'started',
+          workspaceId: res.workspaceId,
+          worktree: res.worktree,
+          sessionId: res.sessionId,
+        });
       } catch (e) {
-        setOutcomes((o) => ({ ...o, [r.card.id]: { state: 'failed', message: describeError(e) } }));
+        mark(r.card.id, { state: 'failed', message: describeError(e) });
       }
     }
     setRunning(false);
@@ -201,7 +293,8 @@ function Body({ cards, onClose }: { cards: StateCard[]; onClose: () => void }) {
         <DialogDescription>
           Each card moves to In Progress and gets its own agent. The first card of a workspace
           starts there; the others get a git worktree of their own next to it, so no two agents
-          share files.
+          share files. To stack, pick another card as a base: that card waits until the other
+          card&apos;s branch is pushed, then starts from it.
           {cards.length > BULK_START_MAX && ` Only the first ${BULK_START_MAX} cards are started.`}
         </DialogDescription>
       </DialogHeader>
@@ -236,6 +329,7 @@ function Body({ cards, onClose }: { cards: StateCard[]; onClose: () => void }) {
               <BulkRow
                 key={r.card.id}
                 row={r}
+                rows={rows}
                 workspaces={workspaces}
                 outcome={outcomes[r.card.id]}
                 locked={running || finished}
@@ -268,6 +362,7 @@ function Body({ cards, onClose }: { cards: StateCard[]; onClose: () => void }) {
 
 function BulkRow({
   row,
+  rows,
   workspaces,
   outcome,
   locked,
@@ -275,6 +370,8 @@ function BulkRow({
   onAnswer,
 }: {
   row: Row;
+  /** All rows: the cards this one can be stacked on. */
+  rows: readonly Row[];
   workspaces: Workspace[];
   outcome: Outcome | undefined;
   locked: boolean;
@@ -284,6 +381,15 @@ function BulkRow({
   const bases = useBases(row.workspaceId);
   const ws = workspaces.find((w) => w.id === row.workspaceId);
   const figmaProblem = figmaLinkProblem(row.brief.figmaUrl);
+  // Same workspace (same repo), has a branch, and does not already wait on this card.
+  const stackable = rows.filter(
+    (r) =>
+      r.card.id !== row.card.id &&
+      r.workspaceId === row.workspaceId &&
+      !!r.card.branchName?.trim() &&
+      !waitsOn(rows, r.card.id, row.card.id),
+  );
+  const parent = row.parentCardId ? rows.find((r) => r.card.id === row.parentCardId) : undefined;
   // The workspace's own base branch is the default, as in the single start.
   useEffect(() => {
     if (row.base === '' && bases.data?.[0]) onChange({ base: bases.data[0].name });
@@ -309,7 +415,16 @@ function BulkRow({
           cancelLabel="Skip card"
         />
       ) : outcome?.state === 'skipped' ? (
-        <p className="text-sm text-muted-foreground">Skipped: the branch was left as it is.</p>
+        <p className="text-sm text-muted-foreground">
+          {outcome.reason ?? 'Skipped: the branch was left as it is.'}
+        </p>
+      ) : outcome?.state === 'queued' ? (
+        <p className="flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
+          Waits for &quot;{outcome.parentTitle}&quot; to push its branch, then starts from it.
+          <Link to="/cockpit" className="underline underline-offset-4">
+            See the queue →
+          </Link>
+        </p>
       ) : outcome?.state === 'failed' ? (
         <p role="alert" className="text-sm text-destructive">
           {outcome.message}
@@ -359,9 +474,16 @@ function BulkRow({
             </Select>
             <Select
               aria-label={`Base branch for ${row.card.title}`}
-              value={row.base}
+              value={row.parentCardId ? `${CARD_BASE}${row.parentCardId}` : row.base}
               disabled={locked || !bases.data}
-              onChange={(e) => onChange({ base: e.target.value })}
+              onChange={(e) => {
+                const v = e.target.value;
+                onChange(
+                  v.startsWith(CARD_BASE)
+                    ? { parentCardId: v.slice(CARD_BASE.length) }
+                    : { base: v, parentCardId: null },
+                );
+              }}
             >
               {!bases.data && <option value="">Loading…</option>}
               {(bases.data ?? []).map((b) => (
@@ -369,8 +491,24 @@ function BulkRow({
                   {b.label}
                 </option>
               ))}
+              {stackable.length > 0 && (
+                <optgroup label="After another card (starts once it is pushed)">
+                  {stackable.map((r) => (
+                    <option key={r.card.id} value={`${CARD_BASE}${r.card.id}`}>
+                      {r.card.branchName} (after &quot;{r.card.title}&quot;)
+                    </option>
+                  ))}
+                </optgroup>
+              )}
             </Select>
           </div>
+          {parent && (
+            <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
+              <GitFork className="size-3.5 shrink-0" aria-hidden />
+              Stacked on &quot;{parent.card.title}&quot;: waits until its branch is pushed, then
+              starts from it.
+            </p>
+          )}
           <details className="group rounded-surface border border-hairline" open={!!figmaProblem}>
             <summary className="flex cursor-pointer list-none items-center gap-2 px-3 py-2 text-sm">
               <ChevronDown
@@ -423,6 +561,8 @@ function OutcomeMark({ outcome }: { outcome: Outcome | undefined }) {
       return <span className="text-xs text-destructive">needs your answer</span>;
     case 'skipped':
       return <span className="text-xs text-muted-foreground">skipped</span>;
+    case 'queued':
+      return <span className="text-xs text-muted-foreground">queued</span>;
     case 'started':
       return (
         <span className="flex items-center gap-1 text-xs text-success">

@@ -896,6 +896,11 @@ export class CockpitWorkflowService {
      * gets a git worktree of its own instead, so several agents can work at once.
      */
     worktree?: 'auto';
+    /**
+     * Stacked start (from the start queue): `base` is the branch of another card, which the offered bases may not list
+     * (a local branch, or pushed moments ago).
+     */
+    stackedOn?: { title: string; branch: string };
   }): Promise<{
     branch: string;
     sessionId: string | null;
@@ -907,7 +912,7 @@ export class CockpitWorkflowService {
     const branch = card.branchName?.trim();
     if (!branch)
       throw new ActionError(409, 'no_branch_formula', 'This card has no Branch formula.');
-    if (!this.bases(input.workspaceId).some((b) => b.name === input.base)) {
+    if (!input.stackedOn && !this.bases(input.workspaceId).some((b) => b.name === input.base)) {
       throw new ActionError(422, 'invalid_base', 'Pick one of the offered base branches.');
     }
     // Checked before anything changes on disk: a bad file must not leave a half-started card.
@@ -988,12 +993,15 @@ export class CockpitWorkflowService {
         refId: card.id,
       });
 
-    const s = await this.d.sessions.start({
-      workspaceId: workspaceId,
-      kind: input.agent,
-      cols: 100,
-      rows: 30,
-    });
+    const s = await this.d.sessions.start(
+      {
+        workspaceId: workspaceId,
+        kind: input.agent,
+        cols: 100,
+        rows: 30,
+      },
+      { id: card.id, title: card.title },
+    );
     // Cursor runs in its TUI, which needs a moment to draw before the first prompt.
     if (input.agent === 'cursor') await new Promise((r) => setTimeout(r, 2_500));
     await this.d.sessions.prompt(
@@ -1011,6 +1019,7 @@ export class CockpitWorkflowService {
         extraPrompt: input.extraPrompt ?? null,
         attachments,
         failedAttachments: failed,
+        stackedOn: input.stackedOn ?? null,
       }),
     );
     return { ...done, sessionId: s.id };

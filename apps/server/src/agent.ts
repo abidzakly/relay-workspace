@@ -36,7 +36,8 @@ if (passEnv === null) {
   process.exit(1);
 }
 
-const scrcpyDir = join(resolveDataDir({ DATA_DIR: process.env.DATA_DIR }), 'scrcpy');
+const dataDir = resolveDataDir({ DATA_DIR: process.env.DATA_DIR });
+const scrcpyDir = join(dataDir, 'scrcpy');
 // The Figma bridge runs on the Mac next to the Figma desktop app, so the plugin can reach it on 127.0.0.1:1994.
 // The dashboard in Docker reaches it through the agent's /v1/figma routes.
 const figmaBridge = new McpFigmaBridge({ command: process.env.FIGMA_BRIDGE_CMD, log });
@@ -48,6 +49,8 @@ const app = await createHostAgent({
   passEnv,
   scrcpyDir,
   figma: figmaBridge,
+  // Agent chats are kept here until ended, so they survive an agent restart.
+  cockpit: { sessionsDir: join(dataDir, 'cockpit-sessions') },
 });
 await app.listen({ host: '127.0.0.1', port });
 // A failure here does not stop the agent: the Test Bench just reports the bridge as down.
