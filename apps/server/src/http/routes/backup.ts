@@ -12,6 +12,7 @@ import {
   applyImport,
   buildConfigExport,
   calendarChanges,
+  marksChanges,
   openSecrets,
   parseConfigFile,
   previewImport,
@@ -24,7 +25,7 @@ export interface BackupRouteDeps {
   audit: AuditWriter;
   cache: AppDb;
   /** Applies the Google Calendar part of an import (a new OAuth client disconnects the old sign-in). */
-  calendar?: Pick<CalendarService, 'saveConfig'>;
+  calendar?: Pick<CalendarService, 'saveConfig' | 'replaceMarks'>;
   now?: () => number;
 }
 
@@ -84,8 +85,10 @@ export function registerBackupRoutes(
       const preview = previewImport(store, parsed, secrets);
       const before = { settings: store.getGlobalPublic(), repos: store.listRepos() };
       const calendarUpdate = calendarChanges(store, parsed, secrets);
+      const marks = marksChanges(store, parsed);
       applyImport(store, parsed, secrets);
       if (calendarUpdate && calendar) await calendar.saveConfig(calendarUpdate);
+      if (marks && calendar) calendar.replaceMarks(marks);
       audit.write({
         actor: 'user',
         action: 'settings.import',
@@ -97,6 +100,7 @@ export function registerBackupRoutes(
           repos: store.listRepos(),
           restoredCredentials: preview.secretCount,
           calendarUpdated: calendarUpdate !== null,
+          meetingMarksUpdated: marks !== null,
         },
       });
       return { preview };

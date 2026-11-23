@@ -1,6 +1,6 @@
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
-import { CalendarConfigUpdateSchema } from '@relay/shared';
+import { CalendarConfigUpdateSchema, MeetingPriorityBodySchema } from '@relay/shared';
 import type { AuditWriter } from '../../audit/auditLog';
 import { OAuthStateError, type CalendarService } from '../../services/calendar/calendarService';
 import { GoogleError } from '../../services/calendar/googleCalendar';
@@ -40,6 +40,7 @@ function callbackPage(ok: boolean, message: string): string {
  *  GET  /api/calendar/meetings             today's meetings for the floating alert
  *  POST /api/calendar/refresh              re-read Google now
  *  POST /api/calendar/meetings/dismiss     { id, dismissed } local only
+ *  POST /api/calendar/meetings/priority    { id, calendarId, seriesId, scope, level } local only
  */
 export function registerCalendarRoutes(
   app: FastifyInstance,
@@ -113,5 +114,12 @@ export function registerCalendarRoutes(
   app.post('/api/calendar/meetings/dismiss', async (req) => {
     const { id, dismissed } = parseWith(DismissBody, req.body);
     return calendar.dismiss(id, dismissed);
+  });
+
+  app.post('/api/calendar/meetings/priority', async (req) => {
+    const body = parseWith(MeetingPriorityBodySchema, req.body);
+    const list = calendar.setPriority(body);
+    audit('calendar.priority', { scope: body.scope, level: body.level });
+    return list;
   });
 }

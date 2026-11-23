@@ -17,6 +17,7 @@ import {
   useSaveCalendarConfig,
 } from '@/lib/calendarApi';
 import { useSaveGlobal } from '@/lib/settingsApi';
+import { PriorityRulesEditor } from '@/meetings/PriorityRulesEditor';
 import { ErrorAlert, SectionCard } from './SectionCard';
 
 const LEAD_CHOICES = [
@@ -24,6 +25,13 @@ const LEAD_CHOICES = [
   { value: 60, label: '1 min before' },
   { value: 120, label: '2 min before' },
   { value: 300, label: '5 min before' },
+];
+
+const KEY_LEAD_CHOICES = [
+  { value: 300, label: '5 min before' },
+  { value: 600, label: '10 min before' },
+  { value: 900, label: '15 min before' },
+  { value: 1800, label: '30 min before' },
 ];
 
 const RANGE_CHOICES = [
@@ -112,6 +120,11 @@ function CalendarForm({
   const [idsRaw, setIdsRaw] = useState(status.config.calendarIds.join(', '));
   const [lead, setLead] = useState(status.config.leadSeconds);
   const [range, setRange] = useState(status.config.lookAheadDays);
+  const [rules, setRules] = useState(status.config.priorityRules);
+  const [keyLead, setKeyLead] = useState(status.config.keyLeadSeconds);
+  const cleanRules = rules
+    .map((r) => ({ ...r, match: r.match.trim() }))
+    .filter((r) => r.match !== '');
   const { ids, bad } = parseIds(idsRaw);
 
   const dirty =
@@ -119,11 +132,14 @@ function CalendarForm({
     secret.trim() !== '' ||
     ids.join(',') !== status.config.calendarIds.join(',') ||
     lead !== status.config.leadSeconds ||
-    range !== status.config.lookAheadDays;
+    range !== status.config.lookAheadDays ||
+    keyLead !== status.config.keyLeadSeconds ||
+    JSON.stringify(cleanRules) !== JSON.stringify(status.config.priorityRules);
   const clientChanges = clientId.trim() !== status.config.clientId || secret.trim() !== '';
   const ready = status.config.clientId !== '' && status.clientSecretSet;
   const featureOn = settings.features.calendar;
   const pushOn = settings.notifications.events.includes('meetingStarted');
+  const remindOn = settings.notifications.events.includes('meetingTomorrow');
 
   const onSave = () =>
     save.mutate({
@@ -131,18 +147,20 @@ function CalendarForm({
       calendarIds: ids.length ? ids : ['primary'],
       leadSeconds: lead,
       lookAheadDays: range,
+      priorityRules: cleanRules,
+      keyLeadSeconds: keyLead,
       ...(secret.trim() ? { clientSecret: secret.trim() } : {}),
     });
 
-  const setPush = (on: boolean) =>
+  const setEvent = (event: 'meetingStarted' | 'meetingTomorrow', on: boolean) =>
     saveGlobal.mutate({
       patch: (s) => ({
         ...s,
         notifications: {
           ...s.notifications,
           events: on
-            ? [...new Set([...s.notifications.events, 'meetingStarted' as const])]
-            : s.notifications.events.filter((e) => e !== 'meetingStarted'),
+            ? [...new Set([...s.notifications.events, event])]
+            : s.notifications.events.filter((e) => e !== event),
         },
       }),
     });
@@ -253,6 +271,35 @@ function CalendarForm({
         </div>
       </div>
 
+      <div className="grid gap-3 rounded-control border border-hairline p-4">
+        <div className="grid gap-1">
+          <Label>Meeting priority</Label>
+          <p className="text-xs text-muted-foreground">
+            <span className="text-emphasis">◆ Key</span> meetings never fade on the Meetings page,
+            alert earlier and can remind you the day before. Quiet ones are dimmed. A meeting marked
+            by hand on the Meetings page ignores these rules.
+          </p>
+        </div>
+        <PriorityRulesEditor value={rules} onChange={setRules} />
+        <div className="grid gap-2 pt-1">
+          <Label>Show the alert for Key meetings</Label>
+          <div className="flex flex-wrap gap-2">
+            {KEY_LEAD_CHOICES.map((c) => (
+              <Button
+                key={c.value}
+                type="button"
+                size="sm"
+                variant={keyLead === c.value ? 'default' : 'outline'}
+                aria-pressed={keyLead === c.value}
+                onClick={() => setKeyLead(c.value)}
+              >
+                {c.label}
+              </Button>
+            ))}
+          </div>
+        </div>
+      </div>
+
       <ErrorAlert error={save.error ?? connect.error ?? disconnect.error ?? null} />
 
       <div className="flex flex-wrap items-center gap-3">
@@ -315,7 +362,21 @@ function CalendarForm({
           id="gc-push"
           checked={pushOn}
           disabled={saveGlobal.isPending}
-          onCheckedChange={setPush}
+          onCheckedChange={(on) => setEvent('meetingStarted', on)}
+        />
+      </div>
+      <div className="flex items-center justify-between gap-4">
+        <div className="grid gap-1">
+          <Label htmlFor="gc-remind">Day-before reminder for Key meetings</Label>
+          <p className="text-xs text-muted-foreground">
+            A push 24 hours before each Key meeting, e.g. “Tomorrow 14:00 · Sprint Review”.
+          </p>
+        </div>
+        <Switch
+          id="gc-remind"
+          checked={remindOn}
+          disabled={saveGlobal.isPending}
+          onCheckedChange={(on) => setEvent('meetingTomorrow', on)}
         />
       </div>
     </div>

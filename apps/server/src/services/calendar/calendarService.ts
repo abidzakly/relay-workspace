@@ -1,10 +1,15 @@
 import { randomBytes } from 'node:crypto';
 import {
   CalendarConfigSchema,
+  markKeyOne,
+  markKeySeries,
+  PriorityMarksSchema,
+  resolvePriority,
+  type MeetingPriorityBody,
+  type PriorityMarks,
   type CalendarConfig,
   type CalendarConfigUpdate,
   type CalendarStatus,
-  type Meeting,
   type MeetingList,
 } from '@relay/shared';
 import type { ConfigStore } from '../../config/store';
@@ -20,6 +25,7 @@ import {
   makePkce,
   refreshAccess,
   revoke,
+  type RawMeeting,
 } from './googleCalendar';
 
 /**
@@ -29,6 +35,7 @@ import {
  *   state.calendar.config     client id, calendar ids, lead time
  *   state.calendar.account    the connected Google account's e-mail
  *   state.calendar.dismissed  meeting id -> its end (pruned once it is over)
+ *   state.calendar.marks      hand-set priorities (`one:<id>` / `series:<calendarId>|<seriesId>` -> level)
  *   secret.gcal.clientSecret  the OAuth client secret        (encrypted)
  *   secret.gcal.refreshToken  the refresh token              (encrypted)
  */
@@ -39,6 +46,8 @@ export const CALENDAR_CLIENT_SECRET_KEY = 'gcal.clientSecret';
 const CONFIG = CALENDAR_CONFIG_KEY;
 const ACCOUNT = 'calendar.account';
 const DISMISSED = 'calendar.dismissed';
+/** Hand-set priorities. Also read by the config backup. */
+export const CALENDAR_MARKS_KEY = 'calendar.marks';
 const CLIENT_SECRET = CALENDAR_CLIENT_SECRET_KEY;
 const REFRESH_TOKEN = 'gcal.refreshToken';
 
@@ -49,6 +58,12 @@ const DAY_MS = 24 * 3_600_000;
 const OAUTH_TTL_MS = 10 * 60_000;
 /** A push for a meeting that started longer ago than this is not sent (a restart mid-meeting must not ping). */
 const NOTIFY_GRACE_MS = 5 * 60_000;
+/** Key meetings get a reminder this long before they start. */
+const REMIND_BEFORE_MS = DAY_MS;
+/** Read at least this far ahead, so the day-before reminder sees tomorrow even when the page shows 24 hours. */
+const MIN_READ_AHEAD_MS = DAY_MS + 2 * 3_600_000;
+/** Hand-set priorities kept at most. */
+const MAX_MARKS = 500;
 
 export class OAuthStateError extends Error {
   constructor(message: string) {
@@ -71,7 +86,7 @@ export interface CalendarServiceDeps {
   now?: () => number;
 }
 
-type Raw = Omit<Meeting, 'dismissed'>;
+type Raw = RawMeeting;
 
 export class CalendarService {
   private readonly now: () => number;
@@ -276,7 +291,7 @@ export class CalendarService {
             accessToken: token,
             calendarId,
             from: t - LOOK_BACK_MS,
-            to: t + cfg.lookAheadDays * DAY_MS,
+            to: t + Math.max(cfg.lookAheadDays * DAY_MS, MIN_READ_AHEAD_MS),
           }),
         ),
       );
@@ -299,6 +314,7 @@ export class CalendarService {
       this.d.log.warn({ err: (e as Error).name }, 'calendar read failed');
     }
     this.notifyStarted();
+    this.remindKey();
     this.scheduleNextStart();
   }
 
@@ -306,21 +322,63 @@ export class CalendarService {
     return this.d.config.getState<Record<string, number>>(DISMISSED) ?? {};
   }
 
+  private marks(): PriorityMarks {
+    const parsed = PriorityMarksSchema.safeParse(this.d.config.getState(CALENDAR_MARKS_KEY) ?? {});
+    return parsed.success ? parsed.data : {};
+  }
+
+  private withPriority(m: Raw, cfg: CalendarConfig, marks: PriorityMarks) {
+    return { ...m, ...resolvePriority(m, cfg.priorityRules, marks) };
+  }
+
   list(): MeetingList {
     const t = this.now();
+    const cfg = this.getConfig();
     const dismissed = this.dismissedMap();
+    const marks = this.marks();
     const on = this.enabled() && this.connected();
+    const until = t + cfg.lookAheadDays * DAY_MS;
     return {
       meetings: on
         ? this.meetings
-            .filter((m) => m.end > t)
-            .map((m) => ({ ...m, dismissed: dismissed[m.id] !== undefined }))
+            .filter((m) => m.end > t && m.start < until)
+            .map((m) => ({
+              ...this.withPriority(m, cfg, marks),
+              dismissed: dismissed[m.id] !== undefined,
+            }))
         : [],
       connected: this.connected(),
-      leadSeconds: this.getConfig().leadSeconds,
-      lookAheadDays: this.getConfig().lookAheadDays,
+      leadSeconds: cfg.leadSeconds,
+      lookAheadDays: cfg.lookAheadDays,
+      keyLeadSeconds: cfg.keyLeadSeconds,
       now: t,
     };
+  }
+
+  /** Replaces every hand-set priority (a config import). */
+  replaceMarks(marks: PriorityMarks): void {
+    this.d.config.setState(CALENDAR_MARKS_KEY, marks);
+    this.changed();
+  }
+
+  /** Sets (or with `level: null` clears) a hand-set priority. Needs no meeting in memory. */
+  setPriority(body: MeetingPriorityBody): MeetingList {
+    const marks = { ...this.marks() };
+    const key =
+      body.scope === 'series' && body.seriesId
+        ? markKeySeries(body.calendarId, body.seriesId)
+        : markKeyOne(body.id);
+    // A series choice replaces any one-off mark on this occurrence, so what was picked is what shows.
+    if (body.scope === 'series') delete marks[markKeyOne(body.id)];
+    delete marks[key];
+    if (body.level !== null) marks[key] = body.level;
+    // Bounded: past MAX_MARKS the oldest marks go (keys keep insertion order). A meeting outside today's read range
+    // may come back into it, so marks are never dropped just for not being in memory.
+    const keys = Object.keys(marks);
+    for (const k of keys.slice(0, Math.max(0, keys.length - MAX_MARKS))) delete marks[k];
+    this.d.config.setState(CALENDAR_MARKS_KEY, marks);
+    this.changed();
+    return this.list();
   }
 
   /** Hides a meeting from the alert (Join counts as dismissing it). Kept until the meeting is over. */
@@ -363,6 +421,35 @@ export class CalendarService {
       });
     }
     if (this.notified.size > 500) this.notified.clear();
+  }
+
+  /** A push the day before each Key meeting. The poll runs once a minute, inside the grace window. */
+  private remindKey(): void {
+    if (!this.d.notifier || !this.enabled()) return;
+    const t = this.now();
+    const cfg = this.getConfig();
+    const marks = this.marks();
+    const timeFmt = new Intl.DateTimeFormat(undefined, { hour: '2-digit', minute: '2-digit' });
+    for (const raw of this.meetings) {
+      const at = raw.start - REMIND_BEFORE_MS;
+      if (t < at || t - at > NOTIFY_GRACE_MS) continue;
+      const m = this.withPriority(raw, cfg, marks);
+      if (m.priority !== 'key') continue;
+      const key = `meeting-tomorrow:${m.id}:${m.start}`;
+      if (this.notified.has(key)) continue;
+      this.notified.add(key);
+      this.d.notifier.notifyCockpit({
+        event: 'meetingTomorrow',
+        key,
+        ttlMs: REMIND_BEFORE_MS,
+        title: `Tomorrow ${timeFmt.format(m.start)} · ${m.title}`,
+        body: m.priorityReason ? `Key meeting. ${m.priorityReason}.` : 'Key meeting.',
+        url: '/meetings',
+        tag: `meeting-tomorrow-${m.start}`,
+        repoId: null,
+        subject: null,
+      });
+    }
   }
 
   /** The poll runs once a minute; a timer at the next start makes the push (and the alert) arrive on the second. */

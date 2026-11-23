@@ -6,6 +6,7 @@ import {
   AlertTriangle,
   Bell,
   Bot,
+  CalendarClock,
   CheckCheck,
   CheckCircle2,
   Clock,
@@ -73,6 +74,7 @@ const EVENT_ICON: Record<NotificationItem['event'], LucideIcon> = {
   readyForMr: GitBranch,
   agentDone: Bot,
   meetingStarted: Video,
+  meetingTomorrow: CalendarClock,
   reviewRequested: ScanEye,
   test: Bell,
 };

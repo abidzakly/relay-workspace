@@ -56,6 +56,10 @@ const EVENT_INFO: Record<NotificationEvent, EventInfo> = {
     description:
       'A Google Calendar meeting you have not declined starts (Settings > Google Calendar).',
   },
+  meetingTomorrow: {
+    label: 'Key meeting tomorrow',
+    description: 'A day before a Key meeting (Meetings: marked Key, or a title rule).',
+  },
   reviewRequested: {
     label: 'Review asked',
     description: 'Someone asked for your review or mentioned you on a merge request (Reviews).',

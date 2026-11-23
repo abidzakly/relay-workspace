@@ -38,6 +38,8 @@ export const NOTIFICATION_EVENTS = [
   'agentDone',
   /** Google Calendar: a meeting you have not declined has started. */
   'meetingStarted',
+  /** Google Calendar: a Key meeting is tomorrow (24 hours ahead). */
+  'meetingTomorrow',
   /** Reviews: you were asked to review, or mentioned, on a merge request. */
   'reviewRequested',
 ] as const;
