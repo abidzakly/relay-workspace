@@ -178,6 +178,12 @@ export async function revoke(http: HttpClient, token: string): Promise<void> {
   }
 }
 
+/** A meeting as Google has it: no local state (dismissed, priority) yet. */
+export type RawMeeting = Omit<
+  Meeting,
+  'dismissed' | 'priority' | 'priorityReason' | 'prioritySource'
+>;
+
 /** Event types that are not meetings. */
 const SKIP_TYPES = new Set(['workingLocation', 'outOfOffice', 'focusTime', 'birthday']);
 const MEETING_LINK =
@@ -205,7 +211,7 @@ function joinUrlOf(ev: Record<string, unknown>): string | null {
 }
 
 /** One Calendar v3 event -> a meeting, or null when it is not one to alert about. Pure. */
-export function toMeeting(calendarId: string, raw: unknown): Omit<Meeting, 'dismissed'> | null {
+export function toMeeting(calendarId: string, raw: unknown): RawMeeting | null {
   const ev = rec(raw);
   const id = str(ev.id);
   if (!id || ev.status === 'cancelled' || ev.transparency === 'transparent') return null;
@@ -229,6 +235,7 @@ export function toMeeting(calendarId: string, raw: unknown): Omit<Meeting, 'dism
     joinUrl: joinUrlOf(ev),
     htmlLink: safeExternalUrl(ev.htmlLink),
     calendarId,
+    seriesId: str(ev.recurringEventId)?.slice(0, 400) ?? null,
     response,
   };
 }
@@ -240,8 +247,8 @@ const MAX_PAGES = 8;
 export async function listMeetings(
   http: HttpClient,
   o: { accessToken: string; calendarId: string; from: number; to: number },
-): Promise<Omit<Meeting, 'dismissed'>[]> {
-  const out: Omit<Meeting, 'dismissed'>[] = [];
+): Promise<RawMeeting[]> {
+  const out: RawMeeting[] = [];
   let pageToken: string | undefined;
   for (let page = 0; page < MAX_PAGES; page++) {
     const { items, next } = await listPage(http, o, pageToken);
@@ -256,7 +263,7 @@ async function listPage(
   http: HttpClient,
   o: { accessToken: string; calendarId: string; from: number; to: number },
   pageToken: string | undefined,
-): Promise<{ items: Omit<Meeting, 'dismissed'>[]; next: string | undefined }> {
+): Promise<{ items: RawMeeting[]; next: string | undefined }> {
   const q = new URLSearchParams({
     timeMin: new Date(o.from).toISOString(),
     timeMax: new Date(o.to).toISOString(),

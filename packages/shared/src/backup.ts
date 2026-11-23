@@ -53,6 +53,8 @@ export const ConfigExportFileSchema = z.strictObject({
   secrets: SealedSecretsSchema.nullable(),
   /** Google Calendar settings (client id, calendars, lead time). Absent in files made before it was exported. */
   calendar: z.record(z.string(), z.unknown()).optional(),
+  /** Meetings marked Key / Normal / Quiet by hand. Absent in older files. */
+  calendarMarks: z.record(z.string(), z.unknown()).optional(),
 });
 export type ConfigExportFile = z.infer<typeof ConfigExportFileSchema>;
 

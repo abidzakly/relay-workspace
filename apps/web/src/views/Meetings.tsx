@@ -1,75 +1,34 @@
-import { AnimatePresence, motion } from 'motion/react';
-import { CalendarClock, CalendarOff, ExternalLink, RotateCw, Undo2, Video, X } from 'lucide-react';
-import { useMemo, type ReactNode } from 'react';
+import { motion } from 'motion/react';
+import { CalendarOff, LayoutList, RotateCw, Waves } from 'lucide-react';
+import { useMemo, useState, type ReactNode } from 'react';
 import { Link } from 'react-router';
-import { meetingPhase, type Meeting, type MeetingPhase } from '@relay/shared';
-import { PageTitle, SectionLabel } from '@/components/PageTitle';
+import { meetingLead, meetingPhase } from '@relay/shared';
+import { PageTitle } from '@/components/PageTitle';
 import { TimeAgo } from '@/components/TimeAgo';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
 import { describeError } from '@/lib/api';
-import {
-  useCalendarStatus,
-  useDismissMeeting,
-  useMeetings,
-  useNow,
-  useRefreshMeetings,
-} from '@/lib/calendarApi';
+import { useCalendarStatus, useMeetings, useNow, useRefreshMeetings } from '@/lib/calendarApi';
 import { SPRING } from '@/lib/motion/presets';
 import { cn } from '@/lib/utils';
+import { Horizon } from '@/meetings/Horizon';
+import { MeetingList } from '@/meetings/MeetingList';
+import { NextUp } from '@/meetings/NextUp';
+import {
+  DAY_MS,
+  until,
+  useMeetingsView,
+  weekStart,
+  type MeetingsView,
+  type Row,
+} from '@/meetings/meetingView';
 
 /**
- * Meetings: everything on your calendar(s) that has not ended yet, over the range set in Settings (24 hours to a month). Live meetings first, then each
- * day in order. Dismissing here hides a meeting from the floating alert; Undo brings it back.
+ * Meetings: everything on your calendar(s) that has not ended yet, over the range set in Settings (24 hours to a
+ * month). The meeting that matters now on top, then the Horizon (a timeline where distance fades and Key meetings
+ * keep a beam) or the List. Priority (Key / Normal / Quiet) comes from title rules or a hand-set mark, and always
+ * says why.
  */
-
-type Row = Meeting & { phase: MeetingPhase };
-
-const timeFmt = new Intl.DateTimeFormat(undefined, { hour: '2-digit', minute: '2-digit' });
-const dayFmt = new Intl.DateTimeFormat(undefined, {
-  weekday: 'long',
-  day: 'numeric',
-  month: 'short',
-});
-
-const RESPONSE_NOTE: Partial<Record<Meeting['response'], string>> = {
-  tentative: 'You said maybe',
-  needsAction: 'Not answered yet',
-};
-
-function dayStart(ms: number): number {
-  const d = new Date(ms);
-  d.setHours(0, 0, 0, 0);
-  return d.getTime();
-}
-
-function dayLabel(start: number, now: number): string {
-  const diff = Math.round((dayStart(start) - dayStart(now)) / 86_400_000);
-  if (diff === 0) return 'Today';
-  if (diff === 1) return 'Tomorrow';
-  return dayFmt.format(start);
-}
-
-function duration(m: Meeting): string {
-  const min = Math.round((m.end - m.start) / 60_000);
-  if (min < 60) return `${min} min`;
-  const h = Math.floor(min / 60);
-  return min % 60 ? `${h} h ${min % 60} min` : `${h} h`;
-}
-
-function until(ms: number): string {
-  const min = Math.ceil(ms / 60_000);
-  if (min >= 48 * 60) return `in ${Math.round(min / 1440)} days`;
-  if (min <= 1) return 'in a minute';
-  if (min < 60) return `in ${min} min`;
-  const h = Math.floor(min / 60);
-  return min % 60 ? `in ${h} h ${min % 60} min` : `in ${h} h`;
-}
-
-function left(m: Meeting, now: number): string {
-  const min = Math.max(1, Math.ceil((m.end - now) / 60_000));
-  return min < 60 ? `${min} min left` : `${Math.floor(min / 60)} h ${min % 60} min left`;
-}
 
 function rangeLabel(days: number | undefined): string {
   if (!days || days === 1) return '24 hours';
@@ -79,41 +38,68 @@ function rangeLabel(days: number | undefined): string {
   return `${days} days`;
 }
 
+const VIEWS: { id: MeetingsView; label: string; icon: typeof Waves }[] = [
+  { id: 'horizon', label: 'Horizon', icon: Waves },
+  { id: 'list', label: 'List', icon: LayoutList },
+];
+
 export function Meetings() {
   const q = useMeetings();
   const status = useCalendarStatus();
   const refresh = useRefreshMeetings();
+  const [view, setView] = useMeetingsView();
+  const [focus, setFocus] = useState<{ id: string; n: number } | null>(null);
   const list = q.data;
   const skew = list ? list.now - q.dataUpdatedAt : 0;
-  const now = useNow(15_000, skew);
+  const now = useNow(1_000, skew);
 
-  const { live, days } = useMemo(() => {
-    const rows: Row[] = (list?.meetings ?? [])
-      .map((m) => ({ ...m, phase: meetingPhase(m, now, list?.leadSeconds ?? 0) }))
-      .filter((m) => m.phase !== 'over');
-    const groups = new Map<string, Row[]>();
-    for (const m of rows) {
-      if (m.phase === 'live') continue;
-      const label = dayLabel(m.start, now);
-      groups.set(label, [...(groups.get(label) ?? []), m]);
-    }
-    return { live: rows.filter((m) => m.phase === 'live'), days: [...groups] };
-  }, [list, now]);
+  const rows = useMemo<Row[]>(
+    () =>
+      list
+        ? list.meetings
+            .map((m) => ({ ...m, phase: meetingPhase(m, now, meetingLead(m, list)) }))
+            .filter((m) => m.phase !== 'over')
+        : [],
+    [list, now],
+  );
+
+  const summary = useMemo(() => {
+    const weekEnd = weekStart(now) + 7 * DAY_MS;
+    const thisWeek = rows.filter((m) => m.start < weekEnd);
+    const keys = rows.filter((m) => m.priority === 'key').length;
+    const next = rows.find((m) => m.phase !== 'live');
+    return { thisWeek: thisWeek.length, keys, next };
+  }, [rows, now]);
 
   const connected = list?.connected ?? status.data?.connected ?? false;
   const loading = q.isPending || status.isPending;
+  const lookAheadDays = list?.lookAheadDays ?? 1;
 
   return (
-    <div className="mx-auto flex w-full max-w-3xl flex-col gap-6">
+    <div className="mx-auto flex w-full max-w-5xl flex-col gap-6">
       <div className="flex flex-wrap items-end justify-between gap-4">
-        <div>
+        <div className="min-w-0">
           <PageTitle>Meetings</PageTitle>
           <p className="text-sm text-muted-foreground">
-            What is left on your Google Calendar over the next {rangeLabel(list?.lookAheadDays)}.
+            {connected && rows.length > 0 ? (
+              <>
+                <span className="text-foreground">{summary.thisWeek}</span> this week
+                {summary.keys ? (
+                  <>
+                    {' · '}
+                    <span className="text-emphasis">◆ {summary.keys} Key</span>
+                  </>
+                ) : null}
+                {summary.next ? <> · next {until(summary.next.start - now)}</> : null}
+                {` · showing the next ${rangeLabel(lookAheadDays)}`}
+              </>
+            ) : (
+              `What is left on your Google Calendar over the next ${rangeLabel(lookAheadDays)}.`
+            )}
           </p>
         </div>
         {connected ? (
-          <div className="flex items-center gap-3">
+          <div className="flex flex-wrap items-center gap-3">
             {status.data?.lastSyncAt ? (
               <span className="text-xs text-muted-foreground">
                 Read <TimeAgo at={status.data.lastSyncAt} />
@@ -131,6 +117,34 @@ export function Meetings() {
               />
               {refresh.isPending ? 'Reading…' : 'Read now'}
             </Button>
+            <div role="radiogroup" aria-label="View" className="glass inline-flex rounded-full p-1">
+              {VIEWS.map((v) => {
+                const on = view === v.id;
+                return (
+                  <button
+                    key={v.id}
+                    type="button"
+                    role="radio"
+                    aria-checked={on}
+                    onClick={() => setView(v.id)}
+                    className={cn(
+                      'relative inline-flex h-8 cursor-pointer items-center gap-1.5 rounded-full px-3 type-micro transition-colors focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none',
+                      on ? 'text-primary-foreground' : 'text-foreground hover:bg-accent',
+                    )}
+                  >
+                    {on ? (
+                      <motion.span
+                        layoutId="meetings-view"
+                        className="absolute inset-0 rounded-full bg-primary"
+                        transition={SPRING.settle}
+                      />
+                    ) : null}
+                    <v.icon className="relative size-3.5" aria-hidden />
+                    <span className="relative">{v.label}</span>
+                  </button>
+                );
+              })}
+            </div>
           </div>
         ) : null}
       </div>
@@ -160,40 +174,42 @@ export function Meetings() {
             </Button>
           }
         />
-      ) : live.length === 0 && days.length === 0 ? (
+      ) : rows.length === 0 ? (
         <Empty
           title="A clear calendar"
-          body={`Nothing left for the next ${rangeLabel(list?.lookAheadDays)}. New invitations show up within a minute.`}
+          body={`Nothing left for the next ${rangeLabel(lookAheadDays)}. New invitations show up within a minute.`}
         />
       ) : (
         <div className="flex flex-col gap-8">
-          {live.length > 0 ? (
-            <section className="flex flex-col gap-3">
-              <SectionLabel className="text-emphasis">Now</SectionLabel>
-              <ul className="flex flex-col gap-2">
-                <AnimatePresence initial={false}>
-                  {live.map((m, i) => (
-                    <MeetingRow key={m.id} m={m} now={now} index={i} />
-                  ))}
-                </AnimatePresence>
-              </ul>
-            </section>
-          ) : null}
-          {days.map(([label, rows]) => (
-            <section key={label} className="flex flex-col gap-3">
-              <SectionLabel>
-                {label}
-                <span className="ml-2 text-muted-foreground">{rows.length}</span>
-              </SectionLabel>
-              <ul className="flex flex-col">
-                <AnimatePresence initial={false}>
-                  {rows.map((m, i) => (
-                    <MeetingRow key={m.id} m={m} now={now} index={i} />
-                  ))}
-                </AnimatePresence>
-              </ul>
-            </section>
-          ))}
+          <NextUp
+            rows={rows}
+            now={now}
+            onPick={(id) => setFocus((f) => ({ id, n: (f?.n ?? 0) + 1 }))}
+          />
+          <motion.div
+            key={view}
+            initial={{ opacity: 0, y: 8, filter: 'blur(6px)' }}
+            animate={{ opacity: 1, y: 0, filter: 'blur(0px)' }}
+            transition={SPRING.settle}
+          >
+            {view === 'horizon' ? (
+              <Horizon
+                rows={rows}
+                now={now}
+                lookAheadDays={lookAheadDays}
+                focusId={focus?.id ?? null}
+                focusSeq={focus?.n ?? 0}
+              />
+            ) : (
+              <MeetingList
+                rows={rows}
+                now={now}
+                lookAheadDays={lookAheadDays}
+                focusId={focus?.id ?? null}
+                focusSeq={focus?.n ?? 0}
+              />
+            )}
+          </motion.div>
         </div>
       )}
     </div>
@@ -215,129 +231,5 @@ function Empty({ title, body, action }: { title: string; body: string; action?: 
       </div>
       {action}
     </motion.div>
-  );
-}
-
-function MeetingRow({ m, now, index }: { m: Row; now: number; index: number }) {
-  const dismiss = useDismissMeeting();
-  const live = m.phase === 'live';
-  const soon = m.phase === 'soon';
-  const link = m.joinUrl ?? m.htmlLink;
-
-  const join = () => {
-    if (!link) return;
-    window.open(link, '_blank', 'noopener,noreferrer');
-    if (!m.dismissed && (live || soon)) dismiss.mutate({ id: m.id });
-  };
-
-  return (
-    <motion.li
-      layout
-      initial={{ opacity: 0, y: 6 }}
-      animate={{ opacity: 1, y: 0, transition: { ...SPRING.settle, delay: index * 0.03 } }}
-      exit={{ opacity: 0, x: 16, transition: SPRING.settle }}
-      className={cn(
-        'group grid grid-cols-[4.5rem_minmax(0,1fr)] gap-x-4 gap-y-3 py-3 sm:grid-cols-[4.5rem_minmax(0,1fr)_auto]',
-        live
-          ? 'rounded-surface border border-emphasis/30 bg-emphasis/[0.04] px-4'
-          : 'border-b border-hairline last:border-b-0',
-      )}
-    >
-      <div className="flex flex-col pt-0.5 font-mono text-xs tabular-nums">
-        <span className={cn(live || soon ? 'text-foreground' : 'text-foreground/80')}>
-          {timeFmt.format(m.start)}
-        </span>
-        <span className="text-muted-foreground">{timeFmt.format(m.end)}</span>
-      </div>
-
-      <div className={cn('min-w-0', m.dismissed && !live && 'opacity-70')}>
-        <div className="flex items-center gap-2">
-          {live || soon ? <Dot live={live} /> : null}
-          <h2 className="truncate text-sm leading-snug font-semibold tracking-[-0.01em]">
-            {m.title}
-          </h2>
-        </div>
-        <p className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-muted-foreground">
-          <span className={cn(live ? 'text-emphasis' : soon && 'text-foreground')}>
-            {live ? left(m, now) : until(m.start - now)}
-          </span>
-          <span aria-hidden>·</span>
-          <span className="inline-flex items-center gap-1">
-            <CalendarClock className="size-3.5" aria-hidden />
-            {duration(m)}
-          </span>
-          {m.calendarId !== 'primary' ? <span className="truncate">{m.calendarId}</span> : null}
-          {RESPONSE_NOTE[m.response] ? <span>{RESPONSE_NOTE[m.response]}</span> : null}
-          {m.dismissed ? <span>Alert dismissed</span> : null}
-        </p>
-        {live ? <Progress start={m.start} end={m.end} now={now} /> : null}
-      </div>
-
-      <div className="col-start-2 flex items-center gap-1.5 sm:col-start-auto sm:justify-end">
-        {m.joinUrl ? (
-          <Button size="sm" variant={live || soon ? 'default' : 'outline'} onClick={join}>
-            <Video className="size-4" aria-hidden />
-            Join
-          </Button>
-        ) : null}
-        {m.htmlLink ? (
-          <Button
-            size="icon"
-            variant="ghost"
-            asChild
-            aria-label="Open in Google Calendar"
-            title="Open in Google Calendar"
-          >
-            <a href={m.htmlLink} target="_blank" rel="noopener noreferrer">
-              <ExternalLink className="size-4" aria-hidden />
-            </a>
-          </Button>
-        ) : null}
-        <Button
-          size="icon"
-          variant="ghost"
-          disabled={dismiss.isPending}
-          onClick={() => dismiss.mutate({ id: m.id, dismissed: !m.dismissed })}
-          aria-label={m.dismissed ? 'Show the alert again' : 'Dismiss the alert'}
-          title={m.dismissed ? 'Show the alert again' : 'Dismiss the alert'}
-        >
-          {m.dismissed ? (
-            <Undo2 className="size-4" aria-hidden />
-          ) : (
-            <X className="size-4" aria-hidden />
-          )}
-        </Button>
-      </div>
-    </motion.li>
-  );
-}
-
-function Dot({ live }: { live: boolean }) {
-  return (
-    <span className="relative flex size-2.5 shrink-0 items-center justify-center" aria-hidden>
-      {live ? (
-        <span className="absolute inset-0 rounded-full bg-emphasis/50 motion-safe:animate-ping" />
-      ) : null}
-      <span
-        className={cn(
-          'relative size-2 rounded-full',
-          live ? 'bg-emphasis' : 'border border-emphasis/70',
-        )}
-      />
-    </span>
-  );
-}
-
-function Progress({ start, end, now }: { start: number; end: number; now: number }) {
-  const p = Math.min(1, Math.max(0, (now - start) / (end - start)));
-  return (
-    <div className="mt-2.5 h-[3px] overflow-hidden rounded-full bg-foreground/8" aria-hidden>
-      <motion.div
-        className="h-full origin-left rounded-full bg-emphasis"
-        initial={false}
-        animate={{ scaleX: p }}
-        transition={SPRING.settle}
-      />
-    </div>
   );
 }

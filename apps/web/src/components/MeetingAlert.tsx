@@ -2,7 +2,7 @@ import { AnimatePresence, LayoutGroup, motion } from 'motion/react';
 import { CalendarClock, ChevronDown, Video, X } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useLocation } from 'react-router';
-import { meetingPhase, type Meeting, type MeetingPhase } from '@relay/shared';
+import { meetingLead, meetingPhase, type Meeting, type MeetingPhase } from '@relay/shared';
 import { useDismissMeeting, useMeetings, useNow } from '@/lib/calendarApi';
 import { useFeatures } from '@/lib/features';
 import { vibrate } from '@/lib/haptics';
@@ -68,7 +68,7 @@ function MeetingAlertInner() {
     const out: Shown[] = [];
     for (const m of list.meetings) {
       if (m.dismissed) continue;
-      const phase = meetingPhase(m, now, list.leadSeconds);
+      const phase = meetingPhase(m, now, meetingLead(m, list));
       if (phase === 'soon' || phase === 'live') out.push({ ...m, phase });
     }
     // Under way first (the longest-running is the most missed), then the next to start.
@@ -80,7 +80,7 @@ function MeetingAlertInner() {
   useEffect(() => {
     const near =
       list?.meetings.some(
-        (m) => !m.dismissed && m.end > now && m.start - now < list.leadSeconds * 1000 + 20_000,
+        (m) => !m.dismissed && m.end > now && m.start - now < meetingLead(m, list) * 1000 + 20_000,
       ) ?? false;
     setFast(near);
   }, [list, now]);
@@ -274,6 +274,11 @@ function Pill({
     >
       <LiveDot live={live} reduced={reduced} />
       <span className="type-micro shrink-0 text-emphasis">{live ? 'Live' : 'Soon'}</span>
+      {lead.priority === 'key' ? (
+        <span className="shrink-0 text-xs text-emphasis" title="Key meeting" aria-label="Key">
+          ◆
+        </span>
+      ) : null}
       <motion.span layoutId="meeting-title" className="min-w-0 truncate text-sm font-medium">
         {lead.title}
       </motion.span>

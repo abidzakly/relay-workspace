@@ -1,6 +1,11 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useState } from 'react';
-import type { CalendarConfigUpdate, CalendarStatus, MeetingList } from '@relay/shared';
+import type {
+  CalendarConfigUpdate,
+  CalendarStatus,
+  MeetingList,
+  MeetingPriorityBody,
+} from '@relay/shared';
 import { get, post, put } from './api';
 
 /** Google Calendar. The server pushes `calendar.changed` over SSE, so these rarely refetch on their own. */
@@ -80,6 +85,47 @@ export function useDismissMeeting() {
               ...old,
               meetings: old.meetings.map((m) =>
                 m.id === a.id ? { ...m, dismissed: a.dismissed ?? true } : m,
+              ),
+            }
+          : old,
+      );
+    },
+    onSuccess: (list) => qc.setQueryData(calendarKeys.meetings, list),
+  });
+}
+
+/**
+ * Marks a meeting Key / Normal / Quiet (or, with `level: null`, back to automatic). Optimistic for a set level: the
+ * meeting (and with `series`, every occurrence) changes at once; the server's answer carries the real reasons.
+ */
+export function useSetMeetingPriority() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (body: MeetingPriorityBody) =>
+      post<MeetingList>('/api/calendar/meetings/priority', body),
+    onMutate: (b) => {
+      if (b.level === null) return;
+      const level = b.level;
+      qc.setQueryData<MeetingList>(calendarKeys.meetings, (old) =>
+        old
+          ? {
+              ...old,
+              meetings: old.meetings.map((m) =>
+                m.id === b.id ||
+                (b.scope === 'series' &&
+                  b.seriesId &&
+                  m.seriesId === b.seriesId &&
+                  m.calendarId === b.calendarId)
+                  ? {
+                      ...m,
+                      priority: level,
+                      prioritySource: b.scope,
+                      priorityReason:
+                        b.scope === 'series'
+                          ? 'Marked by you (every occurrence)'
+                          : 'Marked by you (this meeting)',
+                    }
+                  : m,
               ),
             }
           : old,

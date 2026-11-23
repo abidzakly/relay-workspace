@@ -280,6 +280,7 @@ const STALE_AFTER_MS: Record<string, number> = {
   readyForMr: 3 * DAY,
   agentDone: HOUR,
   meetingStarted: HOUR,
+  meetingTomorrow: DAY,
   reviewRequested: 3 * DAY,
   mismatch: 7 * DAY,
 };

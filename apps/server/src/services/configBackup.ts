@@ -7,6 +7,7 @@ import {
   CONFIG_EXPORT_SCHEMA_VERSION,
   ConfigExportFileSchema,
   GlobalConfigStoredSchema,
+  PriorityMarksSchema,
   RepoConfigStoredSchema,
   SecretSchema,
   toStoredRepoConfig,
@@ -15,12 +16,17 @@ import {
   type CalendarConfig,
   type CalendarConfigUpdate,
   type GlobalConfigStored,
+  type PriorityMarks,
   type RepoConfigStored,
   type SealedSecrets,
 } from '@relay/shared';
 import type { ConfigStore } from '../config/store';
 import { ActionError } from './actionError';
-import { CALENDAR_CLIENT_SECRET_KEY, CALENDAR_CONFIG_KEY } from './calendar/calendarService';
+import {
+  CALENDAR_CLIENT_SECRET_KEY,
+  CALENDAR_CONFIG_KEY,
+  CALENDAR_MARKS_KEY,
+} from './calendar/calendarService';
 
 /**
  * Config export and import. The passphrase lives only in this module's local variables: it is never
@@ -174,6 +180,12 @@ function collectSecrets(store: ConfigStore): SecretsPayload {
   };
 }
 
+/** Meetings marked by hand (`state.calendar.marks`); empty when none. */
+function readMarks(store: ConfigStore): PriorityMarks {
+  const parsed = PriorityMarksSchema.safeParse(store.getState(CALENDAR_MARKS_KEY) ?? {});
+  return parsed.success ? parsed.data : {};
+}
+
 /** The saved Google Calendar settings, or undefined when they were never set. */
 function readCalendar(store: ConfigStore): CalendarConfig | undefined {
   const raw = store.getState(CALENDAR_CONFIG_KEY);
@@ -202,6 +214,8 @@ export async function buildConfigExport(
   };
   const calendar = readCalendar(store);
   if (calendar) doc.calendar = calendar;
+  const marks = readMarks(store);
+  if (Object.keys(marks).length > 0) doc.calendarMarks = marks;
   assertNoPlaintext(doc, held);
   if (passphrase !== undefined) doc.secrets = await seal(held, passphrase);
   return doc;
@@ -274,6 +288,8 @@ export interface ParsedConfigFile {
   repos: RepoConfigStored[];
   /** Absent in files made before calendar settings were exported: the ones here are then left alone. */
   calendar: CalendarConfig | undefined;
+  /** Absent in older files: the marks here are then left alone. */
+  calendarMarks: PriorityMarks | undefined;
   sealed: SealedSecrets | null;
 }
 
@@ -310,6 +326,10 @@ export function parseConfigFile(raw: unknown): ParsedConfigFile {
     file.calendar === undefined
       ? undefined
       : parseSection(CalendarConfigSchema, file.calendar, ['calendar'], defaulted);
+  const calendarMarks =
+    file.calendarMarks === undefined
+      ? undefined
+      : parseSection(PriorityMarksSchema, file.calendarMarks, ['calendarMarks'], defaulted);
   const ids = new Set<string>();
   for (const repo of repos) {
     if (ids.has(repo.id)) {
@@ -331,6 +351,7 @@ export function parseConfigFile(raw: unknown): ParsedConfigFile {
     settings,
     repos,
     calendar,
+    calendarMarks,
     sealed: file.secrets,
   };
 }
@@ -377,6 +398,7 @@ export function previewImport(
   if (secrets?.notionToken) preview.secretCount++;
   if (secrets?.calendarClientSecret) preview.secretCount++;
   if (calendarChanges(store, parsed, secrets)) preview.settingsChanged.push('calendar');
+  if (marksChanges(store, parsed)) preview.settingsChanged.push('calendarMarks');
   for (const repo of parsed.repos) {
     const held = secrets?.repos[repo.id];
     if (held?.token) preview.secretCount++;
@@ -429,4 +451,10 @@ export function calendarChanges(
     ...(parsed.calendar ?? readCalendar(store) ?? CalendarConfigSchema.parse({})),
     ...(newSecret ? { clientSecret: secret } : {}),
   };
+}
+
+/** The hand-set meeting priorities of an import, or null when the file has none or they match the ones here. */
+export function marksChanges(store: ConfigStore, parsed: ParsedConfigFile): PriorityMarks | null {
+  if (parsed.calendarMarks === undefined) return null;
+  return sameJson(readMarks(store), parsed.calendarMarks) ? null : parsed.calendarMarks;
 }
