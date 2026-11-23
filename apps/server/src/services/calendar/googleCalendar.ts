@@ -233,17 +233,37 @@ export function toMeeting(calendarId: string, raw: unknown): Omit<Meeting, 'dism
   };
 }
 
-/** Events of one calendar between `from` and `to` (recurring ones expanded). */
+/** Pages of 250 events, at most this many: a month of a busy calendar fits with room to spare. */
+const MAX_PAGES = 8;
+
+/** Events of one calendar between `from` and `to` (recurring ones expanded), following `nextPageToken`. */
 export async function listMeetings(
   http: HttpClient,
   o: { accessToken: string; calendarId: string; from: number; to: number },
 ): Promise<Omit<Meeting, 'dismissed'>[]> {
+  const out: Omit<Meeting, 'dismissed'>[] = [];
+  let pageToken: string | undefined;
+  for (let page = 0; page < MAX_PAGES; page++) {
+    const { items, next } = await listPage(http, o, pageToken);
+    out.push(...items);
+    if (!next) break;
+    pageToken = next;
+  }
+  return out;
+}
+
+async function listPage(
+  http: HttpClient,
+  o: { accessToken: string; calendarId: string; from: number; to: number },
+  pageToken: string | undefined,
+): Promise<{ items: Omit<Meeting, 'dismissed'>[]; next: string | undefined }> {
   const q = new URLSearchParams({
     timeMin: new Date(o.from).toISOString(),
     timeMax: new Date(o.to).toISOString(),
     singleEvents: 'true',
     orderBy: 'startTime',
-    maxResults: '100',
+    maxResults: '250',
+    ...(pageToken ? { pageToken } : {}),
   });
   const res = await http.send({
     url: `${CALENDAR_EVENTS_URL(o.calendarId)}?${q.toString()}`,
@@ -256,9 +276,12 @@ export async function listMeetings(
     );
   if (res.status === 404) throw new GoogleError(`Calendar “${o.calendarId}” was not found.`);
   if (res.status !== 200) throw new GoogleError(`Google Calendar answered HTTP ${res.status}.`);
-  const items = rec(res.json).items;
-  if (!Array.isArray(items)) return [];
-  return items
-    .map((it) => toMeeting(o.calendarId, it))
-    .filter((m): m is NonNullable<typeof m> => m !== null);
+  const body = rec(res.json);
+  const items = Array.isArray(body.items) ? body.items : [];
+  return {
+    items: items
+      .map((it) => toMeeting(o.calendarId, it))
+      .filter((m): m is NonNullable<typeof m> => m !== null),
+    next: str(body.nextPageToken),
+  };
 }

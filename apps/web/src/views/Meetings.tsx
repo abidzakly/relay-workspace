@@ -19,7 +19,7 @@ import { SPRING } from '@/lib/motion/presets';
 import { cn } from '@/lib/utils';
 
 /**
- * Meetings: everything on your calendar(s) that has not ended yet, over the next day. Live meetings first, then each
+ * Meetings: everything on your calendar(s) that has not ended yet, over the range set in Settings (24 hours to a month). Live meetings first, then each
  * day in order. Dismissing here hides a meeting from the floating alert; Undo brings it back.
  */
 
@@ -59,6 +59,7 @@ function duration(m: Meeting): string {
 
 function until(ms: number): string {
   const min = Math.ceil(ms / 60_000);
+  if (min >= 48 * 60) return `in ${Math.round(min / 1440)} days`;
   if (min <= 1) return 'in a minute';
   if (min < 60) return `in ${min} min`;
   const h = Math.floor(min / 60);
@@ -68,6 +69,14 @@ function until(ms: number): string {
 function left(m: Meeting, now: number): string {
   const min = Math.max(1, Math.ceil((m.end - now) / 60_000));
   return min < 60 ? `${min} min left` : `${Math.floor(min / 60)} h ${min % 60} min left`;
+}
+
+function rangeLabel(days: number | undefined): string {
+  if (!days || days === 1) return '24 hours';
+  if (days === 7) return 'week';
+  if (days === 31) return 'month';
+  if (days % 7 === 0) return `${days / 7} weeks`;
+  return `${days} days`;
 }
 
 export function Meetings() {
@@ -100,7 +109,7 @@ export function Meetings() {
         <div>
           <PageTitle>Meetings</PageTitle>
           <p className="text-sm text-muted-foreground">
-            What is left on your Google Calendar over the next 24 hours.
+            What is left on your Google Calendar over the next {rangeLabel(list?.lookAheadDays)}.
           </p>
         </div>
         {connected ? (
@@ -154,7 +163,7 @@ export function Meetings() {
       ) : live.length === 0 && days.length === 0 ? (
         <Empty
           title="A clear calendar"
-          body="Nothing left for the next 24 hours. New invitations show up within a minute."
+          body={`Nothing left for the next ${rangeLabel(list?.lookAheadDays)}. New invitations show up within a minute.`}
         />
       ) : (
         <div className="flex flex-col gap-8">

@@ -26,6 +26,14 @@ const LEAD_CHOICES = [
   { value: 300, label: '5 min before' },
 ];
 
+const RANGE_CHOICES = [
+  { value: 1, label: '24 hours' },
+  { value: 3, label: '3 days' },
+  { value: 7, label: '1 week' },
+  { value: 14, label: '2 weeks' },
+  { value: 31, label: '1 month' },
+];
+
 function parseIds(raw: string): { ids: string[]; bad: string | null } {
   const ids = [...new Set(raw.split(/[\s,]+/).filter(Boolean))];
   const bad = ids.find((id) => !CalendarIdSchema.safeParse(id).success) ?? null;
@@ -103,13 +111,15 @@ function CalendarForm({
   const [secret, setSecret] = useState('');
   const [idsRaw, setIdsRaw] = useState(status.config.calendarIds.join(', '));
   const [lead, setLead] = useState(status.config.leadSeconds);
+  const [range, setRange] = useState(status.config.lookAheadDays);
   const { ids, bad } = parseIds(idsRaw);
 
   const dirty =
     clientId.trim() !== status.config.clientId ||
     secret.trim() !== '' ||
     ids.join(',') !== status.config.calendarIds.join(',') ||
-    lead !== status.config.leadSeconds;
+    lead !== status.config.leadSeconds ||
+    range !== status.config.lookAheadDays;
   const clientChanges = clientId.trim() !== status.config.clientId || secret.trim() !== '';
   const ready = status.config.clientId !== '' && status.clientSecretSet;
   const featureOn = settings.features.calendar;
@@ -120,6 +130,7 @@ function CalendarForm({
       clientId: clientId.trim(),
       calendarIds: ids.length ? ids : ['primary'],
       leadSeconds: lead,
+      lookAheadDays: range,
       ...(secret.trim() ? { clientSecret: secret.trim() } : {}),
     });
 
@@ -217,6 +228,24 @@ function CalendarForm({
               variant={lead === c.value ? 'default' : 'outline'}
               aria-pressed={lead === c.value}
               onClick={() => setLead(c.value)}
+            >
+              {c.label}
+            </Button>
+          ))}
+        </div>
+      </div>
+
+      <div className="grid gap-2">
+        <Label>Meetings page shows the next</Label>
+        <div className="flex flex-wrap gap-2">
+          {RANGE_CHOICES.map((c) => (
+            <Button
+              key={c.value}
+              type="button"
+              size="sm"
+              variant={range === c.value ? 'default' : 'outline'}
+              aria-pressed={range === c.value}
+              onClick={() => setRange(c.value)}
             >
               {c.label}
             </Button>
