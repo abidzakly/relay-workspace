@@ -36,6 +36,7 @@ const ReleaseTrain = lazy(() =>
 const SprintHarbor = lazy(() =>
   import('@/views/SprintHarbor').then((m) => ({ default: m.SprintHarbor })),
 );
+const Meetings = lazy(() => import('@/views/Meetings').then((m) => ({ default: m.Meetings })));
 const Reader = lazy(() => import('@/views/Reader').then((m) => ({ default: m.Reader })));
 const Settings = lazy(() => import('@/views/Settings').then((m) => ({ default: m.Settings })));
 const ReviewDesk = lazy(() =>
@@ -98,6 +99,7 @@ export const router = createBrowserRouter([
       { path: 'builds', element: page(Builds) },
       { path: 'kpi', element: page(Kpi) },
       { path: 'sprints', element: page(SprintHarbor) },
+      { path: 'meetings', element: page(Meetings) },
       { path: 'reader', element: page(Reader) },
       { path: 'settings', element: page(Settings) },
       { path: 'audit', element: page(Audit) },

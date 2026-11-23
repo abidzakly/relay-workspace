@@ -147,7 +147,7 @@ export const FEATURES: readonly FeatureInfo[] = [
     group: 'plan',
     label: 'Meetings',
     description: 'Your Google Calendar meetings, with a floating alert while one is under way.',
-    routes: [],
+    routes: ['/meetings'],
   },
   {
     id: 'reader',
