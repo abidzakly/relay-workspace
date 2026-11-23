@@ -1,6 +1,7 @@
 import { createCipheriv, createDecipheriv, randomBytes, scrypt } from 'node:crypto';
 import { z } from 'zod';
 import {
+  CalendarConfigSchema,
   CONFIG_EXPORT_FORMAT,
   CONFIG_EXPORT_FORMATS,
   CONFIG_EXPORT_SCHEMA_VERSION,
@@ -11,12 +12,15 @@ import {
   toStoredRepoConfig,
   type ConfigExportFile,
   type ConfigImportPreview,
+  type CalendarConfig,
+  type CalendarConfigUpdate,
   type GlobalConfigStored,
   type RepoConfigStored,
   type SealedSecrets,
 } from '@relay/shared';
 import type { ConfigStore } from '../config/store';
 import { ActionError } from './actionError';
+import { CALENDAR_CLIENT_SECRET_KEY, CALENDAR_CONFIG_KEY } from './calendar/calendarService';
 
 /**
  * Config export and import. The passphrase lives only in this module's local variables: it is never
@@ -38,6 +42,8 @@ const LEAK_CHECK_MIN_LEN = 8;
 
 const SecretsPayloadSchema = z.strictObject({
   notionToken: SecretSchema.optional(),
+  /** The Google Calendar OAuth client secret. The refresh token is never exported: you connect again. */
+  calendarClientSecret: SecretSchema.optional(),
   repos: z.record(
     z.string(),
     z.strictObject({
@@ -136,6 +142,7 @@ function assertNoPlaintext(doc: ConfigExportFile, secrets: SecretsPayload): void
   const text = JSON.stringify(doc);
   const values = [
     secrets.notionToken,
+    secrets.calendarClientSecret,
     ...Object.values(secrets.repos).flatMap((r) => [r.token, r.webhookSecret]),
   ];
   for (const value of values) {
@@ -159,7 +166,20 @@ function collectSecrets(store: ConfigStore): SecretsPayload {
       ...(webhookSecret ? { webhookSecret } : {}),
     };
   }
-  return { ...(notionToken ? { notionToken } : {}), repos };
+  const calendarClientSecret = store.getSecret(CALENDAR_CLIENT_SECRET_KEY);
+  return {
+    ...(notionToken ? { notionToken } : {}),
+    ...(calendarClientSecret ? { calendarClientSecret } : {}),
+    repos,
+  };
+}
+
+/** The saved Google Calendar settings, or undefined when they were never set. */
+function readCalendar(store: ConfigStore): CalendarConfig | undefined {
+  const raw = store.getState(CALENDAR_CONFIG_KEY);
+  if (raw === undefined) return undefined;
+  const parsed = CalendarConfigSchema.safeParse(raw);
+  return parsed.success ? parsed.data : undefined;
 }
 
 /** Builds the file. With no passphrase, `secrets` is null and the file holds no secret, encrypted or not. */
@@ -180,6 +200,8 @@ export async function buildConfigExport(
     }),
     secrets: null,
   };
+  const calendar = readCalendar(store);
+  if (calendar) doc.calendar = calendar;
   assertNoPlaintext(doc, held);
   if (passphrase !== undefined) doc.secrets = await seal(held, passphrase);
   return doc;
@@ -250,6 +272,8 @@ export interface ParsedConfigFile {
   exportedAt: number;
   settings: GlobalConfigStored;
   repos: RepoConfigStored[];
+  /** Absent in files made before calendar settings were exported: the ones here are then left alone. */
+  calendar: CalendarConfig | undefined;
   sealed: SealedSecrets | null;
 }
 
@@ -282,6 +306,10 @@ export function parseConfigFile(raw: unknown): ParsedConfigFile {
   const repos = file.repos.map((r, i) =>
     parseSection(RepoConfigStoredSchema, r, ['repos', i], defaulted),
   );
+  const calendar =
+    file.calendar === undefined
+      ? undefined
+      : parseSection(CalendarConfigSchema, file.calendar, ['calendar'], defaulted);
   const ids = new Set<string>();
   for (const repo of repos) {
     if (ids.has(repo.id)) {
@@ -302,6 +330,7 @@ export function parseConfigFile(raw: unknown): ParsedConfigFile {
     exportedAt: file.exportedAt,
     settings,
     repos,
+    calendar,
     sealed: file.secrets,
   };
 }
@@ -346,6 +375,8 @@ export function previewImport(
     defaulted: parsed.defaulted,
   };
   if (secrets?.notionToken) preview.secretCount++;
+  if (secrets?.calendarClientSecret) preview.secretCount++;
+  if (calendarChanges(store, parsed, secrets)) preview.settingsChanged.push('calendar');
   for (const repo of parsed.repos) {
     const held = secrets?.repos[repo.id];
     if (held?.token) preview.secretCount++;
@@ -378,4 +409,24 @@ export function applyImport(
       webhookSecret: secrets?.repos[stored.id]?.webhookSecret,
     })),
   });
+}
+
+/**
+ * The Google Calendar part of an import, as an update for `CalendarService.saveConfig`, or null when it changes
+ * nothing. The secret is only passed when it differs: saving a secret disconnects, and the same one must not.
+ */
+export function calendarChanges(
+  store: ConfigStore,
+  parsed: ParsedConfigFile,
+  secrets: SecretsPayload | null,
+): CalendarConfigUpdate | null {
+  const secret = secrets?.calendarClientSecret;
+  const newSecret = secret !== undefined && secret !== store.getSecret(CALENDAR_CLIENT_SECRET_KEY);
+  const configChanged =
+    parsed.calendar !== undefined && !sameJson(readCalendar(store), parsed.calendar);
+  if (!configChanged && !newSecret) return null;
+  return {
+    ...(parsed.calendar ?? readCalendar(store) ?? CalendarConfigSchema.parse({})),
+    ...(newSecret ? { clientSecret: secret } : {}),
+  };
 }
