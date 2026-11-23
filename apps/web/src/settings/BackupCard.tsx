@@ -44,9 +44,9 @@ function ExportSection() {
         <div className="grid gap-1">
           <Label htmlFor="export-secrets">Include secrets, encrypted with a passphrase</Label>
           <p className="text-xs text-muted-foreground">
-            Off: tokens and webhook secrets are left out, and you enter tokens again after a
-            restore. On: they are sealed in the file, and only this passphrase opens them. It cannot
-            be recovered.
+            Off: tokens, webhook secrets and the Google Calendar client secret are left out, and you
+            enter them again after a restore. Google Calendar always needs Connect again. On: they
+            are sealed in the file, and only this passphrase opens them. It cannot be recovered.
           </p>
         </div>
         <Switch

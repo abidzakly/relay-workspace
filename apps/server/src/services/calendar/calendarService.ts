@@ -33,10 +33,13 @@ import {
  *   secret.gcal.refreshToken  the refresh token              (encrypted)
  */
 
-const CONFIG = 'calendar.config';
+/** Also read by the config backup (`services/configBackup.ts`). */
+export const CALENDAR_CONFIG_KEY = 'calendar.config';
+export const CALENDAR_CLIENT_SECRET_KEY = 'gcal.clientSecret';
+const CONFIG = CALENDAR_CONFIG_KEY;
 const ACCOUNT = 'calendar.account';
 const DISMISSED = 'calendar.dismissed';
-const CLIENT_SECRET = 'gcal.clientSecret';
+const CLIENT_SECRET = CALENDAR_CLIENT_SECRET_KEY;
 const REFRESH_TOKEN = 'gcal.refreshToken';
 
 export const CALENDAR_POLL_MS = 60_000;

@@ -7,9 +7,11 @@ import {
 import type { AuditWriter } from '../../audit/auditLog';
 import type { ConfigStore } from '../../config/store';
 import type { AppDb } from '../../db';
+import type { CalendarService } from '../../services/calendar/calendarService';
 import {
   applyImport,
   buildConfigExport,
+  calendarChanges,
   openSecrets,
   parseConfigFile,
   previewImport,
@@ -21,6 +23,8 @@ export interface BackupRouteDeps {
   store: ConfigStore;
   audit: AuditWriter;
   cache: AppDb;
+  /** Applies the Google Calendar part of an import (a new OAuth client disconnects the old sign-in). */
+  calendar?: Pick<CalendarService, 'saveConfig'>;
   now?: () => number;
 }
 
@@ -41,7 +45,7 @@ const stamp = (ms: number) =>
  */
 export function registerBackupRoutes(
   app: FastifyInstance,
-  { store, audit, cache, now }: BackupRouteDeps,
+  { store, audit, cache, calendar, now }: BackupRouteDeps,
 ): void {
   const clock = now ?? Date.now;
   sweepBackupLeftovers(cache.sqlite);
@@ -79,7 +83,9 @@ export function registerBackupRoutes(
       const secrets = await openSecrets(parsed, body.passphrase);
       const preview = previewImport(store, parsed, secrets);
       const before = { settings: store.getGlobalPublic(), repos: store.listRepos() };
+      const calendarUpdate = calendarChanges(store, parsed, secrets);
       applyImport(store, parsed, secrets);
+      if (calendarUpdate && calendar) await calendar.saveConfig(calendarUpdate);
       audit.write({
         actor: 'user',
         action: 'settings.import',
@@ -90,6 +96,7 @@ export function registerBackupRoutes(
           settings: store.getGlobalPublic(),
           repos: store.listRepos(),
           restoredCredentials: preview.secretCount,
+          calendarUpdated: calendarUpdate !== null,
         },
       });
       return { preview };
