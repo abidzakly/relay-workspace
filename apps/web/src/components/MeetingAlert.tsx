@@ -1,6 +1,7 @@
 import { AnimatePresence, LayoutGroup, motion } from 'motion/react';
 import { CalendarClock, ChevronDown, Video, X } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { useLocation } from 'react-router';
 import { meetingPhase, type Meeting, type MeetingPhase } from '@relay/shared';
 import { useDismissMeeting, useMeetings, useNow } from '@/lib/calendarApi';
 import { useFeatures } from '@/lib/features';
@@ -44,7 +45,9 @@ const RESPONSE_NOTE: Partial<Record<Meeting['response'], string>> = {
 
 export function MeetingAlert() {
   const on = useFeatures().calendar;
-  if (!on) return null;
+  // The Meetings page lists the same meetings, with the same actions.
+  const onPage = useLocation().pathname.startsWith('/meetings');
+  if (!on || onPage) return null;
   return <MeetingAlertInner />;
 }
 
