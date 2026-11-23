@@ -7,6 +7,9 @@ import { EpochMsSchema } from './common';
  * and the refresh token are encrypted at rest and never returned by the API.
  */
 
+/** Up to a month ahead. */
+export const CALENDAR_MAX_LOOK_AHEAD_DAYS = 31;
+
 /** Calendar ids are e-mail-like (`primary`, `you@company.com`, `…@group.calendar.google.com`). */
 export const CalendarIdSchema = z
   .string()
@@ -22,6 +25,8 @@ export const CalendarConfigSchema = z.object({
   calendarIds: z.array(CalendarIdSchema).min(1).max(10).default(['primary']),
   /** How early the alert shows "starting soon", in seconds. 0 = only once the meeting has started. */
   leadSeconds: z.int().min(0).max(900).default(60),
+  /** How far ahead Relay reads, in days: the Meetings page lists this range. 1 = the next 24 hours. */
+  lookAheadDays: z.int().min(1).max(CALENDAR_MAX_LOOK_AHEAD_DAYS).default(1),
 });
 export type CalendarConfig = z.infer<typeof CalendarConfigSchema>;
 
@@ -69,6 +74,8 @@ export const MeetingListSchema = z.object({
   meetings: z.array(MeetingSchema),
   connected: z.boolean(),
   leadSeconds: z.int().nonnegative(),
+  /** The range read ahead, in days (`CalendarConfig.lookAheadDays`). */
+  lookAheadDays: z.int().positive(),
   /** Server clock when the list was made: the browser corrects its own clock drift with it. */
   now: EpochMsSchema,
 });

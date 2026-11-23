@@ -43,9 +43,9 @@ const CLIENT_SECRET = CALENDAR_CLIENT_SECRET_KEY;
 const REFRESH_TOKEN = 'gcal.refreshToken';
 
 export const CALENDAR_POLL_MS = 60_000;
-/** Read from 12 h back (a long meeting already under way) to 24 h ahead. */
+/** Read from 12 h back (a long meeting already under way) to `lookAheadDays` ahead. */
 const LOOK_BACK_MS = 12 * 3_600_000;
-const LOOK_AHEAD_MS = 24 * 3_600_000;
+const DAY_MS = 24 * 3_600_000;
 const OAUTH_TTL_MS = 10 * 60_000;
 /** A push for a meeting that started longer ago than this is not sent (a restart mid-meeting must not ping). */
 const NOTIFY_GRACE_MS = 5 * 60_000;
@@ -276,7 +276,7 @@ export class CalendarService {
             accessToken: token,
             calendarId,
             from: t - LOOK_BACK_MS,
-            to: t + LOOK_AHEAD_MS,
+            to: t + cfg.lookAheadDays * DAY_MS,
           }),
         ),
       );
@@ -318,6 +318,7 @@ export class CalendarService {
         : [],
       connected: this.connected(),
       leadSeconds: this.getConfig().leadSeconds,
+      lookAheadDays: this.getConfig().lookAheadDays,
       now: t,
     };
   }
