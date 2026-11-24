@@ -1,0 +1,76 @@
+/* KPI sky: the loops of the three themes. Reduced motion stops every one of them. */
+@keyframes kpi-breathe {
+  0%,
+  100% {
+    opacity: 0.75;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1.04);
+  }
+}
+@keyframes kpi-sway {
+  0%,
+  100% {
+    transform: rotate(-3deg);
+  }
+  50% {
+    transform: rotate(3deg);
+  }
+}
+@keyframes kpi-twinkle {
+  0%,
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.55;
+    transform: scale(0.82);
+  }
+}
+@keyframes kpi-drift {
+  to {
+    stroke-dashoffset: -400;
+  }
+}
+@keyframes kpi-aura {
+  0%,
+  100% {
+    opacity: 0.7;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1.05);
+  }
+}
+
+.kpi-breathe {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: kpi-breathe 6s ease-in-out infinite;
+}
+.kpi-sway {
+  animation: kpi-sway 7s ease-in-out infinite;
+}
+.kpi-twinkle {
+  animation: kpi-twinkle 3.6s ease-in-out infinite;
+}
+.kpi-drift {
+  animation: kpi-drift 16s linear infinite;
+}
+.kpi-aura {
+  animation: kpi-aura 5s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .kpi-breathe,
+  .kpi-sway,
+  .kpi-twinkle,
+  .kpi-drift,
+  .kpi-aura {
+    animation: none;
+  }
+}

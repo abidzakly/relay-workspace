@@ -17,6 +17,8 @@ import { calmTone } from './tone';
 import type { OverviewData } from './useOverviewData';
 import './cover.css';
 import { useKpiPresets } from '@/lib/features';
+import { useVisual } from '@/lib/visuals';
+import { KpiSky } from '@/kpi/sky/KpiSky';
 
 /** One cover line: a small kicker over a large line, optionally a link. */
 function CoverLine({
@@ -65,6 +67,7 @@ export function Cover({ data }: { data: OverviewData }) {
   const game = useGamification().data;
   const level = game ? progressionSummary(game) : null;
   const report = data.kpi.report.data;
+  const skyOn = useVisual('kpi');
   const center = data.actions.center;
 
   return (
@@ -193,6 +196,11 @@ export function Cover({ data }: { data: OverviewData }) {
 
         {/* the barcode strip: the KPIs */}
         <footer className="cv-foot">
+          {skyOn && report && (
+            <Link to="/kpi" className="cv-sky" aria-label="KPI picture, open the KPI page">
+              <KpiSky compact report={report} presets={kpiPresets} onPick={() => undefined} />
+            </Link>
+          )}
           <Link to="/kpi" className="cv-kpis" aria-label="KPI, open the full table">
             {report ? (
               kpiItems(report.scorecard, kpiPresets).map((item) => (

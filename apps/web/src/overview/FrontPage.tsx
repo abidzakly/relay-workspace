@@ -1,8 +1,11 @@
 import { Link } from 'react-router';
 import { NoIdentityNotice } from '@/components/MonthFilter';
 import { BacklogList, CoreStage, useBacklogPromotion } from '@/core3d/CoreStage';
+import { KpiSky } from '@/kpi/sky/KpiSky';
 import { FocusList } from '@/kpi/TodaysFocus';
 import { describeError } from '@/lib/api';
+import { useKpiPresets } from '@/lib/features';
+import { useVisual } from '@/lib/visuals';
 import { kpiContext } from './KpiGrid';
 import { releaseSummary } from './model';
 import { OverviewControls } from './OverviewHeader';
@@ -29,6 +32,8 @@ import { FOCUS_LIMIT, FocusCount } from './FocusPanel';
 export function FrontPage({ data }: { data: OverviewData }) {
   const ed = edition();
   const promotion = useBacklogPromotion();
+  const kpiPresets = useKpiPresets();
+  const skyOn = useVisual('kpi');
   const model = data.release.model;
   const h = headline(model, data.actions.center, data.offDuty);
   const s = model ? releaseSummary(model) : null;
@@ -157,7 +162,27 @@ export function FrontPage({ data }: { data: OverviewData }) {
         {data.kpi.report.isError && (
           <p className="text-xs text-destructive">{describeError(data.kpi.report.error)}</p>
         )}
-        {data.kpi.report.data && <Markets report={data.kpi.report.data} />}
+        {data.kpi.report.data &&
+          (skyOn ? (
+            <div className="grid gap-6 md:grid-cols-[auto_minmax(0,1fr)] md:items-center">
+              <Link
+                to="/kpi"
+                aria-label="KPI picture, open the KPI page"
+                className="justify-self-center rounded-lg outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              >
+                <KpiSky
+                  compact
+                  size="md"
+                  report={data.kpi.report.data}
+                  presets={kpiPresets}
+                  onPick={() => undefined}
+                />
+              </Link>
+              <Markets report={data.kpi.report.data} />
+            </div>
+          ) : (
+            <Markets report={data.kpi.report.data} />
+          ))}
       </section>
 
       {/* the back of the page */}

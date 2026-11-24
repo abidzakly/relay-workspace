@@ -126,6 +126,15 @@ a.cv-line:focus-visible {
 .cv-kpis:focus-visible {
   box-shadow: 0 0 0 2px var(--ring);
 }
+.cv-sky {
+  display: block;
+  align-self: center;
+  border-radius: 0.5rem;
+  outline: none;
+}
+.cv-sky:focus-visible {
+  box-shadow: 0 0 0 2px var(--ring);
+}
 
 /* phones and tablets: the cover lines stack over a paper-dimmed scene */
 @media (max-width: 1023px) {

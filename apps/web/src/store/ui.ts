@@ -16,7 +16,7 @@ export type CardMonth = 'current' | 'all' | `${number}-${number}`;
 /** `scene` = the 3D Living Workspace is the landing page (default); `classic` = sidebar layout with Overview at `/`. */
 export type HomeMode = 'scene' | 'classic';
 /** Pages with a visual of their own (design system: Page visuals). Release and Builds hold their start gestures. */
-export const VISUAL_PAGES = ['builds', 'release', 'sync', 'board'] as const;
+export const VISUAL_PAGES = ['builds', 'release', 'kpi', 'sync', 'board'] as const;
 export type VisualPage = (typeof VISUAL_PAGES)[number];
 
 interface UiState {
@@ -62,6 +62,7 @@ interface UiState {
 const ALL_VISUALS: Record<VisualPage, boolean> = {
   builds: true,
   release: true,
+  kpi: true,
   sync: true,
   board: true,
 };

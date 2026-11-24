@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { CalendarClock } from 'lucide-react';
+import { CalendarClock, X } from 'lucide-react';
 import type { KpiCardRow } from '@relay/shared';
 import { Badge } from '@/components/Badge';
 import { Button } from '@/components/ui/button';
@@ -8,6 +8,7 @@ import { AssignedAtDialog, type AssignedAtTarget } from './AssignedAtDialog';
 import { groupSlaRows, slaTimeLabel } from './model';
 import { AssignedAtFlags, SlaBadge } from './SlaBits';
 import { safeHref } from '@/lib/utils';
+import type { SlaFilter } from './viz/store';
 
 const stamp = (at: number | null): string => (at === null ? '—' : new Date(at).toLocaleString());
 
@@ -132,22 +133,59 @@ export function SlaTable({
   month,
   live,
   frozen,
+  filter = null,
+  onClearFilter,
 }: {
   rows: readonly KpiCardRow[];
   month: string;
   live: boolean;
   frozen: boolean;
+  /** A chart's click: only these cards. */
+  filter?: SlaFilter | null;
+  onClearFilter?: () => void;
 }) {
   const clock = useNow();
   const now = live ? clock : null;
   const [editing, setEditing] = useState<AssignedAtTarget | null>(null);
-  const groups = groupSlaRows(rows, month);
+  const shown = filter
+    ? rows.filter(
+        (r) =>
+          (!filter.cardId || r.cardId === filter.cardId) &&
+          (!filter.type || r.type === filter.type) &&
+          (!filter.states || (r.month === month && filter.states.includes(r.sla.state))),
+      )
+    : rows;
+  const groups = groupSlaRows(shown, month);
+  const chip = filter && (
+    <p className="mb-2 flex flex-wrap items-center gap-2 text-sm">
+      <span className="text-muted-foreground">Showing</span>
+      <span className="inline-flex items-center gap-1 rounded-full bg-terracotta/20 py-0.5 pr-1 pl-3 font-medium">
+        {filter.label} ({shown.length})
+        <button
+          type="button"
+          aria-label="Show every card"
+          onClick={onClearFilter}
+          className="tactile rounded-full p-0.5 hover:bg-foreground/10"
+        >
+          <X className="size-3.5" aria-hidden />
+        </button>
+      </span>
+    </p>
+  );
 
   if (groups.length === 0) {
-    return <p className="text-sm text-muted-foreground">No cards in this month.</p>;
+    return (
+      <>
+        {chip}
+        <p className="text-sm text-muted-foreground">
+          {filter ? 'No cards match.' : 'No cards in this month.'}
+        </p>
+      </>
+    );
   }
   return (
     <>
+      {chip}
       <div className="overflow-x-auto">
         <table className="w-full text-sm">
           <caption className="sr-only">SLA state of each card in {month}</caption>
