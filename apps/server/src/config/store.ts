@@ -69,7 +69,15 @@ export function generateWebhookSecret(): string {
  * Everything the API can see goes through the `*Public` accessors; `getRepo`/`getGlobal` (full) are
  * server-internal for services that must call GitLab/Notion.
  */
+/** A sign-in that stands in for a token left empty. Sync: it must return a token that is valid now, or nothing. */
+export interface TokenFallbacks {
+  gitlab?: () => string | undefined;
+  notion?: () => string | undefined;
+}
+
 export class ConfigStore {
+  private fallbacks: TokenFallbacks = {};
+
   constructor(
     private readonly app: AppDb,
     private readonly box: SecretBox,
@@ -77,6 +85,26 @@ export class ConfigStore {
     /** Edition presets (`editions/<name>/presets.json`): the defaults until the first Settings save. */
     private readonly presetGlobal: Record<string, unknown> = {},
   ) {}
+
+  /**
+   * "Connect" sign-ins: the GitLab login is used where a repo token or the reviewer token is empty, the Notion login
+   * where the Notion token is. A pasted token always wins. Only server-internal getters apply them; the public views
+   * keep saying what was pasted.
+   */
+  setTokenFallbacks(f: TokenFallbacks): void {
+    this.fallbacks = f;
+  }
+
+  /** Runs `fn` seeing only pasted tokens (a config export must never carry a sign-in's token). */
+  withoutFallbacks<T>(fn: () => T): T {
+    const saved = this.fallbacks;
+    this.fallbacks = {};
+    try {
+      return fn();
+    } finally {
+      this.fallbacks = saved;
+    }
+  }
 
   // ───────────── global ─────────────
 
@@ -102,13 +130,17 @@ export class ConfigStore {
 
   /** Full config incl. Notion token. Server-internal only. */
   getGlobal(): GlobalConfig {
+    return this.globalFull(true);
+  }
+
+  private globalFull(withFallback: boolean): GlobalConfig {
     const stored = this.getGlobalStored();
-    const token = this.getNotionToken();
+    const token = this.getNotionToken() ?? (withFallback ? this.fallbacks.notion?.() : undefined);
     return { ...stored, notion: { ...stored.notion, ...(token ? { token } : {}) } };
   }
 
   getGlobalPublic(): GlobalConfigPublic {
-    return toPublicGlobalConfig(this.getGlobal());
+    return toPublicGlobalConfig(this.globalFull(false));
   }
 
   isDryRun(): boolean {
@@ -144,6 +176,11 @@ export class ConfigStore {
 
   /** The personal access token Reviews reads GitLab with (any project, as me). Server-internal only. */
   getReviewerToken(): string | undefined {
+    return this.getPastedReviewerToken() ?? this.fallbacks.gitlab?.();
+  }
+
+  /** Only the pasted personal access token, without the GitLab sign-in. */
+  getPastedReviewerToken(): string | undefined {
     const row = this.app.db
       .select()
       .from(schema.settings)
@@ -242,10 +279,12 @@ export class ConfigStore {
 
   // ───────────── repos ─────────────
 
-  private rowToFull(row: typeof schema.repos.$inferSelect): RepoConfig {
+  private rowToFull(row: typeof schema.repos.$inferSelect, withFallback = true): RepoConfig {
     const stored = RepoConfigStoredSchema.parse(row.config);
     if (!row.secretsEnc) throw new Error(`repo "${row.id}" has no secrets blob`);
     const secrets = JSON.parse(this.box.decrypt(row.secretsEnc, ctxRepo(row.id))) as RepoSecrets;
+    // No project token of its own: the GitLab sign-in stands in (empty while signed out).
+    if (!secrets.token && withFallback) secrets.token = this.fallbacks.gitlab?.() ?? '';
     return { ...stored, gitlab: { ...stored.gitlab, ...secrets } };
   }
 
@@ -264,13 +303,13 @@ export class ConfigStore {
   }
 
   getRepoPublic(id: string): RepoConfigPublic | undefined {
-    const full = this.getRepo(id);
-    return full ? toPublicRepoConfig(full) : undefined;
+    const row = this.selectRow(id);
+    return row ? toPublicRepoConfig(this.rowToFull(row, false)) : undefined;
   }
 
   listRepos(): RepoConfigPublic[] {
     const rows = this.app.db.select().from(schema.repos).orderBy(schema.repos.id).all();
-    return rows.map((r) => toPublicRepoConfig(this.rowToFull(r)));
+    return rows.map((r) => toPublicRepoConfig(this.rowToFull(r, false)));
   }
 
   /** Full list (decrypted) for services. Server-internal only. */
@@ -323,7 +362,7 @@ export class ConfigStore {
     this.app.sqlite.transaction(() => {
       const row = this.selectRow(id);
       if (!row) throw new RepoNotFoundError(id);
-      const old = this.rowToFull(row);
+      const old = this.rowToFull(row, false);
       const secrets: RepoSecrets = {
         token: change.kind === 'set' ? change.value : old.gitlab.token,
         webhookSecret: old.gitlab.webhookSecret ?? generateWebhookSecret(),
@@ -361,7 +400,7 @@ export class ConfigStore {
       for (const { stored, token, webhookSecret } of input.repos) {
         const cfg = RepoConfigStoredSchema.parse(stored);
         const row = this.selectRow(cfg.id);
-        const old = row ? this.rowToFull(row) : undefined;
+        const old = row ? this.rowToFull(row, false) : undefined;
         const secretsEnc = this.encryptSecrets(cfg.id, {
           token: token ?? old?.gitlab.token ?? '',
           webhookSecret: webhookSecret ?? old?.gitlab.webhookSecret ?? generateWebhookSecret(),

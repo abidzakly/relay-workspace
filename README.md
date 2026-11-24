@@ -28,7 +28,7 @@ pnpm build && pnpm start
 Open http://127.0.0.1:3000 (use `127.0.0.1`, not `localhost`). Then:
 
 1. Answer the first-start question: do you release and build a mobile app? It switches the release pages on or off.
-2. In **Settings > Connections**, enter your GitLab host and username. In **Settings > Repos**, add a repo with a project access token (scope `api`).
+2. In **Settings > Connections**, enter your GitLab host and username. In **Settings > Repos**, add a repo with a project access token (scope `api`). With the one-time [Connect setup](docs/CONNECT.md), press **Connect with GitLab** instead and skip the tokens. Google Calendar, Drive and Notion get the same button.
 3. Look around with dry-run on (it is on at first start): every write is only recorded in **Audit**. Switch it off in **Settings > General > Safety & engine** when you are ready.
 
 Keep `MASTER_KEY` safe: without it, saved tokens cannot be read. On Windows, see [the guide](docs/GUIDE.md#9-windows) (WSL is recommended). Docker is optional: see [Reference > Docker](docs/REFERENCE.md#docker).
@@ -41,6 +41,7 @@ Report security problems privately, as described in [SECURITY.md](SECURITY.md). 
 
 ## Documentation
 
+- [Connect buttons](docs/CONNECT.md): the one-time setup that turns tokens into a sign-in with Google, GitLab and Notion.
 - [Guide](docs/GUIDE.md): first start, every feature, Reviews, the release scripts, the Figma bridge, Docker, Windows.
 - [Reference](docs/REFERENCE.md): tokens, webhooks, Google Drive, Web Push, environment variables, backups, troubleshooting.
 - [Editions](editions/README.md): presets that set a team's defaults.

@@ -5,6 +5,7 @@ import { Field, errorMap } from '@/components/Field';
 import { ApiError } from '@/lib/api';
 import { useSaveGlobal } from '@/lib/settingsApi';
 import { opt, useDraft } from './drafts';
+import { OAuthConnect } from './OAuthConnect';
 import { ErrorAlert, SectionCard } from './SectionCard';
 
 export function toGitlabDraft(s: GlobalConfigPublic) {
@@ -26,8 +27,12 @@ export function GitlabCard({ settings }: { settings: GlobalConfigPublic }) {
     <SectionCard
       id="gitlab"
       title="GitLab & public URL"
-      description="Per-repo token, project and reviewers are set on each repository, under Repos."
+      description="Per-repo project and reviewers are set on each repository, under Repos."
     >
+      <OAuthConnect
+        provider="gitlab"
+        what="One sign-in for every repo without a project token of its own, for Reviews and for git over HTTPS. What Relay writes (merge requests, comments, approvals) then shows under your name."
+      />
       <div className="grid gap-4 sm:grid-cols-2">
         <Field
           label="GitLab host"

@@ -60,6 +60,17 @@ Staging APKs go to a Shared Drive, because a service account has no storage of i
 
 **Only staging builds are ever uploaded or shared.** Prod and custom builds are refused in the code, and no setting changes that. The dashboard also never sends a WhatsApp message itself: it gives you a link, and you press send.
 
+## Google Calendar
+
+Settings > Connections > Google Calendar reads your meetings, read-only. You can connect it in either of two ways:
+
+- **Connect with Google**, when `GOOGLE_OAUTH_CLIENT_ID` and `GOOGLE_OAUTH_CLIENT_SECRET` are set (see
+  [Connect buttons](CONNECT.md)). This one sign-in also serves Drive.
+- **Your own client**, under "Advanced" on the card: a Desktop-app OAuth client from your own Google Cloud project. A
+  client saved there wins over Connect with Google.
+
+The sign-in is encrypted in the settings table. A config export never carries it.
+
 ## Web Push (VAPID)
 
 ```bash

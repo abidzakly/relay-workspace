@@ -152,6 +152,8 @@ export const ReviewTokenStatusSchema = z.object({
   /** `api` scope present: comments and approvals can be sent. */
   canWrite: z.boolean(),
   expiresAt: z.string().nullable(),
+  /** No personal token is pasted: Reviews runs on the GitLab sign-in (Settings > GitLab). */
+  viaSignIn: z.boolean().default(false),
 });
 export type ReviewTokenStatus = z.infer<typeof ReviewTokenStatusSchema>;
 

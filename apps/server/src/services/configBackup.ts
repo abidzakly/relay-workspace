@@ -162,7 +162,12 @@ function assertNoPlaintext(doc: ConfigExportFile, secrets: SecretsPayload): void
   }
 }
 
+/** Only pasted tokens: a "Connect" sign-in belongs to this machine and never leaves in an export. */
 function collectSecrets(store: ConfigStore): SecretsPayload {
+  return store.withoutFallbacks(() => collectPastedSecrets(store));
+}
+
+function collectPastedSecrets(store: ConfigStore): SecretsPayload {
   const notionToken = store.getGlobal().notion.token;
   const repos: SecretsPayload['repos'] = {};
   for (const repo of store.listReposFull()) {

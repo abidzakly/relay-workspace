@@ -140,12 +140,13 @@ export class ShareService {
   ): { finished: Promise<BuildUpload> } {
     const { job, result } = this.shareableBuild(jobId);
     const repo = this.repoOf(job);
-    const folderId = repo.drive.folderId;
-    if (!folderId) {
+    // Signed in with Google, Relay makes a folder for the repo itself when none is set.
+    const folderId = repo.drive.folderId ?? '';
+    if (!folderId && !this.d.drive.canMakeFolder()) {
       throw new ActionError(
         422,
         'drive_folder_missing',
-        `${repo.name} has no Drive folder. Set it under Settings.`,
+        `${repo.name} has no Drive folder. Set it under Settings, or connect Google in Settings > Drive.`,
       );
     }
     if (this.uploads.has(jobId)) {
@@ -161,7 +162,7 @@ export class ShareService {
     if (!artifact && !dryRun) {
       throw new ActionError(409, 'no_artifact', 'This build made no APK: it was a dry run.');
     }
-    if (!dryRun) this.d.drive.assertKeyUsable();
+    if (!dryRun) this.d.drive.assertReady();
 
     const active: ActiveUpload = {
       abort: new AbortController(),
@@ -295,7 +296,7 @@ export class ShareService {
         before: {
           fileName: simulated.fileName,
           sizeBytes: simulated.sizeBytes,
-          folderId,
+          folderId: folderId || '(made by Relay)',
           releaseJobId: job.parentJobId,
         },
         after: simulated,
@@ -309,6 +310,7 @@ export class ShareService {
             result,
             artifact: this.checkedArtifact(job, artifact),
             folderId,
+            repo: { id: job.repoId, name: this.repoOf(job).name },
             signal: active.abort.signal,
             now: this.now(),
             onProgress: (sentBytes, totalBytes) => {

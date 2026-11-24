@@ -120,7 +120,8 @@ export function repoDraftToBody(d: RepoDraft) {
     id: d.id.trim(),
     name: d.name.trim(),
     enabled: d.enabled,
-    gitlab: { projectId, token: d.token },
+    // Empty: no project token of its own (the GitLab sign-in stands in), so nothing is sent.
+    gitlab: { projectId, ...(d.token.trim() ? { token: d.token } : {}) },
     baseBranch: d.baseBranch.trim(),
     reviewers: splitList(d.reviewers),
     productDomains:

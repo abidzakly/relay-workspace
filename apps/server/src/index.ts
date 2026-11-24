@@ -22,6 +22,8 @@ import { listenDashboard, listenWebhook } from './http/listen';
 import { buildWebhookApp } from './http/webhookApp';
 import { ReviewDeskService } from './services/reviewDesk';
 import { CalendarService } from './services/calendar/calendarService';
+import { OAuthHub, type OAuthClients } from './services/oauth/oauthHub';
+import { syncGitlabSignIn } from './services/oauth/gitlabSignIn';
 import { normalizeWebhook } from './services/webhookEvents';
 import { BuildQueue } from './services/buildQueue';
 import { CardActions } from './services/cardActions';
@@ -132,6 +134,40 @@ async function main(): Promise<void> {
   const ready = new ReadyForMrService({ config: store, store: app, http, log, notifier, bus });
   // Reviews (the reviewer's desk): webhook first, a light to-do poll only for projects no webhook reaches.
   const reviewDesk = new ReviewDeskService({ config: store, http, log, audit, bus, notifier });
+  // "Connect" sign-ins (Google, GitLab, Notion): OAuth clients from .env, the user's tokens encrypted in settings.
+  const oauthClients: OAuthClients = {};
+  if (env.GOOGLE_OAUTH_CLIENT_ID && env.GOOGLE_OAUTH_CLIENT_SECRET)
+    oauthClients.google = {
+      clientId: env.GOOGLE_OAUTH_CLIENT_ID,
+      clientSecret: env.GOOGLE_OAUTH_CLIENT_SECRET,
+    };
+  if (env.GITLAB_OAUTH_CLIENT_ID)
+    oauthClients.gitlab = {
+      clientId: env.GITLAB_OAUTH_CLIENT_ID,
+      ...(env.GITLAB_OAUTH_CLIENT_SECRET ? { clientSecret: env.GITLAB_OAUTH_CLIENT_SECRET } : {}),
+    };
+  if (env.NOTION_OAUTH_CLIENT_ID && env.NOTION_OAUTH_CLIENT_SECRET)
+    oauthClients.notion = {
+      clientId: env.NOTION_OAUTH_CLIENT_ID,
+      clientSecret: env.NOTION_OAUTH_CLIENT_SECRET,
+    };
+  let onOAuthChange: (p: string) => void = () => undefined;
+  const oauth = new OAuthHub({
+    config: store,
+    http,
+    log,
+    clients: oauthClients,
+    redirectBase: `http://127.0.0.1:${env.DASHBOARD_PORT}`,
+    ...(env.NOTION_OAUTH_REDIRECT_URI
+      ? { redirectOverride: { notion: env.NOTION_OAUTH_REDIRECT_URI } }
+      : {}),
+    onChange: (p) => onOAuthChange(p),
+  });
+  // A GitLab or Notion sign-in stands in for a token left empty (repo, Reviews, Notion settings).
+  store.setTokenFallbacks({
+    gitlab: () => oauth.currentToken('gitlab'),
+    notion: () => oauth.currentToken('notion'),
+  });
   // Google Calendar (read-only): meetings for the floating alert + a push when one starts.
   const calendar = new CalendarService({
     config: store,
@@ -140,7 +176,12 @@ async function main(): Promise<void> {
     notifier,
     log,
     redirectUri: `http://127.0.0.1:${env.DASHBOARD_PORT}/api/calendar/oauth/callback`,
+    oauth,
   });
+  onOAuthChange = (p) => {
+    if (p === 'google') void calendar.refresh();
+    if (p === 'gitlab') syncGitlabSignIn(store, oauth.connection('gitlab'));
+  };
   const webhooks = new WebhookProcessor({
     config: store,
     store: app,
@@ -225,7 +266,7 @@ async function main(): Promise<void> {
     config: store,
     builds,
     jobs: release.jobs,
-    drive: new DriveService({ config: store, baseDir: findRepoRoot(), log }),
+    drive: new DriveService({ config: store, google: oauth, baseDir: findRepoRoot(), log }),
     audit,
     store: app,
     notifier,
@@ -474,6 +515,7 @@ async function main(): Promise<void> {
   const dashboard = await buildDashboardApp({
     reviewDesk,
     calendar,
+    oauth,
     scripts,
     cockpit: {
       testBench,
@@ -572,6 +614,7 @@ async function main(): Promise<void> {
   cleanup.start();
   reviewDesk.start();
   calendar.start();
+  oauth.start();
 
   const shutdown = (signal: string) => {
     log.info({ signal }, 'shutting down');
@@ -583,6 +626,7 @@ async function main(): Promise<void> {
       .then(() => cleanup.stop())
       .then(() => reviewDesk.stop())
       .then(() => calendar.stop())
+      .then(() => oauth.stop())
       .then(() => sessions.close())
       .then(() => figmaBridge.close())
       .then(() => webhooks.close())

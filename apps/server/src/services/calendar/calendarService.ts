@@ -17,6 +17,7 @@ import type { EventBus } from '../../sync/eventBus';
 import type { Logger } from '../../util/logger';
 import type { HttpClient } from '../httpClient';
 import type { Notifier } from '../notifier';
+import { OAuthError, type OAuthHub } from '../oauth/oauthHub';
 import {
   authUrl,
   exchangeCode,
@@ -38,6 +39,8 @@ import {
  *   state.calendar.marks      hand-set priorities (`one:<id>` / `series:<calendarId>|<seriesId>` -> level)
  *   secret.gcal.clientSecret  the OAuth client secret        (encrypted)
  *   secret.gcal.refreshToken  the refresh token              (encrypted)
+ * With "Connect with Google" (`OAuthHub`, client from .env) the sign-in lives in `secret.oauth.google` instead, shared
+ * with Drive. A client pasted in Advanced (the `gcal.*` rows) still wins, so an existing setup keeps working.
  */
 
 /** Also read by the config backup (`services/configBackup.ts`). */
@@ -83,6 +86,11 @@ export interface CalendarServiceDeps {
   log: Logger;
   /** Where Google sends the browser back: `http://127.0.0.1:<port>/api/calendar/oauth/callback`. */
   redirectUri: string;
+  /** The shared Google sign-in ("Connect with Google"). */
+  oauth?: Pick<
+    OAuthHub,
+    'hasGoogleFeature' | 'accessToken' | 'invalidate' | 'disconnect' | 'connection'
+  >;
   now?: () => number;
 }
 
@@ -131,8 +139,18 @@ export class CalendarService {
     return this.d.config.getGlobalStored().features.calendar;
   }
 
-  private connected(): boolean {
+  /** Signed in with a client pasted in Advanced. */
+  private ownConnected(): boolean {
     return !!this.d.config.getSecret(REFRESH_TOKEN);
+  }
+
+  /** Signed in with "Connect with Google", and the grant covers the calendar. */
+  private relayConnected(): boolean {
+    return !this.ownConnected() && !!this.d.oauth?.hasGoogleFeature('calendar');
+  }
+
+  private connected(): boolean {
+    return this.ownConnected() || this.relayConnected();
   }
 
   // ───────────────────────────── settings ─────────────────────────────
@@ -147,10 +165,13 @@ export class CalendarService {
       config: this.getConfig(),
       clientSecretSet: !!this.d.config.getSecret(CLIENT_SECRET),
       connected: this.connected(),
-      accountEmail: this.d.config.getState<{ email?: string }>(ACCOUNT)?.email ?? null,
+      accountEmail: this.relayConnected()
+        ? (this.d.oauth?.connection('google').account ?? null)
+        : (this.d.config.getState<{ email?: string }>(ACCOUNT)?.email ?? null),
       lastSyncAt: this.lastSyncAt,
       lastError: this.lastError,
       redirectUri: this.d.redirectUri,
+      via: this.ownConnected() ? 'own' : this.relayConnected() ? 'relay' : null,
     };
   }
 
@@ -222,7 +243,9 @@ export class CalendarService {
     return { email: t.email ?? null };
   }
 
+  /** Signs out. With "Connect with Google" that is the one Google sign-in, so Drive is signed out too. */
   async disconnect(): Promise<CalendarStatus> {
+    if (this.relayConnected()) await this.d.oauth?.disconnect('google');
     const token = this.d.config.getSecret(REFRESH_TOKEN);
     this.d.config.setSecret(REFRESH_TOKEN, null);
     this.d.config.setState(ACCOUNT, undefined);
@@ -242,6 +265,14 @@ export class CalendarService {
   }
 
   private async accessToken(): Promise<string> {
+    if (this.relayConnected() && this.d.oauth) {
+      try {
+        return await this.d.oauth.accessToken('google');
+      } catch (e) {
+        if (e instanceof OAuthError) throw new GoogleError(e.message, e.revoked);
+        throw e;
+      }
+    }
     if (this.access && this.access.expiresAt > this.now()) return this.access.token;
     const refreshToken = this.d.config.getSecret(REFRESH_TOKEN);
     const clientSecret = this.d.config.getSecret(CLIENT_SECRET);
@@ -304,8 +335,10 @@ export class CalendarService {
       if (moved || hadError) this.changed();
     } catch (e) {
       // An expired access token is retried once with a fresh one on the next tick.
-      if (e instanceof GoogleError && e.message === 'Google sign-in expired.')
+      if (e instanceof GoogleError && e.message === 'Google sign-in expired.') {
         this.access = undefined;
+        if (this.relayConnected()) void this.d.oauth?.invalidate('google');
+      }
       const msg = e instanceof GoogleError ? e.message : 'Google Calendar could not be reached.';
       if (msg !== this.lastError) {
         this.lastError = msg;
