@@ -4,6 +4,7 @@ import type { BuildArtifact, BuildResult, BuildUpload, Job } from '@relay/shared
 import type { ConfigStore } from '../config/store';
 import type { Logger } from '../util/logger';
 import { ActionError } from './actionError';
+import { OAuthError, type OAuthHub } from './oauth/oauthHub';
 import { clip } from './checks';
 import {
   DRIVE_SCOPE,
@@ -46,7 +47,9 @@ export class DriveError extends ActionError {
 }
 
 export interface DriveServiceDeps {
-  config: Pick<ConfigStore, 'getGlobalStored'>;
+  config: Pick<ConfigStore, 'getGlobalStored' | 'getState' | 'setState'>;
+  /** "Connect with Google": when its grant covers Drive, uploads go as the user, with no service-account key. */
+  google?: Pick<OAuthHub, 'hasGoogleFeature' | 'accessToken'>;
   /** Base for a relative key path. */
   baseDir: string;
   log: Logger;
@@ -56,7 +59,9 @@ export interface DriveUploadInput {
   job: Pick<Job, 'mode'>;
   result: BuildResult;
   artifact: BuildArtifact;
+  /** Empty: signed in with Google, and Relay makes (once) and reuses a folder for the repo. */
   folderId: string;
+  repo?: { id: string; name: string };
   signal: AbortSignal;
   onProgress: (sentBytes: number, totalBytes: number) => void;
   now: number;
@@ -195,8 +200,27 @@ async function readChunk(handle: FileHandle, buffer: Buffer, position: number): 
   return buffer;
 }
 
+const FOLDER_MIME = 'application/vnd.google-apps.folder';
+/** repoId -> the folder Relay made for it (Google sign-in, `drive.file`: Relay can only see what it made). */
+const AUTO_FOLDERS = 'drive.autoFolders';
+
 export class DriveService {
   constructor(private readonly d: DriveServiceDeps) {}
+
+  /** Signed in with "Connect with Google" for Drive: no key file is needed. */
+  usesSignIn(): boolean {
+    return !!this.d.google?.hasGoogleFeature('drive');
+  }
+
+  /** A repo without a folder id can still upload: Relay makes the folder. */
+  canMakeFolder(): boolean {
+    return this.usesSignIn();
+  }
+
+  /** Refuses an upload that cannot work before anything starts (a missing key when not signed in). */
+  assertReady(): void {
+    if (!this.usesSignIn()) this.assertKeyUsable();
+  }
 
   /** Refuses a key that cannot work before anything starts. Reads the file: call on a user's click, not per render. */
   assertKeyUsable(): ServiceAccountKey {
@@ -216,24 +240,44 @@ export class DriveService {
     if (artifact.kind !== 'apk') {
       throw new ActionError(403, 'prod_never_shared', 'Only an APK can be uploaded.');
     }
-    const key = this.assertKeyUsable();
+    const signIn = this.usesSignIn();
+    const key = signIn ? undefined : this.assertKeyUsable();
     const handle = await openArtifact(artifact);
     try {
       // Loaded here because the package is large, and most boots never upload.
       const { google } = await import('googleapis');
-      const auth = new google.auth.JWT({
-        email: key.clientEmail,
-        key: key.privateKey,
-        scopes: [DRIVE_SCOPE],
-      });
-      try {
-        await auth.authorize();
-      } catch (e) {
-        this.d.log.warn({ err: (e as Error).name }, 'Google sign-in failed');
-        throw new DriveError(
-          'drive_auth_failed',
-          'Google sign-in failed. Run the Drive connection test in Settings.',
-        );
+      let auth;
+      if (key) {
+        const jwt = new google.auth.JWT({
+          email: key.clientEmail,
+          key: key.privateKey,
+          scopes: [DRIVE_SCOPE],
+        });
+        try {
+          await jwt.authorize();
+        } catch (e) {
+          this.d.log.warn({ err: (e as Error).name }, 'Google sign-in failed');
+          throw new DriveError(
+            'drive_auth_failed',
+            'Google sign-in failed. Run the Drive connection test in Settings.',
+          );
+        }
+        auth = jwt;
+      } else {
+        let accessToken: string;
+        try {
+          accessToken = await this.d.google!.accessToken('google');
+        } catch (e) {
+          throw new DriveError(
+            'drive_auth_failed',
+            e instanceof OAuthError
+              ? e.message
+              : 'Google sign-in failed. Connect Google again in Settings > Drive.',
+          );
+        }
+        const oauth2 = new google.auth.OAuth2();
+        oauth2.setCredentials({ access_token: accessToken });
+        auth = oauth2;
       }
       const send: Send = async (options) => {
         const res = await auth.request<string>({
@@ -250,7 +294,9 @@ export class DriveService {
           text: typeof res.data === 'string' ? res.data : '',
         };
       };
-      const file = await this.sendFile(send, handle, input);
+      const folderId =
+        input.folderId || (await this.autoFolder(google.drive({ version: 'v3', auth }), input));
+      const file = await this.sendFile(send, handle, { ...input, folderId });
 
       let linkAccess: BuildUpload['linkAccess'] = 'restricted';
       if (this.d.config.getGlobalStored().drive.anyoneWithLink) {
@@ -278,6 +324,49 @@ export class DriveService {
       };
     } finally {
       await handle.close();
+    }
+  }
+
+  /** The folder Relay made for this repo, made now when there is none (or it was deleted). */
+  private async autoFolder(
+    drive: {
+      files: {
+        get(p: { fileId: string; fields: string }): Promise<{ data: { trashed?: boolean | null } }>;
+        create(p: {
+          requestBody: { name: string; mimeType: string };
+          fields: string;
+        }): Promise<{ data: { id?: string | null } }>;
+      };
+    },
+    input: DriveUploadInput,
+  ): Promise<string> {
+    const repo = input.repo;
+    if (!repo) throw new DriveError('drive_folder_missing', 'No Drive folder is set.', 422);
+    const known = this.d.config.getState<Record<string, string>>(AUTO_FOLDERS) ?? {};
+    const id = known[repo.id];
+    if (id) {
+      try {
+        const f = await drive.files.get({ fileId: id, fields: 'id,trashed' });
+        if (!f.data.trashed) return id;
+      } catch {
+        /* gone: make a new one */
+      }
+    }
+    try {
+      const made = await drive.files.create({
+        requestBody: { name: `Relay builds · ${repo.name}`, mimeType: FOLDER_MIME },
+        fields: 'id',
+      });
+      const newId = made.data.id;
+      if (!newId) throw new Error('no id');
+      this.d.config.setState(AUTO_FOLDERS, { ...known, [repo.id]: newId });
+      return newId;
+    } catch (e) {
+      this.d.log.warn({ err: (e as Error).name }, 'could not make the Drive folder');
+      throw new DriveError(
+        'drive_folder_failed',
+        'Relay could not make a Drive folder for this repo. Connect Google again in Settings > Drive.',
+      );
     }
   }
 

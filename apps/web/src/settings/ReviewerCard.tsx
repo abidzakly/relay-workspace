@@ -96,16 +96,23 @@ export function ReviewerCard({ settings }: { settings: GlobalConfigPublic }) {
               </AlertDescription>
             </Alert>
           )}
-          <div>
-            <Button
-              variant="outline"
-              size="sm"
-              disabled={saveToken.isPending}
-              onClick={() => saveToken.mutate(null)}
-            >
-              Remove token
-            </Button>
-          </div>
+          {status.viaSignIn ? (
+            <p className="text-xs text-muted-foreground">
+              Using your GitLab sign-in (<Link to="/settings#gitlab">GitLab &amp; public URL</Link>
+              ). No personal token needed.
+            </p>
+          ) : (
+            <div>
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={saveToken.isPending}
+                onClick={() => saveToken.mutate(null)}
+              >
+                Remove token
+              </Button>
+            </div>
+          )}
         </div>
       ) : (
         <form
@@ -121,7 +128,7 @@ export function ReviewerCard({ settings }: { settings: GlobalConfigPublic }) {
             hint={
               hostMissing
                 ? 'Set the GitLab host above first.'
-                : 'GitLab > Preferences > Access tokens. Scope read_api to read, api to also comment and approve.'
+                : 'Or skip this: “Connect with GitLab” above does the same. GitLab > Preferences > Access tokens. Scope read_api to read, api to also comment and approve.'
             }
           >
             <Input

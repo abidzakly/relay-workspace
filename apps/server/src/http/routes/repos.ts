@@ -9,6 +9,7 @@ import {
 import type { AuditWriter } from '../../audit/auditLog';
 import { RepoExistsError, RepoNotFoundError, type ConfigStore } from '../../config/store';
 import { stripUrlCredentials } from '../../services/configBackup';
+import type { OAuthHub } from '../../services/oauth/oauthHub';
 import type { TokenIdentity } from '../../services/tokenIdentity';
 import { HttpError, parseWith } from '../errors';
 
@@ -17,6 +18,8 @@ export interface RepoRouteDeps {
   audit: AuditWriter;
   /** Re-learns which GitLab user a repo's token posts as. */
   tokenIdentity?: Pick<TokenIdentity, 'resolve'>;
+  /** Signed in with GitLab: a repo may then go without a project token of its own. */
+  oauth?: Pick<OAuthHub, 'isConnected'>;
 }
 
 const IdParams = z.object({ id: z.string().min(1).max(64) });
@@ -44,7 +47,7 @@ function split(body: unknown): { stored: RepoConfigStored; token: string | undef
 
 export function registerRepoRoutes(
   app: FastifyInstance,
-  { store, audit, tokenIdentity }: RepoRouteDeps,
+  { store, audit, tokenIdentity, oauth }: RepoRouteDeps,
 ): void {
   app.get('/api/repos', async () => ({ repos: store.listRepos() }));
 
@@ -60,11 +63,20 @@ export function registerRepoRoutes(
 
   app.post('/api/repos', async (req, reply) => {
     const { stored, token } = split(req.body);
-    if (token === undefined || token === SECRET_MASK) {
-      throw new HttpError(400, 'validation', 'gitlab.token is required');
+    const signedIn = !!oauth?.isConnected('gitlab');
+    if ((token === undefined || token === SECRET_MASK) && !signedIn) {
+      throw new HttpError(
+        400,
+        'validation',
+        'gitlab.token is required (or connect GitLab in Settings > Connections)',
+      );
     }
     try {
-      const repo = store.createRepo(stored, token);
+      // No token with a GitLab sign-in: stored empty, and the sign-in stands in for it.
+      const repo = store.createRepo(
+        stored,
+        token === undefined || token === SECRET_MASK ? '' : token,
+      );
       audit.write({
         actor: 'user',
         action: 'repo.create',

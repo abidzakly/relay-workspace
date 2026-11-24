@@ -15,6 +15,7 @@ import {
 } from '@/components/ui/dialog';
 import { ConnectionChecklist } from '@/components/ConnectionChecklist';
 import { describeError } from '@/lib/api';
+import { useOAuthStatus } from '@/lib/oauthApi';
 import { useDeleteRepo, useRepos, useSetRepoEnabled, useTestRepo } from '@/lib/settingsApi';
 import { cn } from '@/lib/utils';
 import { RepoDialog } from './RepoDialog';
@@ -39,6 +40,7 @@ function RepoRow({
 }) {
   const test = useTestRepo();
   const toggle = useSetRepoEnabled();
+  const signedIn = !!useOAuthStatus().data?.gitlab.connected;
   const hook = webhookUrl(settings, repo.id);
   const switchId = `repo-on-board-${repo.id}`;
   return (
@@ -56,8 +58,8 @@ function RepoRow({
               base {repo.baseBranch}
             </Badge>
             <Badge variant="outline">{repo.approvalMode}</Badge>
-            <Badge variant={repo.gitlab.tokenSet ? 'success' : 'destructive'}>
-              {repo.gitlab.tokenSet ? 'token saved' : 'no token'}
+            <Badge variant={repo.gitlab.tokenSet || signedIn ? 'success' : 'destructive'}>
+              {repo.gitlab.tokenSet ? 'token saved' : signedIn ? 'your GitLab sign-in' : 'no token'}
             </Badge>
             <Badge variant={repo.gitlab.webhookSecretSet ? 'success' : 'warning'}>
               {repo.gitlab.webhookSecretSet ? 'webhook secret set' : 'no webhook secret'}

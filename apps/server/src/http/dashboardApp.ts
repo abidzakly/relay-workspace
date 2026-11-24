@@ -5,6 +5,8 @@ import { NO_PRESETS, type LoadedPresets } from '../config/presets';
 import type { ReviewDeskService } from '../services/reviewDesk';
 import { registerReviewsRoutes } from './routes/reviews';
 import { registerCalendarRoutes } from './routes/calendar';
+import { registerOAuthRoutes } from './routes/oauth';
+import type { OAuthHub } from '../services/oauth/oauthHub';
 import type { CalendarService } from '../services/calendar/calendarService';
 import Fastify, { type FastifyBaseLogger, type FastifyInstance } from 'fastify';
 import type { AuditWriter } from '../audit/auditLog';
@@ -123,6 +125,8 @@ export interface DashboardAppOptions {
   reviewDesk?: ReviewDeskService;
   /** Google Calendar meetings (absent in tests = no calendar routes). */
   calendar?: CalendarService;
+  /** "Connect" sign-ins (absent in tests = no OAuth routes). */
+  oauth?: OAuthHub;
   /** Release script settings (absent in tests = no routes). */
   scripts?: ScriptConfigService;
   /** SSE tuning (tests / ops); defaults in `http/sse.ts`. */
@@ -265,6 +269,8 @@ export async function buildDashboardApp(opts: DashboardAppOptions): Promise<Fast
     registerMrActionRoutes(app, { actions: mrActions });
     if (opts.reviewDesk) registerReviewsRoutes(app, { desk: opts.reviewDesk, audit: opts.audit });
     if (opts.calendar) registerCalendarRoutes(app, { calendar: opts.calendar, audit: opts.audit });
+    if (opts.oauth)
+      registerOAuthRoutes(app, { oauth: opts.oauth, store: opts.store, http, audit: opts.audit });
     if (opts.scripts) registerScriptRoutes(app, { scripts: opts.scripts, audit: opts.audit });
     registerSystemRoutes(app, opts.presets ?? NO_PRESETS);
     registerCardActionRoutes(app, { actions: cardActions });

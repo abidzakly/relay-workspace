@@ -76,6 +76,11 @@ export const CalendarStatusSchema = z.object({
   lastError: z.string().nullable(),
   /** The redirect address Google sends you back to (shown so it can be checked against the client). */
   redirectUri: z.string(),
+  /**
+   * Which sign-in the calendar reads with: `relay` = the shared "Connect with Google" (client from .env), `own` = an
+   * OAuth client pasted in Advanced. Null when not connected.
+   */
+  via: z.enum(['relay', 'own']).nullable(),
 });
 export type CalendarStatus = z.infer<typeof CalendarStatusSchema>;
 

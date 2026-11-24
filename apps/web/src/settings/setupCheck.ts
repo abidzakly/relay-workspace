@@ -1,5 +1,6 @@
 import { useWorkspaces } from '@/lib/cockpitApi';
 import { useBrowserPush } from '@/lib/push';
+import { useOAuthStatus } from '@/lib/oauthApi';
 import { useDriveKey, useRepos, useSettings } from '@/lib/settingsApi';
 import { useUiStore } from '@/store/ui';
 import { SETTINGS_SECTIONS, type SettingsGroupId } from './sections';
@@ -59,6 +60,11 @@ function useSetupItems(): { items: SetupItem[]; loading: boolean } {
   const driveKey = useDriveKey();
   const workspaces = useWorkspaces();
   const push = useBrowserPush();
+  // "Connect" sign-ins stand in for the pasted tokens and the Drive key.
+  const oauth = useOAuthStatus().data;
+  const gitlabIn = !!oauth?.gitlab.connected;
+  const notionIn = !!oauth?.notion.connected;
+  const driveIn = !!oauth?.google.features.includes('drive');
 
   const s = settings.data;
   const r = repos.data;
@@ -101,7 +107,7 @@ function useSetupItems(): { items: SetupItem[]; loading: boolean } {
     );
   }
   // One row per repo, so ignoring one repo does not hide a repo added later.
-  for (const x of r.filter((x) => !x.gitlab.tokenSet)) {
+  for (const x of gitlabIn ? [] : r.filter((x) => !x.gitlab.tokenSet)) {
     items.push(
       item(
         `repo-token:${x.id}`,
@@ -112,7 +118,7 @@ function useSetupItems(): { items: SetupItem[]; loading: boolean } {
       ),
     );
   }
-  if (!s.notion.tokenSet) {
+  if (!s.notion.tokenSet && !notionIn) {
     items.push(
       item(
         'notion-token',
@@ -140,7 +146,7 @@ function useSetupItems(): { items: SetupItem[]; loading: boolean } {
     );
   }
   const driveFolders = r.some((x) => x.drive.folderId);
-  if (driveFolders && driveKey.data && !driveKey.data.ok) {
+  if (driveFolders && !driveIn && driveKey.data && !driveKey.data.ok) {
     items.push(
       item(
         'drive-key',

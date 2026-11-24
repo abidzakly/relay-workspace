@@ -35,7 +35,14 @@ export function parseTlsUsers(raw: string | undefined): string[] {
 }
 
 const BUILD_ENV_NAME_RE = /^[A-Za-z_][A-Za-z0-9_]*$/;
-const NEVER_PASSED_TO_BUILDS = new Set(['MASTER_KEY', 'VAPID_PRIVATE_KEY', 'NTFY_TOPIC']);
+const NEVER_PASSED_TO_BUILDS = new Set([
+  'MASTER_KEY',
+  'VAPID_PRIVATE_KEY',
+  'NTFY_TOPIC',
+  'GOOGLE_OAUTH_CLIENT_SECRET',
+  'GITLAB_OAUTH_CLIENT_SECRET',
+  'NOTION_OAUTH_CLIENT_SECRET',
+]);
 
 /** The names in `BUILD_PASS_ENV`, or null when one is malformed or names a secret of the dashboard itself. */
 export function parseBuildPassEnv(raw: string | undefined): string[] | null {
@@ -87,6 +94,24 @@ const EnvSchema = z
     /** Optional ntfy.sh fallback channel. The topic acts as a password: env only, never returned or logged. */
     NTFY_TOPIC: optionalString,
     NTFY_SERVER: optionalString,
+    /**
+     * "Connect" sign-ins (docs/CONNECT.md). The OAuth clients are registered once by whoever runs Relay; each user
+     * then signs in with their own account. A provider without a client shows "Not set up yet".
+     */
+    GOOGLE_OAUTH_CLIENT_ID: optionalString,
+    GOOGLE_OAUTH_CLIENT_SECRET: optionalString,
+    GITLAB_OAUTH_CLIENT_ID: optionalString,
+    /** Only for a GitLab application registered as confidential. */
+    GITLAB_OAUTH_CLIENT_SECRET: optionalString,
+    NOTION_OAUTH_CLIENT_ID: optionalString,
+    NOTION_OAUTH_CLIENT_SECRET: optionalString,
+    /** Only when Notion refuses the loopback default `http://127.0.0.1:<port>/api/oauth/notion/callback`. */
+    NOTION_OAUTH_REDIRECT_URI: optionalString.refine(
+      (v) =>
+        v === undefined ||
+        /^http:\/\/(127\.0\.0\.1|localhost)(:\d+)?\/api\/oauth\/notion\/callback$/.test(v),
+      'NOTION_OAUTH_REDIRECT_URI must be http://127.0.0.1:<port> or http://localhost:<port> + /api/oauth/notion/callback',
+    ),
     /** Whole-job limit of one build. */
     BUILD_TIMEOUT_MIN: z.coerce.number().int().min(1).max(720).default(30),
     /**

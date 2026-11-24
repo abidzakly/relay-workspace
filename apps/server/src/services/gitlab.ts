@@ -25,8 +25,11 @@ export class GitlabClient {
   }
 
   get(path: string): Promise<HttpResponse> {
-    // PRIVATE-TOKEN is the documented header for PATs and project/group access tokens.
-    return this.http.send({ url: `${this.base}${path}`, headers: { 'private-token': this.token } });
+    // `Authorization: Bearer` is documented for PATs, project/group access tokens and OAuth tokens alike.
+    return this.http.send({
+      url: `${this.base}${path}`,
+      headers: { authorization: `Bearer ${this.token}` },
+    });
   }
 
   /**
@@ -35,7 +38,7 @@ export class GitlabClient {
   async getBytes(path: string): Promise<HttpResponse> {
     const res = await this.http.send({
       url: `${this.base}${path}`,
-      headers: { 'private-token': this.token },
+      headers: { authorization: `Bearer ${this.token}` },
       binary: true,
       timeoutMs: 30_000,
     });
@@ -66,7 +69,7 @@ export class GitlabClient {
       method: 'POST',
       url: `${this.base}${path}`,
       headers: {
-        'private-token': this.token,
+        authorization: `Bearer ${this.token}`,
         'content-type': `multipart/form-data; boundary=${boundary}`,
       },
       body: Buffer.concat([head, bytes, tail]),
@@ -79,7 +82,7 @@ export class GitlabClient {
     return this.http.send({
       method,
       url: `${this.base}${path}`,
-      headers: { 'private-token': this.token },
+      headers: { authorization: `Bearer ${this.token}` },
       ...(body !== undefined ? { body } : {}),
       maxRetries: 0,
     });

@@ -20,7 +20,9 @@ import { ApiError, describeError } from '@/lib/api';
 import { useRepos, useSaveRepo, validateRepoBody } from '@/lib/settingsApi';
 import { useStateSnapshot } from '@/lib/stateApi';
 import { useSystem } from '@/lib/systemApi';
+import { useOAuthStatus } from '@/lib/oauthApi';
 import { useDraft } from './drafts';
+import { GitlabProjectPicker } from './GitlabProjectPicker';
 import {
   APPROVAL_MODES,
   emptyRepoDraft,
@@ -86,6 +88,7 @@ function RepoForm({
   const errs = { ...serverErrors, ...clientErrors };
   const hasFieldErrors = Object.keys(errs).length > 0;
   const domainOptions = useDomainOptions(repo?.id, draft.productDomain);
+  const signedIn = !!useOAuthStatus().data?.gitlab.connected;
 
   function submit(e: FormEvent) {
     e.preventDefault();
@@ -96,8 +99,12 @@ function RepoForm({
     if (draft.productDomain === '') {
       found['productDomains'] = 'Choose a Product Domain, or None';
     }
-    if (mode === 'create' && (draft.token.trim() === '' || draft.token === SECRET_MASK)) {
-      found['gitlab.token'] = 'A GitLab token is required';
+    if (
+      mode === 'create' &&
+      !signedIn &&
+      (draft.token.trim() === '' || draft.token === SECRET_MASK)
+    ) {
+      found['gitlab.token'] = 'A GitLab token is required (or connect GitLab in Settings first)';
     }
     if ((draft.identityName.trim() === '') !== (draft.identityEmail.trim() === '')) {
       found['commitIdentity.name'] = 'Set both name and email, or neither';
@@ -149,16 +156,30 @@ function RepoForm({
       <fieldset className="grid gap-4 sm:grid-cols-2">
         <legend className="mb-2 text-sm font-semibold">GitLab</legend>
         <Field label="Project id" htmlFor="r-pid" error={errs['gitlab.projectId']}>
-          <Input id="r-pid" inputMode="numeric" {...text('projectId')} />
+          <div className="grid gap-2">
+            <Input id="r-pid" inputMode="numeric" {...text('projectId')} />
+            {signedIn ? (
+              <GitlabProjectPicker
+                onPick={(p) => {
+                  set('projectId', String(p.id));
+                  if (!draft.cloneUrl.trim()) set('cloneUrl', p.httpUrlToRepo);
+                  if (!draft.name.trim()) set('name', p.name);
+                  if (p.defaultBranch) set('baseBranch', p.defaultBranch);
+                }}
+              />
+            ) : null}
+          </div>
         </Field>
         <Field
-          label="Access token"
+          label={signedIn ? 'Project access token (optional)' : 'Access token'}
           htmlFor="r-token"
           error={errs['gitlab.token']}
           hint={
-            mode === 'edit'
-              ? 'Stored encrypted. Type to replace it; leave as is to keep it. Needs the `api` scope.'
-              : 'Needs the `api` scope (comment, merge, webhooks, branch).'
+            signedIn && draft.token !== SECRET_MASK
+              ? 'Leave empty to use your GitLab sign-in: what Relay writes then shows under your name. A project token (scope `api`) posts as its bot instead.'
+              : mode === 'edit'
+                ? 'Stored encrypted. Type to replace it; leave as is to keep it. Needs the `api` scope.'
+                : 'Needs the `api` scope (comment, merge, webhooks, branch).'
           }
         >
           <SecretInput

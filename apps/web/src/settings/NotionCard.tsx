@@ -8,6 +8,8 @@ import { SecretInput } from '@/components/SecretInput';
 import { ApiError } from '@/lib/api';
 import { useSaveGlobal, useTestNotion } from '@/lib/settingsApi';
 import { opt, splitList, useDraft } from './drafts';
+import { NotionSourcePicker } from './NotionSourcePicker';
+import { OAuthConnect } from './OAuthConnect';
 import { ErrorAlert, SectionCard } from './SectionCard';
 
 const PROP_FIELDS = [
@@ -91,9 +93,13 @@ export function NotionCard({ settings }: { settings: GlobalConfigPublic }) {
       title="Notion mapping"
       description="Property names must match your database. “Test connection” reads the saved settings."
     >
+      <OAuthConnect
+        provider="notion"
+        what="Sign in on Notion's page and tick the databases Relay may use. No integration token to make or paste."
+      />
       <div className="grid gap-4 sm:grid-cols-2">
         <Field
-          label="Integration token"
+          label="Integration token (optional with Connect)"
           htmlFor="nt-token"
           error={errs['notion.token']}
           hint={
@@ -108,13 +114,20 @@ export function NotionCard({ settings }: { settings: GlobalConfigPublic }) {
           label="Data source id"
           htmlFor="nt-ds"
           error={errs['notion.dataSourceId']}
-          hint="The data source (not the database) id."
+          hint="The data source (not the database) id. Pick it from Notion, or paste it."
         >
-          <Input
-            id="nt-ds"
-            value={draft.dataSourceId}
-            onChange={(e) => set('dataSourceId', e.target.value)}
-          />
+          <div className="grid gap-2">
+            <Input
+              id="nt-ds"
+              value={draft.dataSourceId}
+              onChange={(e) => set('dataSourceId', e.target.value)}
+            />
+            <NotionSourcePicker
+              tokenSet={settings.notion.tokenSet}
+              value={draft.dataSourceId}
+              onPick={(id) => set('dataSourceId', id)}
+            />
+          </div>
         </Field>
         <Field label="Notion-Version" htmlFor="nt-ver" error={errs['notion.version']}>
           <Input

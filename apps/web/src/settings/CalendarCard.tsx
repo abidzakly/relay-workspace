@@ -18,6 +18,7 @@ import {
 } from '@/lib/calendarApi';
 import { useSaveGlobal } from '@/lib/settingsApi';
 import { PriorityRulesEditor } from '@/meetings/PriorityRulesEditor';
+import { OAuthConnect } from './OAuthConnect';
 import { ErrorAlert, SectionCard } from './SectionCard';
 
 const LEAD_CHOICES = [
@@ -74,7 +75,7 @@ function CopyLine({ value }: { value: string }) {
   );
 }
 
-/** Google Calendar: your own OAuth client, a read-only sign-in, and how the meeting alert behaves. */
+/** Google Calendar: "Connect with Google" (or your own OAuth client), a read-only sign-in, and the meeting alert. */
 export function CalendarCard({ settings }: { settings: GlobalConfigPublic }) {
   const status = useCalendarStatus();
   return (
@@ -177,10 +178,26 @@ function CalendarForm({
         </Alert>
       ) : null}
 
-      <details className="group rounded-control border border-hairline px-4 py-3 text-sm">
+      {status.via !== 'own' ? (
+        <OAuthConnect
+          provider="google"
+          feature="calendar"
+          what="Read-only: Relay reads your meetings and never changes your calendar."
+          disconnectNote="Signs Google out of Calendar and Drive together."
+        />
+      ) : null}
+
+      <details
+        className="group rounded-control border border-hairline px-4 py-3 text-sm"
+        open={status.via === 'own' || undefined}
+      >
         <summary className="cursor-pointer font-medium">
-          One-time setup in Google Cloud (5 min)
+          Advanced: use your own Google OAuth client instead
         </summary>
+        <p className="mt-3 text-muted-foreground">
+          Only needed when “Connect with Google” is not set up for this Relay. A client saved here
+          wins over it.
+        </p>
         <ol className="mt-3 grid list-decimal gap-1.5 pl-5 text-muted-foreground">
           <li>
             Open console.cloud.google.com, pick or create a project, and enable the{' '}
@@ -200,33 +217,37 @@ function CalendarForm({
           <Label>Redirect URI Relay uses (desktop clients accept it as is)</Label>
           <CopyLine value={status.redirectUri} />
         </div>
+        <div className="mt-4 grid gap-4">
+          <Field label="OAuth client ID" htmlFor="gc-client">
+            <Input
+              id="gc-client"
+              value={clientId}
+              onChange={(e) => setClientId(e.target.value)}
+              placeholder="1234…apps.googleusercontent.com"
+              autoComplete="off"
+            />
+          </Field>
+          <Field
+            label="OAuth client secret"
+            htmlFor="gc-secret"
+            hint={
+              status.clientSecretSet
+                ? 'Saved (encrypted). Type a new one to replace it.'
+                : undefined
+            }
+          >
+            <Input
+              id="gc-secret"
+              type="password"
+              value={secret}
+              onChange={(e) => setSecret(e.target.value)}
+              placeholder={status.clientSecretSet ? '•••••••• saved' : 'GOCSPX-…'}
+              autoComplete="off"
+            />
+          </Field>
+        </div>
       </details>
 
-      <Field label="OAuth client ID" htmlFor="gc-client">
-        <Input
-          id="gc-client"
-          value={clientId}
-          onChange={(e) => setClientId(e.target.value)}
-          placeholder="1234…apps.googleusercontent.com"
-          autoComplete="off"
-        />
-      </Field>
-      <Field
-        label="OAuth client secret"
-        htmlFor="gc-secret"
-        hint={
-          status.clientSecretSet ? 'Saved (encrypted). Type a new one to replace it.' : undefined
-        }
-      >
-        <Input
-          id="gc-secret"
-          type="password"
-          value={secret}
-          onChange={(e) => setSecret(e.target.value)}
-          placeholder={status.clientSecretSet ? '•••••••• saved' : 'GOCSPX-…'}
-          autoComplete="off"
-        />
-      </Field>
       <Field
         label="Calendars"
         htmlFor="gc-ids"
@@ -311,30 +332,29 @@ function CalendarForm({
             <Button variant="outline" disabled={refresh.isPending} onClick={() => refresh.mutate()}>
               {refresh.isPending ? 'Reading…' : 'Read now'}
             </Button>
-            <Button
-              variant="ghost"
-              disabled={disconnect.isPending}
-              onClick={() => disconnect.mutate()}
-            >
-              Disconnect
-            </Button>
+            {status.via === 'own' ? (
+              <Button
+                variant="ghost"
+                disabled={disconnect.isPending}
+                onClick={() => disconnect.mutate()}
+              >
+                Disconnect
+              </Button>
+            ) : null}
           </>
-        ) : (
+        ) : ready ? (
           <Button
             variant="outline"
-            disabled={!ready || dirty || connect.isPending}
+            disabled={dirty || connect.isPending}
             onClick={() => connect.mutate()}
           >
-            {connect.isPending ? 'Opening Google…' : 'Connect Google Calendar'}
+            {connect.isPending ? 'Opening Google…' : 'Connect with my own client'}
           </Button>
-        )}
+        ) : null}
         {dirty && clientChanges && status.connected ? (
           <span className="text-sm text-muted-foreground">
             Saving a new client disconnects the current sign-in.
           </span>
-        ) : null}
-        {!status.connected && !ready ? (
-          <span className="text-sm text-muted-foreground">Save a client ID and secret first.</span>
         ) : null}
       </div>
 

@@ -690,6 +690,7 @@ export class ReviewDeskService {
       scopes: set ? (id?.scopes ?? []) : [],
       canWrite: set && !!id && (id.scopes.length === 0 || id.scopes.includes('api')),
       expiresAt: set ? (id?.expiresAt ?? null) : null,
+      viaSignIn: set && !this.d.config.getPastedReviewerToken(),
     };
   }
 

@@ -9,6 +9,7 @@ import { Field, errorMap } from '@/components/Field';
 import { ApiError } from '@/lib/api';
 import { useSaveGlobal, useTestDrive } from '@/lib/settingsApi';
 import { useDraft } from './drafts';
+import { OAuthConnect } from './OAuthConnect';
 import { ErrorAlert, SectionCard } from './SectionCard';
 
 export function toDriveDraft(s: GlobalConfigPublic) {
@@ -30,13 +31,19 @@ export function DriveCard({ settings }: { settings: GlobalConfigPublic }) {
     <SectionCard
       id="drive"
       title="Google Drive"
-      description="A service account uploads staging builds to each repo's Shared Drive folder (set per repo)."
+      description="Uploads staging builds to Drive for QA: as you, with “Connect with Google”, or through a service account."
     >
+      <OAuthConnect
+        provider="google"
+        feature="drive"
+        what="Relay only sees the files and folders it makes itself. A repo with no Drive folder set gets one made for it on its first upload (“Relay builds · <repo>”)."
+        disconnectNote="Signs Google out of Calendar and Drive together."
+      />
       <Field
         label="Service-account key file"
         htmlFor="dr-key"
         error={errs['drive.serviceAccountKeyPath']}
-        hint="Path to the JSON key on this machine (relative paths resolve from the project root). The key itself is never uploaded or shown."
+        hint="Only without “Connect with Google”: path to the JSON key on this machine (relative paths resolve from the project root). The key itself is never uploaded or shown."
       >
         <Input
           id="dr-key"
