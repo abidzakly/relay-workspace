@@ -1,0 +1,9 @@
+/* KPI charts: the hatch for work not counted yet (in flight, an unearned weight). */
+.kpi-hatch {
+  background-color: color-mix(in oklch, var(--foreground) 6%, transparent);
+  background-image: repeating-linear-gradient(
+    45deg,
+    color-mix(in oklch, var(--foreground) 32%, transparent) 0 1.5px,
+    transparent 1.5px 5px
+  );
+}

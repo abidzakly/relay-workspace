@@ -1,8 +1,7 @@
-import { useState, type ReactNode } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import { Link, useSearchParams } from 'react-router';
 import { CircleCheck, Download, Loader2, OctagonAlert } from 'lucide-react';
 import { KpiMonthSchema, type KpiHistoryItem, type KpiReport } from '@relay/shared';
-import { formatHours } from '@relay/shared';
 import { Badge } from '@/components/Badge';
 import { PageTitle, SectionLabel } from '@/components/PageTitle';
 import { TimeAgo } from '@/components/TimeAgo';
@@ -13,6 +12,15 @@ import { bugGauge, completionGauge, formatPercent, hitRateGauge, researchGauge }
 import { Ruler } from '@/kpi/Ruler';
 import { SlaTable } from '@/kpi/SlaTable';
 import { FocusList, useFocusCount } from '@/kpi/TodaysFocus';
+import { KpiSky } from '@/kpi/sky/KpiSky';
+import { DeadlineRunway } from '@/kpi/viz/DeadlineRunway';
+import { HistoryTrend } from '@/kpi/viz/HistoryTrend';
+import { LateLollipops } from '@/kpi/viz/LateLollipops';
+import { MonthFigures } from '@/kpi/viz/MonthFigures';
+import { Fold } from '@/kpi/viz/parts';
+import { SlaTypeBars } from '@/kpi/viz/SlaTypeBars';
+import { useKpiView } from '@/kpi/viz/store';
+import { useVisual } from '@/lib/visuals';
 import { describeError } from '@/lib/api';
 import { kpiExportUrl, useKpiCards, useKpiReport } from '@/lib/kpiApi';
 import { useSettings } from '@/lib/settingsApi';
@@ -46,35 +54,26 @@ const nameOf = (month: string) => MONTHS[Number(month.slice(5, 7)) - 1] ?? month
 
 /** A numbered section of the page, ruled off from the one above. */
 function Section({
+  id,
   n,
   title,
   aside,
   children,
 }: {
+  id?: string;
   n: number;
   title: ReactNode;
   aside?: ReactNode;
   children: ReactNode;
 }) {
   return (
-    <section className="rise-in grid gap-4 border-t border-hairline pt-5">
+    <section id={id} className="rise-in grid scroll-mt-20 gap-4 border-t border-hairline pt-5">
       <div className="flex flex-wrap items-baseline justify-between gap-2">
         <SectionLabel n={n}>{title}</SectionLabel>
         {aside}
       </div>
       {children}
     </section>
-  );
-}
-
-/** One figure in the month-in-numbers row: label, value in mono, a line of context. */
-function Figure({ label, value, hint }: { label: string; value: string; hint?: string }) {
-  return (
-    <div className="flex min-w-0 flex-col gap-1 border-hairline py-4 not-first:border-t sm:px-5 sm:not-first:border-t-0 sm:not-first:border-l sm:first:pl-0">
-      <dt className="type-micro text-muted-foreground">{label}</dt>
-      <dd className="font-mono text-2xl tabular-nums">{value}</dd>
-      {hint && <dd className="text-xs text-muted-foreground">{hint}</dd>}
-    </div>
   );
 }
 
@@ -215,90 +214,6 @@ function LateCards({ report }: { report: KpiReport }) {
   );
 }
 
-/**
- * The ledger: every frozen month as a column, oldest on the left. The bar is the late cards; the diamond over it is
- * the research quota, filled when met and hollow when missed. Click a month to open it.
- */
-function Ledger({
-  items,
-  selected,
-  onPick,
-}: {
-  items: readonly KpiHistoryItem[];
-  selected: string;
-  onPick: (month: string) => void;
-}) {
-  const months = [...items].reverse();
-  const most = Math.max(1, ...months.map((h) => h.lateCards));
-  return (
-    <div className="grid gap-2">
-      <div
-        className="flex h-28 items-end gap-1 border-b border-hairline"
-        role="group"
-        aria-label="Months"
-      >
-        {months.map((h) => {
-          const on = h.month === selected;
-          return (
-            <button
-              key={h.month}
-              type="button"
-              onClick={() => onPick(h.month)}
-              aria-current={on}
-              aria-label={`${h.month}: ${h.lateCards} late card${h.lateCards === 1 ? '' : 's'}, research ${h.researchMet ? 'met' : 'missed'}, hit-rate ${h.hitRate === null ? 'none' : formatPercent(h.hitRate)}`}
-              title={`${h.month} · ${h.lateCards} late · research ${h.researchMet ? 'met' : 'missed'}`}
-              className="group flex h-full min-w-0 flex-1 flex-col items-center justify-end gap-1 outline-none focus-visible:ring-1 focus-visible:ring-ring"
-            >
-              <span
-                aria-hidden
-                className={cn(
-                  'size-2 rotate-45 border',
-                  h.researchMet
-                    ? 'border-foreground bg-foreground'
-                    : 'border-destructive bg-transparent',
-                )}
-              />
-              <span
-                aria-hidden
-                className={cn(
-                  'w-full max-w-5 transition-[background-color,height] duration-300',
-                  on ? 'bg-terracotta' : 'bg-foreground/80 group-hover:bg-foreground',
-                )}
-                style={{ height: `${Math.max(2, (h.lateCards / most) * 80)}%` }}
-              />
-            </button>
-          );
-        })}
-      </div>
-      <div className="flex gap-1" aria-hidden>
-        {months.map((h, i) => (
-          <span
-            key={h.month}
-            className="min-w-0 flex-1 text-center font-mono text-2xs text-muted-foreground"
-          >
-            {i % 3 === 0 || h.month === selected ? h.month.slice(2).replace('-', '·') : ''}
-          </span>
-        ))}
-      </div>
-      <p className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
-        <span>Bar: late cards</span>
-        <span>
-          <span className="mr-1 inline-block size-2 rotate-45 bg-foreground" />
-          research met
-        </span>
-        <span>
-          <span className="mr-1 inline-block size-2 rotate-45 border border-destructive" />
-          research missed
-        </span>
-        <span>
-          <span className="mr-1 inline-block h-2 w-1.5 bg-terracotta" />
-          the month shown
-        </span>
-      </p>
-    </div>
-  );
-}
-
 function History({
   items,
   selected,
@@ -313,7 +228,6 @@ function History({
   }
   return (
     <div className="grid gap-6">
-      <Ledger items={items} selected={selected} onPick={onPick} />
       <div className="overflow-x-auto">
         <table className="w-full text-sm">
           <caption className="sr-only">Frozen months, newest first</caption>
@@ -412,6 +326,14 @@ export function Kpi() {
   const cards = cardsQ.data;
   const pick = (m: string) => setParams(m ? { month: m } : {});
   const shownMonth = month ?? report?.month ?? thisMonth;
+  const visual = useVisual('kpi');
+  const filter = useKpiView((st) => st.filter);
+  const setFilter = useKpiView((st) => st.setFilter);
+  // A chart's filter belongs to the month it was clicked in.
+  useEffect(() => setFilter(null), [shownMonth, setFilter]);
+  // Sections are numbered in the order they show.
+  let count = 0;
+  const num = () => ++count;
 
   return (
     <div className="mx-auto flex max-w-6xl flex-col gap-8">
@@ -482,72 +404,47 @@ export function Kpi() {
 
       {report && (
         <>
-          <Section
-            n={1}
-            title="Scorecard"
-            aside={<span className="font-mono text-xs text-muted-foreground">{report.month}</span>}
-          >
-            <div className="grid gap-8 md:grid-cols-2 xl:grid-cols-4 xl:gap-0">
-              {[
-                completionGauge(report.scorecard.completion),
-                presets.bugRatio ? bugGauge(report.scorecard.bugRatio) : null,
-                hitRateGauge(report.scorecard.sla.overall),
-                presets.researchQuota ? researchGauge(report.scorecard.research) : null,
-              ]
-                .filter((g) => g !== null)
-                .map((g) => (
-                  <Ruler
-                    key={g.label}
-                    gauge={g}
-                    className="border-hairline xl:border-l xl:px-6 xl:first:border-l-0 xl:first:pl-0 xl:last:pr-0"
-                  />
-                ))}
+          {visual && (
+            <div id="kpi-scorecard" className="rise-in scroll-mt-20">
+              <KpiSky report={report} presets={presets} />
             </div>
-          </Section>
+          )}
 
-          <Section n={2} title="The month in numbers">
-            <dl className="grid sm:grid-cols-3 lg:grid-cols-5">
-              {presets.pointsAsHours && (
-                <Figure
-                  label="Effort (Point)"
-                  value={
-                    report.scorecard.effort
-                      ? `${formatHours(report.scorecard.effort.doneHours)} / ${formatHours(report.scorecard.effort.totalHours)}`
-                      : '—'
-                  }
-                  hint={
-                    report.scorecard.effort
-                      ? `done / committed hours · ${report.scorecard.effort.research} research, ${report.scorecard.effort.unestimated} without a Point`
-                      : 'Not recorded for this month'
-                  }
-                />
-              )}
-              <Figure
-                label="Cards"
-                value={String(report.scorecard.counts.cards)}
-                hint={`${report.scorecard.counts.untracked} without a timer, ${report.scorecard.counts.approxAssignedAt} approx`}
-              />
-              <Figure
-                label="In flight (not counted)"
-                value={String(report.scorecard.sla.overall.inFlight)}
-                hint="Outside the hit-rate"
-              />
-              <Figure
-                label="Avg resolution"
-                value={report.scorecard.sla.overall.avgResolutionLabel ?? '—'}
-                hint="Start clock to MR opened"
-              />
-              <Figure
-                label="Review latency"
-                value={report.scorecard.reviewLatency.meanLabel ?? '—'}
-                hint={`median ${report.scorecard.reviewLatency.medianLabel ?? '—'}, ${report.scorecard.reviewLatency.sampled} sampled, ${report.scorecard.reviewLatency.withoutResponse} without a response`}
-              />
-            </dl>
+          {!visual && (
+            <Section
+              id="kpi-scorecard"
+              n={num()}
+              title="Scorecard"
+              aside={
+                <span className="font-mono text-xs text-muted-foreground">{report.month}</span>
+              }
+            >
+              <div className="grid gap-8 md:grid-cols-2 xl:grid-cols-4 xl:gap-0">
+                {[
+                  completionGauge(report.scorecard.completion),
+                  presets.bugRatio ? bugGauge(report.scorecard.bugRatio) : null,
+                  hitRateGauge(report.scorecard.sla.overall),
+                  presets.researchQuota ? researchGauge(report.scorecard.research) : null,
+                ]
+                  .filter((g) => g !== null)
+                  .map((g) => (
+                    <Ruler
+                      key={g.label}
+                      gauge={g}
+                      className="border-hairline xl:border-l xl:px-6 xl:first:border-l-0 xl:first:pl-0 xl:last:pr-0"
+                    />
+                  ))}
+              </div>
+            </Section>
+          )}
+
+          <Section n={num()} title="The month in numbers">
+            <MonthFigures report={report} pointsAsHours={presets.pointsAsHours} />
           </Section>
 
           {report.current && (
             <Section
-              n={3}
+              n={num()}
               title={
                 <>
                   Today&apos;s <span className="type-accent text-base normal-case">focus</span>
@@ -565,29 +462,42 @@ export function Kpi() {
             </Section>
           )}
 
-          <Section n={report.current ? 4 : 3} title="SLA by type">
-            <ByTypeTable report={report} />
+          <Section id="kpi-sla-type" n={num()} title="SLA by type">
+            <SlaTypeBars report={report} />
+            {report.scorecard.sla.byType.length > 0 && (
+              <Fold id="sla-type" count={report.scorecard.sla.byType.length}>
+                <ByTypeTable report={report} />
+              </Fold>
+            )}
           </Section>
 
-          <Section n={report.current ? 5 : 4} title="SLA table">
+          <Section id="kpi-sla-table" n={num()} title="SLA table">
             {cardsQ.isError && (
               <Alert variant="destructive">
                 <AlertTitle>Could not load the SLA table</AlertTitle>
                 <AlertDescription>{describeError(cardsQ.error)}</AlertDescription>
               </Alert>
             )}
+            {cards && cards.current && !cards.frozen && (
+              <DeadlineRunway rows={cards.rows} month={cards.month} />
+            )}
             {cards && (
-              <SlaTable
-                rows={cards.rows}
-                month={cards.month}
-                live={cards.current && !cards.frozen}
-                frozen={cards.frozen}
-              />
+              <Fold id="sla-table" count={cards.rows.length}>
+                <SlaTable
+                  rows={cards.rows}
+                  month={cards.month}
+                  live={cards.current && !cards.frozen}
+                  frozen={cards.frozen}
+                  filter={filter}
+                  onClearFilter={() => setFilter(null)}
+                />
+              </Fold>
             )}
           </Section>
 
           <Section
-            n={report.current ? 6 : 5}
+            id="kpi-late"
+            n={num()}
             title="Late cards"
             aside={
               <span className="font-mono text-xs text-muted-foreground">
@@ -595,11 +505,25 @@ export function Kpi() {
               </span>
             }
           >
-            <LateCards report={report} />
+            <LateLollipops cards={report.scorecard.lateCards} />
+            {report.scorecard.lateCards.length > 0 && (
+              <Fold id="late" label="list" count={report.scorecard.lateCards.length}>
+                <LateCards report={report} />
+              </Fold>
+            )}
           </Section>
 
-          <Section n={report.current ? 7 : 6} title="History">
-            <History items={report.history} selected={report.month} onPick={pick} />
+          <Section id="kpi-history" n={num()} title="History">
+            {report.history.length === 0 ? (
+              <p className="text-sm text-muted-foreground">No month has been frozen yet.</p>
+            ) : (
+              <>
+                <HistoryTrend items={report.history} selected={report.month} onPick={pick} />
+                <Fold id="history" count={report.history.length}>
+                  <History items={report.history} selected={report.month} onPick={pick} />
+                </Fold>
+              </>
+            )}
           </Section>
         </>
       )}

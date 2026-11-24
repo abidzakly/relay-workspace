@@ -17,6 +17,12 @@ const PAGES: { page: VisualPage; name: string; what: string; other: boolean }[] 
     other: false,
   },
   {
+    page: 'kpi',
+    name: 'KPI',
+    what: 'The month as a dream pool, constellations or a tide, with charts for every section.',
+    other: true,
+  },
+  {
     page: 'sync',
     name: 'Sync Health',
     what: 'Threads between Notion and GitLab: taut when in sync, slack or snapped when not.',
