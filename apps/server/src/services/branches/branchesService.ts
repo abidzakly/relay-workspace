@@ -1,6 +1,9 @@
 import { basename, dirname, join, sep } from 'node:path';
 import { and, eq } from 'drizzle-orm';
 import type {
+  BranchBulkDeleteBody,
+  BranchBulkDeleteResult,
+  BranchBulkItem,
   BranchDeleteBody,
   BranchDeleteResult,
   BranchFetchResult,
@@ -88,6 +91,21 @@ function gitlabState(e: unknown): BranchSourceState {
 export class BranchesService {
   constructor(private readonly d: BranchesDeps) {}
 
+  /**
+   * Branches just deleted on GitLab. Its branch list can still show one for a moment after the DELETE, and the page
+   * refetches at once: without this the row would come back until the next reload.
+   */
+  private readonly recentlyDeleted = new Map<string, { sha: string | null; until: number }>();
+
+  private hiddenAsDeleted(repoId: string, name: string, sha: string | null | undefined): boolean {
+    const now = Date.now();
+    for (const [k, v] of this.recentlyDeleted) if (v.until <= now) this.recentlyDeleted.delete(k);
+    const hit = this.recentlyDeleted.get(`${repoId}:${name}`);
+    if (!hit) return false;
+    // Pushed again since (another head): show it.
+    return !hit.sha || !sha || hit.sha === sha.toLowerCase();
+  }
+
   private repo(repoId: string) {
     const repo = this.d.config.getRepo(repoId);
     if (!repo) throw new ActionError(404, 'repo_not_found', 'Unknown repository');
@@ -150,6 +168,7 @@ export class BranchesService {
       card: null,
     });
     for (const l of local.rows) rows.set(l.name, { ...blank(l.name), ...l });
+    remote.branches = remote.branches.filter((b) => !this.hiddenAsDeleted(repoId, b.name, b.sha));
     for (const b of remote.branches) {
       const row = rows.get(b.name) ?? blank(b.name);
       // GitLab is the truth about origin; the Mac's origin refs may be a fetch behind.
@@ -274,7 +293,7 @@ export class BranchesService {
    * default branch, a protected branch, an open MR, someone else's branch without the typed name. Local goes first;
    * each part reports on its own, so a remote failure after a local delete is said as it is.
    */
-  async delete(body: BranchDeleteBody): Promise<BranchDeleteResult> {
+  async delete(body: BranchDeleteBody, preloaded?: BranchListResult): Promise<BranchDeleteResult> {
     const {
       repo: repoId,
       branch,
@@ -285,7 +304,7 @@ export class BranchesService {
       removeWorktree = false,
       switchTo,
     } = body;
-    const list = await this.list(repoId);
+    const list = preloaded ?? (await this.list(repoId));
     const row = list.rows.find((r) => r.name === branch);
     if (!row)
       throw new ActionError(404, 'branch_not_found', `${branch} is not a branch of this repo.`);
@@ -484,6 +503,12 @@ export class BranchesService {
           },
         );
         result.remote = { state: out.dryRun ? 'simulated' : 'deleted' };
+        if (!out.dryRun) {
+          this.recentlyDeleted.set(`${repoId}:${branch}`, {
+            sha: row.sha?.toLowerCase() ?? null,
+            until: Date.now() + 2 * 60_000,
+          });
+        }
       } catch (e) {
         result.remote = failed(e);
       }
@@ -497,6 +522,93 @@ export class BranchesService {
       'branch deleted',
     );
     return result;
+  }
+
+  /**
+   * Deletes several branches, one after another (git is not safe to run concurrently on one repo). Each branch gets
+   * the same checks as a single delete; a refusal skips that branch only. Remote deletes of branches that are not the
+   * user's need the typed phrase `delete <n> branches`.
+   */
+  async deleteMany(body: BranchBulkDeleteBody): Promise<BranchBulkDeleteResult> {
+    const {
+      repo: repoId,
+      branches,
+      local,
+      remote,
+      force = false,
+      removeWorktree = false,
+      switchTo,
+    } = body;
+    const phraseOk = body.confirmPhrase?.trim() === `delete ${branches.length} branches`;
+    const list = await this.list(repoId);
+    const items: BranchBulkItem[] = [];
+    for (const branch of branches) {
+      const row = list.rows.find((r) => r.name === branch);
+      // Each branch is deleted where it exists among the chosen places: an origin-only branch still goes from origin.
+      const onMac = local && !!row?.local;
+      const onOrigin = remote && !!row?.remote;
+      if (!row || (!onMac && !onOrigin)) {
+        items.push({
+          branch,
+          state: 'skipped',
+          code: row ? 'nothing_to_delete' : 'branch_not_found',
+          message: row
+            ? `Not ${local && !remote ? 'on this Mac' : !local && remote ? 'on origin' : 'on this Mac or origin'}.`
+            : 'Not a branch of this repo any more.',
+          forceable: false,
+          result: null,
+        });
+        continue;
+      }
+      try {
+        const result = await this.delete(
+          {
+            repo: repoId,
+            branch,
+            local: onMac,
+            remote: onOrigin,
+            force,
+            removeWorktree,
+            ...(row?.current && switchTo ? { switchTo } : {}),
+            ...(phraseOk ? { confirmName: branch } : {}),
+          },
+          list,
+        );
+        const parts = [result.local, result.remote];
+        const bad = parts.find((p) => p.state === 'failed');
+        items.push({
+          branch,
+          state: bad ? 'failed' : 'done',
+          code: bad && bad.state === 'failed' ? bad.code : null,
+          message: bad && bad.state === 'failed' ? bad.message : null,
+          forceable: false,
+          result,
+        });
+        // The workspace HEAD moved: later rows must not try to switch again.
+        if (row?.current) row.current = false;
+      } catch (e) {
+        const code = e instanceof ActionError || e instanceof CockpitHostError ? e.code : 'failed';
+        const forceable = code === 'branch_unmerged' || code === 'worktree_dirty';
+        items.push({
+          branch,
+          state: forceable ? 'failed' : 'skipped',
+          code,
+          message: e instanceof Error ? e.message : 'Delete failed.',
+          forceable,
+          result: null,
+        });
+      }
+    }
+    const count = (st: BranchBulkItem['state']) => items.filter((i) => i.state === st).length;
+    this.d.audit.write({
+      actor: 'user',
+      action: 'branch.deleteMany',
+      targetType: 'repo',
+      targetId: repoId,
+      before: { branches, local, remote, force, removeWorktree },
+      after: { done: count('done'), skipped: count('skipped'), failed: count('failed') },
+    });
+    return { items };
   }
 
   linkCard(repoId: string, branch: string, cardId: string): { ok: true } {

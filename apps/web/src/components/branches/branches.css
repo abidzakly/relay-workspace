@@ -336,6 +336,104 @@
   box-shadow: inset 0 0 0 1px color-mix(in oklch, var(--emphasis) 22%, transparent);
 }
 
+/* Bulk delete dialog */
+.bd-list {
+  display: grid;
+  max-height: min(18rem, 38vh);
+  margin: 0;
+  padding: 0.3rem;
+  overflow-y: auto;
+  list-style: none;
+  border-radius: 0.7rem;
+  box-shadow: inset 0 0 0 1px var(--hairline);
+}
+.bd-line {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: 0.1rem 0.55rem;
+  padding: 0.45rem 0.55rem;
+  border-radius: 0.5rem;
+  animation: br-rise 280ms var(--ease-settle) both;
+}
+.bd-line + .bd-line {
+  border-top: 1px solid var(--hairline);
+}
+.bd-line[data-state='skip'],
+.bd-line[data-state='skipped'] {
+  opacity: 0.62;
+}
+.bd-name {
+  min-width: 0;
+  overflow: hidden;
+  font-family: var(--font-mono);
+  font-size: 0.78rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.bd-note {
+  grid-column: 2;
+  font-size: 0.72rem;
+  color: var(--muted-foreground);
+}
+
+/* Selection */
+.br-row-selecting {
+  grid-template-columns: auto minmax(0, 1fr);
+  column-gap: 0.85rem;
+}
+.br-row-selecting .br-actions {
+  grid-column: 2;
+}
+@media (min-width: 768px) {
+  .br-row-selecting {
+    grid-template-columns: auto minmax(0, 1fr) auto;
+  }
+  .br-row-selecting .br-actions {
+    grid-column: 3;
+  }
+}
+.br-row[data-selected='true'] {
+  background: color-mix(in oklch, var(--emphasis) 7%, transparent);
+}
+.br-select {
+  display: grid;
+  place-items: center;
+  width: 1.15rem;
+  height: 1.15rem;
+  align-self: start;
+  margin-top: 0.15rem;
+  border-radius: 0.3rem;
+  color: var(--popover);
+  box-shadow: inset 0 0 0 1.5px var(--input);
+  transition: background-color 120ms;
+}
+.br-select[aria-checked='true'] {
+  background: var(--emphasis);
+  box-shadow: none;
+}
+.br-select:disabled {
+  opacity: 0.3;
+  cursor: not-allowed;
+}
+.br-select:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+}
+.br-bulkbar {
+  position: sticky;
+  bottom: 0.75rem;
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.6rem 0.75rem 0.6rem 1rem;
+  border-radius: var(--radius-sheet);
+  background: var(--popover);
+  box-shadow: var(--shadow-float);
+  animation: br-rise 260ms var(--ease-settle) both;
+}
+
 /* Delete dialog */
 .db-target {
   display: flex;

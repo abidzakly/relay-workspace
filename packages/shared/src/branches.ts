@@ -143,3 +143,35 @@ export const BranchDeleteResultSchema = z.object({
   sha: z.string().nullable(),
 });
 export type BranchDeleteResult = z.infer<typeof BranchDeleteResultSchema>;
+
+/** Several branches at once. Remote deletes of branches that are not yours need `confirmPhrase` = `delete <n> branches`. */
+export const BranchBulkDeleteBodySchema = z.object({
+  repo: RepoIdSchema,
+  branches: z
+    .array(BranchNameSchema)
+    .min(1)
+    .max(100)
+    .refine((a) => new Set(a).size === a.length, 'branches must be unique'),
+  local: z.boolean(),
+  remote: z.boolean(),
+  force: z.boolean().default(false),
+  removeWorktree: z.boolean().default(false),
+  /** Switch the repo workspace to the base when one of the branches is checked out there. */
+  switchTo: BranchNameSchema.optional(),
+  confirmPhrase: z.string().max(100).optional(),
+});
+export type BranchBulkDeleteBody = z.input<typeof BranchBulkDeleteBodySchema>;
+
+export const BranchBulkItemSchema = z.object({
+  branch: z.string(),
+  /** `done`: ran (see `result` per target). `skipped`: refused before anything ran. `failed`: stopped midway. */
+  state: z.enum(['done', 'skipped', 'failed']),
+  code: z.string().nullable(),
+  message: z.string().nullable(),
+  /** Unmerged commits or a dirty worktree: `force` would get past it. */
+  forceable: z.boolean(),
+  result: BranchDeleteResultSchema.nullable(),
+});
+export type BranchBulkItem = z.infer<typeof BranchBulkItemSchema>;
+export const BranchBulkDeleteResultSchema = z.object({ items: z.array(BranchBulkItemSchema) });
+export type BranchBulkDeleteResult = z.infer<typeof BranchBulkDeleteResultSchema>;
