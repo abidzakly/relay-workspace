@@ -10,6 +10,7 @@ import type {
   FetchFailure,
   FlutterDevice,
   LocalBranch,
+  LocalBranchList,
   RunTargets,
 } from '@relay/shared';
 import { readNdjson } from '../../hostAgent/protocol';
@@ -104,8 +105,13 @@ export class RemoteCockpitHost implements CockpitHost {
   wsStatus(ref: WsRef): Promise<WsStatus> {
     return this.ws('status', { ref });
   }
-  wsListBranches(ref: WsRef): Promise<LocalBranch[]> {
-    return this.ws('list-branches', { ref });
+  async wsListBranches(ref: WsRef): Promise<LocalBranchList> {
+    const r = await this.ws<LocalBranchList | LocalBranch[]>('list-branches', { ref });
+    // An agent from before "mine" answers the bare list.
+    return Array.isArray(r) ? { branches: r, me: null } : r;
+  }
+  wsDeleteBranch(ref: WsRef, branch: string, force: boolean): Promise<{ sha: string }> {
+    return this.ws('delete-branch', { ref, branch, force });
   }
   async wsFetch(ref: WsRef): Promise<FetchFailure | null> {
     const r = await this.ws<{ fetchFailed: FetchFailure | null }>('fetch', { ref }, 60_000);

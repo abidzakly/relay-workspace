@@ -11,12 +11,14 @@ import {
   RefreshCw,
   ScanSearch,
   Search,
+  Trash2,
   TriangleAlert,
 } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { Link, useLocation, useNavigate, useParams, useSearchParams } from 'react-router';
 import type { BranchRow, BranchSourceState } from '@relay/shared';
 import { CardLinkDialog } from '@/components/cardLink/CardLinkDialog';
+import { DeleteBranchDialog } from '@/components/branches/DeleteBranchDialog';
 import { Dropdown } from '@/components/Dropdown';
 import { PageTitle } from '@/components/PageTitle';
 import { TimeAgo } from '@/components/TimeAgo';
@@ -85,6 +87,7 @@ export function Branches() {
   const [query, setQuery] = useState('');
   const [limit, setLimit] = useState(PAGE);
   const [linking, setLinking] = useState<BranchRow | null>(null);
+  const [deleting, setDeleting] = useState<BranchRow | null>(null);
   useEffect(() => setLimit(PAGE), [repo, filter, query]);
 
   const rows = q.data?.rows ?? [];
@@ -224,6 +227,7 @@ export function Branches() {
                     index={Math.min(i, 20)}
                     canRun={!noWorkspace}
                     onLink={() => setLinking(r)}
+                    onDelete={() => setDeleting(r)}
                   />
                 ))}
         </ul>
@@ -244,6 +248,15 @@ export function Branches() {
         </p>
       )}
 
+      {deleting && repo && q.data && (
+        <DeleteBranchDialog
+          repo={repo}
+          row={deleting}
+          hasWorkspace={!!q.data.workspaceId}
+          gitlabOk={q.data.sources.remote.ok}
+          onClose={() => setDeleting(null)}
+        />
+      )}
       {linking && repo && (
         <CardLinkDialog
           repo={repo}
@@ -293,6 +306,7 @@ function Row({
   index,
   canRun,
   onLink,
+  onDelete,
 }: {
   repo: string;
   base: string;
@@ -300,6 +314,7 @@ function Row({
   index: number;
   canRun: boolean;
   onLink: () => void;
+  onDelete: () => void;
 }) {
   const compare = `/review/${encodeURIComponent(repo)}/compare?${new URLSearchParams({ from: base, to: r.name }).toString()}`;
   const where = r.local && r.remote ? null : r.local ? 'local only' : 'origin only';
@@ -439,6 +454,17 @@ function Row({
           >
             <GitCompare className="size-4" />
           </Link>
+        )}
+        {!r.isBase && (
+          <button
+            type="button"
+            className="rv-icon-btn br-trash"
+            onClick={onDelete}
+            title={`Delete ${r.name}`}
+            aria-label={`Delete ${r.name}`}
+          >
+            <Trash2 className="size-4" />
+          </button>
         )}
       </div>
     </li>

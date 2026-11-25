@@ -336,6 +336,73 @@
   box-shadow: inset 0 0 0 1px color-mix(in oklch, var(--emphasis) 22%, transparent);
 }
 
+/* Delete dialog */
+.db-target {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.65rem;
+  padding: 0.75rem 0.85rem;
+  border-radius: 0.7rem;
+  cursor: pointer;
+  box-shadow: inset 0 0 0 1px var(--hairline);
+  transition:
+    background-color 150ms,
+    box-shadow 150ms;
+}
+.db-target:hover {
+  background: var(--accent);
+}
+.db-target:has(input:focus-visible) {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+}
+.db-target[data-on='true'] {
+  background: color-mix(in oklch, var(--foreground) 4%, transparent);
+  box-shadow: inset 0 0 0 1.5px var(--foreground);
+}
+.db-target[data-on='true'][data-danger='true'] {
+  background: color-mix(in oklch, var(--destructive) 7%, transparent);
+  box-shadow: inset 0 0 0 1.5px var(--destructive);
+}
+.db-target-off {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+.db-target-off:hover {
+  background: transparent;
+}
+.db-check {
+  display: grid;
+  place-items: center;
+  width: 1.1rem;
+  height: 1.1rem;
+  flex-shrink: 0;
+  margin-top: 0.1rem;
+  border-radius: 0.3rem;
+  color: var(--popover);
+  box-shadow: inset 0 0 0 1.5px var(--input);
+}
+.db-target[data-on='true'] .db-check {
+  background: var(--foreground);
+  box-shadow: none;
+}
+.db-target[data-on='true'][data-danger='true'] .db-check {
+  background: var(--destructive);
+}
+.db-unmerged {
+  display: flex;
+  gap: 0.5rem;
+  padding: 0.65rem 0.8rem;
+  border-radius: 0.6rem;
+  font-size: 0.85rem;
+  color: var(--destructive);
+  background: color-mix(in oklch, var(--destructive) 8%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in oklch, var(--destructive) 30%, transparent);
+}
+.br-trash:hover {
+  color: var(--destructive);
+}
+
 @media (prefers-reduced-motion: reduce) {
   .br-row,
   .cl-option,

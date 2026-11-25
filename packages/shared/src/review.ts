@@ -167,6 +167,9 @@ export const BranchSchema = z.object({
   committedAt: EpochMsSchema.nullable(),
   /** Head commit SHA (branch poll); absent in older payloads. */
   sha: z.string().nullable().optional(),
+  /** Head commit author (Branches page: whose branch it is). Absent in older payloads. */
+  authorEmail: z.string().nullable().optional(),
+  authorName: z.string().nullable().optional(),
 });
 export type Branch = z.infer<typeof BranchSchema>;
 

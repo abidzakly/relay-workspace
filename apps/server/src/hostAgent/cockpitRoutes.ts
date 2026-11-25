@@ -31,6 +31,11 @@ const WsSchemas = {
   'agent-rules': z.object({ ref: RefSchema }),
   status: z.object({ ref: RefSchema }),
   'list-branches': z.object({ ref: RefSchema }),
+  'delete-branch': z.object({
+    ref: RefSchema,
+    branch: z.string().min(1).max(255),
+    force: z.boolean(),
+  }),
   fetch: z.object({ ref: RefSchema }),
   tree: z.object({ ref: RefSchema }),
   checkpoint: z.object({ ref: RefSchema }),
@@ -198,7 +203,8 @@ export function registerCockpitAgentRoutes(app: FastifyInstance, host: LocalCock
         z.infer<(typeof WsSchemas)['save-attachment']> &
         z.infer<(typeof WsSchemas)['squash-for-mr']> &
         z.infer<(typeof WsSchemas)['cleanup-apply']> &
-        z.infer<(typeof WsSchemas)['remove-worktree']>;
+        z.infer<(typeof WsSchemas)['remove-worktree']> &
+        z.infer<(typeof WsSchemas)['delete-branch']>;
       try {
         switch (op) {
           case 'validate':
@@ -210,6 +216,8 @@ export function registerCockpitAgentRoutes(app: FastifyInstance, host: LocalCock
             return await host.wsStatus(b.ref);
           case 'list-branches':
             return await host.wsListBranches(b.ref);
+          case 'delete-branch':
+            return await host.wsDeleteBranch(b.ref, b.branch, b.force);
           case 'fetch':
             return { fetchFailed: await host.wsFetch(b.ref) };
           case 'tree':

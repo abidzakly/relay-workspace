@@ -1,5 +1,7 @@
 import { and, eq } from 'drizzle-orm';
 import type {
+  BranchDeleteBody,
+  BranchDeleteResult,
   BranchFetchResult,
   BranchListResult,
   BranchRow,
@@ -12,6 +14,7 @@ import type { AppDb } from '../../db';
 import { mrs } from '../../db/schema';
 import type { Logger } from '../../util/logger';
 import { ActionError } from '../actionError';
+import { guardedWrite } from '../dryRun';
 import { cardForBranch, removeCardLink, setCardLink } from '../cardLinks';
 import { CockpitHostError, type CockpitHost } from '../cockpit/host';
 import type { WorkspaceService } from '../cockpit/workspaces';
@@ -88,18 +91,20 @@ export class BranchesService {
     const base = repo.baseBranch;
     const workspaceId = this.d.workspaces.forRepo(repoId);
 
-    const localP: Promise<{ rows: LocalBranch[]; state: BranchSourceState }> = workspaceId
-      ? this.d.host
-          .wsListBranches(this.d.workspaces.ref(workspaceId))
-          .then((rows) => ({ rows, state: { ok: true } as const }))
-          .catch((e: unknown) => ({ rows: [], state: hostState(e) }))
-      : Promise.resolve({
-          rows: [],
-          state: errState(
-            'no_workspace',
-            'No workspace on this Mac holds this repository: only remote branches are listed.',
-          ),
-        });
+    const localP: Promise<{ rows: LocalBranch[]; me: string | null; state: BranchSourceState }> =
+      workspaceId
+        ? this.d.host
+            .wsListBranches(this.d.workspaces.ref(workspaceId))
+            .then((r) => ({ rows: r.branches, me: r.me, state: { ok: true } as const }))
+            .catch((e: unknown) => ({ rows: [], me: null, state: hostState(e) }))
+        : Promise.resolve({
+            rows: [],
+            me: null,
+            state: errState(
+              'no_workspace',
+              'No workspace on this Mac holds this repository: only remote branches are listed.',
+            ),
+          });
     const remoteP = (async () => {
       try {
         const svc = GitlabService.forRepo(this.d.config, repoId, {
@@ -124,10 +129,13 @@ export class BranchesService {
       sha: null,
       committedAt: null,
       author: null,
+      authorEmail: null,
       subject: null,
       track: null,
       isBase: name === base,
       merged: false,
+      protected: false,
+      mine: null,
       mr: null,
       card: null,
     });
@@ -137,7 +145,11 @@ export class BranchesService {
       // GitLab is the truth about origin; the Mac's origin refs may be a fetch behind.
       row.remote = true;
       row.merged = b.merged;
+      row.protected = b.protected;
+      if (b.default) row.isBase = true;
       if (!row.local) {
+        row.authorEmail = b.authorEmail ?? row.authorEmail;
+        row.author = b.authorName ?? row.author;
         row.sha = b.sha ?? row.sha;
         row.committedAt = b.committedAt ?? row.committedAt;
       }
@@ -165,7 +177,9 @@ export class BranchesService {
       .where(and(eq(mrs.repoId, repoId), eq(mrs.state, 'opened')))
       .all();
     const cards = listCards(this.d.store);
+    const me = local.me;
     for (const row of rows.values()) {
+      row.mine = me && row.authorEmail ? row.authorEmail === me : null;
       const mr = open.find((m) => m.sourceBranch === row.name);
       if (mr) {
         row.mr = {
@@ -202,6 +216,7 @@ export class BranchesService {
       ),
       sources: { local: local.state, remote: remote.state },
       truncated: remote.truncated,
+      meEmail: me,
     };
   }
 
@@ -224,6 +239,153 @@ export class BranchesService {
       }
       throw e;
     }
+  }
+
+  /**
+   * Deletes a branch on the Mac, on origin, or both. Every refusal is checked before anything is deleted: the base or
+   * default branch, a protected branch, an open MR, someone else's branch without the typed name. Local goes first;
+   * each part reports on its own, so a remote failure after a local delete is said as it is.
+   */
+  async delete(body: BranchDeleteBody): Promise<BranchDeleteResult> {
+    const { repo: repoId, branch, local, remote, force = false, confirmName } = body;
+    const list = await this.list(repoId);
+    const row = list.rows.find((r) => r.name === branch);
+    if (!row)
+      throw new ActionError(404, 'branch_not_found', `${branch} is not a branch of this repo.`);
+    if (row.isBase)
+      throw new ActionError(422, 'base_branch', 'The base branch is never deleted from Relay.');
+    if (local) {
+      if (!list.workspaceId) {
+        throw new ActionError(
+          404,
+          'no_workspace',
+          'No workspace on this Mac holds this repository.',
+        );
+      }
+      if (!row.local) throw new ActionError(409, 'not_local', `${branch} is not on this Mac.`);
+      if (row.current) {
+        throw new ActionError(
+          409,
+          'branch_checked_out_here',
+          `${branch} is checked out in the workspace: switch it to another branch first.`,
+        );
+      }
+    }
+    if (remote) {
+      if (!list.sources.remote.ok) {
+        throw new ActionError(503, 'gitlab_unavailable', list.sources.remote.message);
+      }
+      if (!row.remote) throw new ActionError(409, 'not_remote', `${branch} is not on origin.`);
+      if (row.protected) {
+        throw new ActionError(409, 'branch_protected', `${branch} is protected on GitLab.`);
+      }
+      if (row.mr) {
+        throw new ActionError(
+          409,
+          'branch_has_mr',
+          `!${row.mr.iid} is still open from ${branch}: merge or close it first.`,
+          { iid: row.mr.iid },
+        );
+      }
+      if (row.mine !== true && confirmName !== branch) {
+        throw new ActionError(
+          409,
+          'confirm_name_required',
+          'This branch is not yours (or Relay cannot tell): type its name to delete it on origin.',
+        );
+      }
+    }
+
+    const result: BranchDeleteResult = {
+      local: { state: 'skipped' },
+      remote: { state: 'skipped' },
+      sha: row.sha,
+    };
+    const failed = (e: unknown) => {
+      if (e instanceof CockpitHostError || e instanceof ActionError) {
+        return { state: 'failed' as const, code: e.code, message: e.message };
+      }
+      if (e instanceof GitlabApiError) {
+        const st = gitlabState(e);
+        return st.ok
+          ? { state: 'failed' as const, code: 'gitlab_failed', message: e.message }
+          : { state: 'failed' as const, code: st.code, message: st.message };
+      }
+      return {
+        state: 'failed' as const,
+        code: 'failed',
+        message: e instanceof Error ? e.message : 'Delete failed.',
+      };
+    };
+
+    if (local && list.workspaceId) {
+      try {
+        const r = await this.d.host.wsDeleteBranch(
+          this.d.workspaces.ref(list.workspaceId),
+          branch,
+          force,
+        );
+        result.sha = r.sha;
+        result.local = { state: 'deleted' };
+        this.d.audit.write({
+          actor: 'user',
+          action: 'branch.deleteLocal',
+          targetType: 'branch',
+          targetId: `${repoId}:${branch}`,
+          before: { sha: r.sha, force },
+          after: null,
+        });
+      } catch (e) {
+        if (e instanceof CockpitHostError && e.code === 'not_found') {
+          throw new ActionError(
+            409,
+            'agent_outdated',
+            'Restart `pnpm agent` on the Mac to delete local branches.',
+          );
+        }
+        // An unmerged branch is a question for the user, not a partial result: nothing was deleted yet.
+        if (e instanceof CockpitHostError && e.code === 'branch_unmerged') {
+          throw new ActionError(409, e.code, e.message, e.details);
+        }
+        result.local = failed(e);
+        return result;
+      }
+    }
+
+    if (remote) {
+      try {
+        const svc = GitlabService.forRepo(this.d.config, repoId, {
+          http: this.d.http,
+          store: this.d.store,
+          log: this.d.log,
+        });
+        const out = await guardedWrite(
+          { dryRun: this.d.config, audit: this.d.audit, log: this.d.log },
+          {
+            actor: 'user',
+            action: 'branch.delete',
+            targetType: 'branch',
+            targetId: `${repoId}:${branch}`,
+            confirmed: true,
+            before: { sha: row.sha, author: row.authorEmail, mine: row.mine },
+            after: null,
+            run: () => svc.deleteBranch(branch),
+          },
+        );
+        result.remote = { state: out.dryRun ? 'simulated' : 'deleted' };
+      } catch (e) {
+        result.remote = failed(e);
+      }
+    }
+
+    const goneLocal = !row.local || result.local.state === 'deleted';
+    const goneRemote = !row.remote || result.remote.state === 'deleted';
+    if (goneLocal && goneRemote) removeCardLink(this.d.config, repoId, branch);
+    this.d.log.info(
+      { repoId, branch, local: result.local.state, remote: result.remote.state },
+      'branch deleted',
+    );
+    return result;
   }
 
   linkCard(repoId: string, branch: string, cardId: string): { ok: true } {

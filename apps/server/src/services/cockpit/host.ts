@@ -1,4 +1,4 @@
-import type { AgentEffort, FetchFailure, LocalBranch, TestRunProfile } from '@relay/shared';
+import type { AgentEffort, FetchFailure, LocalBranchList, TestRunProfile } from '@relay/shared';
 import type { CommitResult, SquashResult, WsCommit } from './branchOps';
 import type {
   CockpitSession,
@@ -114,7 +114,9 @@ export interface CockpitHost {
   wsEnsureAgentRules(ref: WsRef): Promise<void>;
   wsStatus(ref: WsRef): Promise<WsStatus>;
   /** Local heads and origin/* refs as of the last fetch (Branches page). */
-  wsListBranches(ref: WsRef): Promise<LocalBranch[]>;
+  wsListBranches(ref: WsRef): Promise<LocalBranchList>;
+  /** Deletes a local branch (not the checked-out one, not one another worktree holds). */
+  wsDeleteBranch(ref: WsRef, branch: string, force: boolean): Promise<{ sha: string }>;
   /** `git fetch origin`, reporting why it failed (VPN off, credentials). null = fetched. */
   wsFetch(ref: WsRef): Promise<FetchFailure | null>;
   wsDiff(ref: WsRef, mode: DiffMode, base?: string): Promise<{ files: DiffFile[]; label: string }>;
