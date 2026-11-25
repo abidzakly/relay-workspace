@@ -17,12 +17,13 @@ import { Textarea } from '@/components/ui/textarea';
 import { Field, errorMap } from '@/components/Field';
 import { SecretInput } from '@/components/SecretInput';
 import { ApiError, describeError } from '@/lib/api';
-import { useRepos, useSaveRepo, validateRepoBody } from '@/lib/settingsApi';
+import { useRepos, useSaveRepo, useSettings, validateRepoBody } from '@/lib/settingsApi';
 import { useStateSnapshot } from '@/lib/stateApi';
 import { useSystem } from '@/lib/systemApi';
 import { useOAuthStatus } from '@/lib/oauthApi';
 import { useDraft } from './drafts';
 import { GitlabProjectPicker } from './GitlabProjectPicker';
+import { ExtLink, Ui } from './SetupGuide';
 import {
   APPROVAL_MODES,
   emptyRepoDraft,
@@ -89,6 +90,8 @@ function RepoForm({
   const hasFieldErrors = Object.keys(errs).length > 0;
   const domainOptions = useDomainOptions(repo?.id, draft.productDomain);
   const signedIn = !!useOAuthStatus().data?.gitlab.connected;
+  const host = useSettings().data?.gitlab.host?.replace(/\/+$/, '');
+  const projectId = draft.projectId.trim();
 
   function submit(e: FormEvent) {
     e.preventDefault();
@@ -175,11 +178,24 @@ function RepoForm({
           htmlFor="r-token"
           error={errs['gitlab.token']}
           hint={
-            signedIn && draft.token !== SECRET_MASK
-              ? 'Leave empty to use your GitLab sign-in: what Relay writes then shows under your name. A project token (scope `api`) posts as its bot instead.'
-              : mode === 'edit'
-                ? 'Stored encrypted. Type to replace it; leave as is to keep it. Needs the `api` scope.'
-                : 'Needs the `api` scope (comment, merge, webhooks, branch).'
+            signedIn && draft.token !== SECRET_MASK ? (
+              'Leave empty to use your GitLab sign-in: what Relay writes then shows under your name. A project token (scope `api`) posts as its bot instead.'
+            ) : mode === 'edit' ? (
+              'Stored encrypted. Type to replace it; leave as is to keep it. Needs the `api` scope.'
+            ) : (
+              <>
+                Open the project in GitLab
+                {host && /^\d+$/.test(projectId) ? (
+                  <>
+                    {' '}
+                    (<ExtLink href={`${host}/projects/${projectId}`}>open it</ExtLink>)
+                  </>
+                ) : null}
+                , then <Ui>Settings &gt; Access tokens</Ui> &gt; <Ui>Add new token</Ui>: role{' '}
+                <Ui>Maintainer</Ui>, scope <code>api</code> (comment, merge, webhooks, branch). Or
+                connect GitLab in Settings and leave this empty.
+              </>
+            )
           }
         >
           <SecretInput

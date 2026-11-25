@@ -31,6 +31,7 @@ export function GitlabCard({ settings }: { settings: GlobalConfigPublic }) {
     >
       <OAuthConnect
         provider="gitlab"
+        gitlabHost={settings.gitlab.host}
         what="One sign-in for every repo without a project token of its own, for Reviews and for git over HTTPS. What Relay writes (merge requests, comments, approvals) then shows under your name."
       />
       <div className="grid gap-4 sm:grid-cols-2">

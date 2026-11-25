@@ -11,6 +11,7 @@ import { useSaveGlobal, useTestDrive } from '@/lib/settingsApi';
 import { useDraft } from './drafts';
 import { OAuthConnect } from './OAuthConnect';
 import { ErrorAlert, SectionCard } from './SectionCard';
+import { Advanced, ExtLink, Steps, Ui } from './SetupGuide';
 
 export function toDriveDraft(s: GlobalConfigPublic) {
   return {
@@ -39,18 +40,52 @@ export function DriveCard({ settings }: { settings: GlobalConfigPublic }) {
         what="Relay only sees the files and folders it makes itself. A repo with no Drive folder set gets one made for it on its first upload (“Relay builds · <repo>”)."
         disconnectNote="Signs Google out of Calendar and Drive together."
       />
-      <Field
-        label="Service-account key file"
-        htmlFor="dr-key"
-        error={errs['drive.serviceAccountKeyPath']}
-        hint="Only without “Connect with Google”: path to the JSON key on this machine (relative paths resolve from the project root). The key itself is never uploaded or shown."
+      <Advanced
+        summary="Without Connect: use a service account"
+        open={!!settings.drive.serviceAccountKeyPath || !!errs['drive.serviceAccountKeyPath']}
       >
-        <Input
-          id="dr-key"
-          value={draft.serviceAccountKeyPath}
-          onChange={(e) => set('serviceAccountKeyPath', e.target.value)}
-        />
-      </Field>
+        <p className="text-muted-foreground">
+          Only needed when “Connect with Google” is not set up, or a repo must upload into a folder
+          Relay did not make. Uploads then belong to the service account.
+        </p>
+        <Steps>
+          <li>
+            In Google Cloud, enable the{' '}
+            <ExtLink href="https://console.cloud.google.com/apis/library/drive.googleapis.com">
+              Google Drive API
+            </ExtLink>
+            .
+          </li>
+          <li>
+            Open{' '}
+            <ExtLink href="https://console.cloud.google.com/iam-admin/serviceaccounts/create">
+              Service accounts
+            </ExtLink>{' '}
+            and create one (no roles needed).
+          </li>
+          <li>
+            On the account, open <Ui>Keys</Ui> &gt; <Ui>Add key</Ui> &gt; <Ui>Create new key</Ui>{' '}
+            &gt; <Ui>JSON</Ui>. Save the file on this machine, outside the repo.
+          </li>
+          <li>
+            In Drive, share each repo’s folder with the service account’s email (
+            <code>…@….iam.gserviceaccount.com</code>) as <Ui>Editor</Ui>.
+          </li>
+          <li>Put the key file’s path below and save.</li>
+        </Steps>
+        <Field
+          label="Service-account key file"
+          htmlFor="dr-key"
+          error={errs['drive.serviceAccountKeyPath']}
+          hint="Path to the JSON key on this machine (relative paths resolve from the project root). The key itself is never uploaded or shown."
+        >
+          <Input
+            id="dr-key"
+            value={draft.serviceAccountKeyPath}
+            onChange={(e) => set('serviceAccountKeyPath', e.target.value)}
+          />
+        </Field>
+      </Advanced>
       <div className="flex items-center justify-between gap-4">
         <div className="grid gap-1">
           <Label htmlFor="dr-anyone">Share uploads as “anyone with the link”</Label>
