@@ -96,7 +96,12 @@ Notion requires the client secret when it hands out a token, so the secret has t
 it only with your team, and never commit it.
 
 In Relay, press **Connect with Notion**. On Notion's page, tick the databases Relay may read. Back in Relay, press
-**Pick from Notion** under "Data source id" and choose your board.
+**Set up Notion** (or open `/setup/notion`): the setup walks through the board, its columns, how each status counts,
+and your Notion user id, then saves.
+
+**Advanced mode** (the switch on the Notion card) is the by-hand way: an internal integration token, and the mapping
+typed in. Only one way is used at a time. The other one is kept (the sign-in stays signed in, the token stays stored)
+but ignored until you switch back.
 
 ## What stays manual
 

@@ -63,3 +63,29 @@ export const GitlabProjectOptionSchema = z.object({
   defaultBranch: z.string().nullable(),
 });
 export type GitlabProjectOption = z.infer<typeof GitlabProjectOptionSchema>;
+
+/** One column of a Notion data source, for the setup wizard. */
+export const NotionSchemaPropSchema = z.object({
+  name: z.string(),
+  /** Notion's type name (`people`, `rich_text`, `select`, `status`, `relation`, `formula`, …). */
+  type: z.string(),
+  /** Option names of a status / select / multi_select column (status: in board order). */
+  options: z.array(z.string()),
+});
+export type NotionSchemaProp = z.infer<typeof NotionSchemaPropSchema>;
+
+/** A data source's columns plus a few cards, for the wizard's mapping and preview steps. */
+export const NotionSchemaViewSchema = z.object({
+  dataSourceId: z.string(),
+  title: z.string(),
+  props: z.array(NotionSchemaPropSchema),
+  /** Up to 5 recent cards: column name -> text as Notion shows it. */
+  samples: z.array(z.record(z.string(), z.string())),
+});
+export type NotionSchemaView = z.infer<typeof NotionSchemaViewSchema>;
+
+/** The Notion user behind the sign-in (null with an internal integration token, which has no owner user). */
+export const NotionMeSchema = z
+  .object({ id: z.string(), name: z.string().nullable(), email: z.string().nullable() })
+  .nullable();
+export type NotionMe = z.infer<typeof NotionMeSchema>;

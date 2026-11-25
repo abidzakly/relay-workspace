@@ -112,6 +112,12 @@ export type StatusGroups = z.infer<typeof StatusGroupsSchema>;
 const notionFields = {
   /** Encrypted at rest; never returned by the API. */
   token: SecretSchema.optional(),
+  /**
+   * How Relay reaches Notion, one at a time: `connect` (the Notion sign-in, set up with the wizard) or `token` (Advanced
+   * mode: a pasted integration token and the mapping typed by hand). The other one is kept but ignored. Unset (older
+   * configs) = `token` when a token is stored, else `connect`; the public config always carries the resolved mode.
+   */
+  authMode: z.enum(['connect', 'token']).optional(),
   dataSourceId: z.string().min(1).optional(),
   version: z.string().min(1).default('2025-09-03'),
   props: NotionPropsSchema.prefault({}),

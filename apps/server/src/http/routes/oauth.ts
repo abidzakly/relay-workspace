@@ -5,6 +5,8 @@ import {
   OAuthProviderSchema,
   type GitlabProjectOption,
   type NotionDataSourceOption,
+  type NotionMe,
+  type NotionSchemaView,
   type OAuthProvider,
 } from '@relay/shared';
 import type { AuditWriter } from '../../audit/auditLog';
@@ -12,6 +14,7 @@ import type { ConfigStore } from '../../config/store';
 import type { HttpClient } from '../../services/httpClient';
 import { OAuthError, type OAuthHub } from '../../services/oauth/oauthHub';
 import { providerName } from '../../services/oauth/providers';
+import { plain, previewText } from '../../services/notionCard';
 import { HttpError, parseWith } from '../errors';
 
 const ProviderParams = z.object({ provider: OAuthProviderSchema });
@@ -21,6 +24,7 @@ const CallbackQuery = z.object({
   error: z.string().max(200).optional(),
 });
 const ProjectQuery = z.object({ search: z.string().max(100).optional() });
+const SchemaParams = z.object({ id: z.string().regex(/^[0-9a-f-]{32,36}$/i) });
 
 const escapeHtml = (s: string) => s.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
 
@@ -54,6 +58,8 @@ const str = (v: unknown): string | undefined => (typeof v === 'string' && v ? v 
  *  GET  /api/oauth/:provider/callback           the provider's redirect (a plain GET, checked by its one-time `state`)
  *  POST /api/oauth/:provider/disconnect         forget (and revoke) the sign-in
  *  GET  /api/oauth/notion/data-sources          what the Notion token can see, for the picker
+ *  GET  /api/oauth/notion/schema/:id            a data source's columns + a few cards, for the setup wizard
+ *  GET  /api/oauth/notion/me                    the signed-in Notion user (id, name, email), for "My names"
  *  GET  /api/oauth/gitlab/projects?search=      the GitLab projects the user is a member of, for the picker
  */
 export function registerOAuthRoutes(
@@ -120,25 +126,49 @@ export function registerOAuthRoutes(
     return oauth.status();
   });
 
-  app.get('/api/oauth/notion/data-sources', async (): Promise<NotionDataSourceOption[]> => {
+  /** One Notion call with the token of the active mode (sign-in or Advanced token). */
+  const notion = async (method: 'GET' | 'POST', path: string, body?: unknown) => {
     const g = deps.store.getGlobal();
     const token = g.notion.token;
-    if (!token) throw new HttpError(422, 'notion_not_connected', 'Connect Notion first.');
+    if (!token) {
+      throw new HttpError(
+        422,
+        'notion_not_connected',
+        g.notion.authMode === 'token'
+          ? 'Save an integration token first.'
+          : 'Connect Notion first.',
+      );
+    }
     const res = await deps.http.send({
-      method: 'POST',
-      url: 'https://api.notion.com/v1/search',
+      method,
+      url: `https://api.notion.com${path}`,
       headers: { authorization: `Bearer ${token}`, 'notion-version': g.notion.version },
-      body: { filter: { property: 'object', value: 'data_source' }, page_size: 100 },
+      ...(body !== undefined ? { body } : {}),
     });
     if (res.status === 401) {
-      void oauth.invalidate('notion');
-      throw new HttpError(502, 'notion_denied', 'Notion refused the sign-in. Connect again.');
+      if (g.notion.authMode === 'connect') {
+        void oauth.invalidate('notion');
+        throw new HttpError(502, 'notion_denied', 'Notion refused the sign-in. Connect again.');
+      }
+      throw new HttpError(502, 'notion_denied', 'Notion refused the integration token.');
     }
+    if (res.status === 404)
+      throw new HttpError(
+        404,
+        'notion_not_found',
+        'Notion cannot see that database. Share it with Relay.',
+      );
     if (res.status !== 200)
       throw new HttpError(502, 'notion_failed', `Notion answered HTTP ${res.status}.`);
-    const results = Array.isArray(rec(res.json).results)
-      ? (rec(res.json).results as unknown[])
-      : [];
+    return rec(res.json);
+  };
+
+  app.get('/api/oauth/notion/data-sources', async (): Promise<NotionDataSourceOption[]> => {
+    const json = await notion('POST', '/v1/search', {
+      filter: { property: 'object', value: 'data_source' },
+      page_size: 100,
+    });
+    const results = Array.isArray(json.results) ? (json.results as unknown[]) : [];
     return results.flatMap((r) => {
       const o = rec(r);
       const id = str(o.id);
@@ -148,6 +178,50 @@ export function registerOAuthRoutes(
         : '';
       return [{ id, title: title || '(Untitled)', url: str(o.url) ?? null }];
     });
+  });
+
+  app.get('/api/oauth/notion/schema/:id', async (req): Promise<NotionSchemaView> => {
+    const { id } = parseWith(SchemaParams, req.params);
+    const ds = await notion('GET', `/v1/data_sources/${id}`);
+    const props = Object.entries(rec(ds.properties)).map(([name, raw]) => {
+      const p = rec(raw);
+      const type = str(p.type) ?? 'unknown';
+      const opts = rec(p[type]).options;
+      return {
+        name,
+        type,
+        options: Array.isArray(opts) ? opts.flatMap((o) => str(rec(o).name) ?? []) : [],
+      };
+    });
+    const page = await notion('POST', `/v1/data_sources/${id}/query`, {
+      page_size: 5,
+      sorts: [{ timestamp: 'last_edited_time', direction: 'descending' }],
+    });
+    const samples = (Array.isArray(page.results) ? (page.results as unknown[]) : []).map((r) => {
+      const out: Record<string, string> = {};
+      for (const [name, v] of Object.entries(rec(rec(r).properties))) {
+        const t = previewText(v).slice(0, 200);
+        if (t) out[name] = t;
+      }
+      return out;
+    });
+    return {
+      dataSourceId: str(ds.id) ?? id,
+      title: plain(ds.title) || '(Untitled)',
+      props,
+      samples,
+    };
+  });
+
+  app.get('/api/oauth/notion/me', async (): Promise<NotionMe> => {
+    // A public integration's bot user names the person who installed it.
+    const me = await notion('GET', '/v1/users/me');
+    const owner = rec(rec(me.bot).owner);
+    const user = owner.type === 'user' ? rec(owner.user) : {};
+    const id = str(user.id);
+    return id
+      ? { id, name: str(user.name) ?? null, email: str(rec(user.person).email) ?? null }
+      : null;
   });
 
   app.get('/api/oauth/gitlab/projects', async (req): Promise<GitlabProjectOption[]> => {

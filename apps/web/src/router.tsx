@@ -40,6 +40,9 @@ const SprintHarbor = lazy(() =>
 const Meetings = lazy(() => import('@/views/Meetings').then((m) => ({ default: m.Meetings })));
 const Reader = lazy(() => import('@/views/Reader').then((m) => ({ default: m.Reader })));
 const Settings = lazy(() => import('@/views/Settings').then((m) => ({ default: m.Settings })));
+const NotionSetup = lazy(() =>
+  import('@/views/NotionSetup').then((m) => ({ default: m.NotionSetup })),
+);
 const ReviewDesk = lazy(() =>
   import('@/views/ReviewDesk').then((m) => ({ default: m.ReviewDesk })),
 );
@@ -74,6 +77,15 @@ function HomeIndex() {
 }
 
 export const router = createBrowserRouter([
+  // The full-screen Notion setup (Connect mode): no layout.
+  {
+    path: '/setup/notion',
+    element: (
+      <Suspense fallback={null}>
+        <NotionSetup />
+      </Suspense>
+    ),
+  },
   {
     path: '/',
     element: <Layout />,

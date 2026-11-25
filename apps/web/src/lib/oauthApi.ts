@@ -4,6 +4,8 @@ import type {
   GitlabProjectOption,
   GoogleFeature,
   NotionDataSourceOption,
+  NotionMe,
+  NotionSchemaView,
   OAuthProvider,
   OAuthStatus,
 } from '@relay/shared';
@@ -13,6 +15,8 @@ import { get, post } from './api';
 export const oauthKeys = {
   status: ['oauth', 'status'] as const,
   notionSources: ['oauth', 'notion', 'data-sources'] as const,
+  notionSchema: (id: string) => ['oauth', 'notion', 'schema', id] as const,
+  notionMe: ['oauth', 'notion', 'me'] as const,
   gitlabProjects: (search: string) => ['oauth', 'gitlab', 'projects', search] as const,
 };
 
@@ -80,6 +84,29 @@ export function useNotionDataSources(enabled: boolean) {
       get<NotionDataSourceOption[]>('/api/oauth/notion/data-sources', { signal }),
     enabled,
     staleTime: 60_000,
+  });
+}
+
+/** A data source's columns and a few cards, for the setup wizard. */
+export function useNotionSchema(id: string | undefined) {
+  return useQuery({
+    queryKey: oauthKeys.notionSchema(id ?? ''),
+    queryFn: ({ signal }) =>
+      get<NotionSchemaView>(`/api/oauth/notion/schema/${encodeURIComponent(id ?? '')}`, { signal }),
+    enabled: !!id,
+    staleTime: 60_000,
+    retry: false,
+  });
+}
+
+/** The Notion user behind the sign-in, to fill in "My names". */
+export function useNotionMe(enabled: boolean) {
+  return useQuery({
+    queryKey: oauthKeys.notionMe,
+    queryFn: ({ signal }) => get<NotionMe>('/api/oauth/notion/me', { signal }),
+    enabled,
+    staleTime: 5 * 60_000,
+    retry: false,
   });
 }
 
