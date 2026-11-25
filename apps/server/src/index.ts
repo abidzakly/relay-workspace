@@ -68,6 +68,7 @@ import { NtfyChannel, resolveNtfy } from './services/ntfyChannel';
 import { KpiService } from './services/kpiService';
 import { ReaderService } from './services/readerService';
 import { NotionService } from './services/notionService';
+import { resolveAuthModes } from './config/authModes';
 import { NotificationCenter } from './services/notificationCenter';
 import { TokenIdentity } from './services/tokenIdentity';
 import { Notifier } from './services/notifier';
@@ -178,6 +179,14 @@ async function main(): Promise<void> {
     log,
     redirectUri: `http://127.0.0.1:${env.DASHBOARD_PORT}/api/calendar/oauth/callback`,
     oauth,
+  });
+  // GitLab and Google: one way in at a time. A config from before that gets the mode that keeps it working.
+  resolveAuthModes({
+    store,
+    oauth,
+    calendarOwnSignedIn: () => calendar.ownSignedIn(),
+    baseDir: findRepoRoot(),
+    log,
   });
   onOAuthChange = (p) => {
     if (p === 'google') void calendar.refresh();

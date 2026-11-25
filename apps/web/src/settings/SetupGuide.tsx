@@ -2,6 +2,8 @@ import { useState, type ReactNode } from 'react';
 import { Check, Copy, ExternalLink } from 'lucide-react';
 import type { OAuthProvider } from '@relay/shared';
 import { Button } from '@/components/ui/button';
+import { Label } from '@/components/ui/label';
+import { Switch } from '@/components/ui/switch';
 import { cn } from '@/lib/utils';
 
 /**
@@ -257,5 +259,27 @@ export function ConnectGuide({
         {RESTART}
       </Steps>
     </>
+  );
+}
+
+/** The "Advanced mode" switch of a connection card: Connect (off) or tokens / own clients by hand (on). */
+export function ModeSwitch({
+  id,
+  advanced,
+  pending,
+  onChange,
+}: {
+  id: string;
+  advanced: boolean;
+  pending: boolean;
+  onChange: (advanced: boolean) => void;
+}) {
+  return (
+    <div className="flex items-center gap-2">
+      <Label htmlFor={id} className="font-normal">
+        Advanced mode
+      </Label>
+      <Switch id={id} checked={advanced} disabled={pending} onCheckedChange={onChange} />
+    </div>
   );
 }

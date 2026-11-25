@@ -690,7 +690,11 @@ export class ReviewDeskService {
       scopes: set ? (id?.scopes ?? []) : [],
       canWrite: set && !!id && (id.scopes.length === 0 || id.scopes.includes('api')),
       expiresAt: set ? (id?.expiresAt ?? null) : null,
-      viaSignIn: set && !this.d.config.getPastedReviewerToken(),
+      viaSignIn:
+        set &&
+        (this.d.config.getGlobalStored().gitlab.authMode === 'connect' ||
+          (this.d.config.getGlobalStored().gitlab.authMode === undefined &&
+            !this.d.config.getPastedReviewerToken())),
     };
   }
 

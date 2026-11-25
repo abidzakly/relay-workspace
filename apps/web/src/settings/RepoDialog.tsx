@@ -90,7 +90,10 @@ function RepoForm({
   const hasFieldErrors = Object.keys(errs).length > 0;
   const domainOptions = useDomainOptions(repo?.id, draft.productDomain);
   const signedIn = !!useOAuthStatus().data?.gitlab.connected;
-  const host = useSettings().data?.gitlab.host?.replace(/\/+$/, '');
+  const gitlab = useSettings().data?.gitlab;
+  const host = gitlab?.host?.replace(/\/+$/, '');
+  // GitLab one way at a time: Advanced mode = this repo's project token; Connect mode = the sign-in, no token here.
+  const advanced = gitlab?.authMode === 'token';
   const projectId = draft.projectId.trim();
 
   function submit(e: FormEvent) {
@@ -104,10 +107,10 @@ function RepoForm({
     }
     if (
       mode === 'create' &&
-      !signedIn &&
+      advanced &&
       (draft.token.trim() === '' || draft.token === SECRET_MASK)
     ) {
-      found['gitlab.token'] = 'A GitLab token is required (or connect GitLab in Settings first)';
+      found['gitlab.token'] = 'A project access token is required in Advanced mode';
     }
     if ((draft.identityName.trim() === '') !== (draft.identityEmail.trim() === '')) {
       found['commitIdentity.name'] = 'Set both name and email, or neither';
@@ -161,7 +164,7 @@ function RepoForm({
         <Field label="Project id" htmlFor="r-pid" error={errs['gitlab.projectId']}>
           <div className="grid gap-2">
             <Input id="r-pid" inputMode="numeric" {...text('projectId')} />
-            {signedIn ? (
+            {!advanced && signedIn ? (
               <GitlabProjectPicker
                 onPick={(p) => {
                   set('projectId', String(p.id));
@@ -173,38 +176,43 @@ function RepoForm({
             ) : null}
           </div>
         </Field>
-        <Field
-          label={signedIn ? 'Project access token (optional)' : 'Access token'}
-          htmlFor="r-token"
-          error={errs['gitlab.token']}
-          hint={
-            signedIn && draft.token !== SECRET_MASK ? (
-              'Leave empty to use your GitLab sign-in: what Relay writes then shows under your name. A project token (scope `api`) posts as its bot instead.'
-            ) : mode === 'edit' ? (
-              'Stored encrypted. Type to replace it; leave as is to keep it. Needs the `api` scope.'
-            ) : (
-              <>
-                Open the project in GitLab
-                {host && /^\d+$/.test(projectId) ? (
-                  <>
-                    {' '}
-                    (<ExtLink href={`${host}/projects/${projectId}`}>open it</ExtLink>)
-                  </>
-                ) : null}
-                , then <Ui>Settings &gt; Access tokens</Ui> &gt; <Ui>Add new token</Ui>: role{' '}
-                <Ui>Maintainer</Ui>, scope <code>api</code> (comment, merge, webhooks, branch). Or
-                connect GitLab in Settings and leave this empty.
-              </>
-            )
-          }
-        >
-          <SecretInput
-            id="r-token"
-            value={draft.token}
-            onChange={(v) => set('token', v)}
-            placeholder="glpat-…"
-          />
-        </Field>
+        {advanced ? (
+          <Field
+            label="Project access token"
+            htmlFor="r-token"
+            error={errs['gitlab.token']}
+            hint={
+              mode === 'edit' ? (
+                'Stored encrypted. Type to replace it; leave as is to keep it. Needs the `api` scope.'
+              ) : (
+                <>
+                  Open the project in GitLab
+                  {host && /^\d+$/.test(projectId) ? (
+                    <>
+                      {' '}
+                      (<ExtLink href={`${host}/projects/${projectId}`}>open it</ExtLink>)
+                    </>
+                  ) : null}
+                  , then <Ui>Settings &gt; Access tokens</Ui> &gt; <Ui>Add new token</Ui>: role{' '}
+                  <Ui>Maintainer</Ui>, scope <code>api</code> (comment, merge, webhooks, branch).
+                </>
+              )
+            }
+          >
+            <SecretInput
+              id="r-token"
+              value={draft.token}
+              onChange={(v) => set('token', v)}
+              placeholder="glpat-…"
+            />
+          </Field>
+        ) : (
+          <p className="self-end text-xs text-muted-foreground">
+            {signedIn
+              ? 'Uses your GitLab sign-in: what Relay writes shows under your name.'
+              : 'Connect GitLab under Settings > GitLab & public URL: this repo uses that sign-in.'}
+          </p>
+        )}
         <Field label="Base branch" htmlFor="r-base" error={errs['baseBranch']}>
           <Input id="r-base" {...text('baseBranch')} />
         </Field>

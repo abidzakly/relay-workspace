@@ -106,8 +106,21 @@ function useSetupItems(): { items: SetupItem[]; loading: boolean } {
       ),
     );
   }
+  // GitLab one way at a time: Connect mode needs the sign-in, Advanced mode a token on each repo.
+  const gitlabToken = s.gitlab.authMode === 'token';
+  if (!gitlabToken && !gitlabIn && r.length > 0) {
+    items.push(
+      item(
+        'gitlab-connect',
+        'gitlab',
+        'needed',
+        'Connect GitLab',
+        'Repos, Reviews and git over HTTPS use the GitLab sign-in. Or turn on Advanced mode to paste tokens.',
+      ),
+    );
+  }
   // One row per repo, so ignoring one repo does not hide a repo added later.
-  for (const x of gitlabIn ? [] : r.filter((x) => !x.gitlab.tokenSet)) {
+  for (const x of gitlabToken ? r.filter((x) => !x.gitlab.tokenSet) : []) {
     items.push(
       item(
         `repo-token:${x.id}`,
@@ -150,14 +163,25 @@ function useSetupItems(): { items: SetupItem[]; loading: boolean } {
     );
   }
   const driveFolders = r.some((x) => x.drive.folderId);
-  if (driveFolders && !driveIn && driveKey.data && !driveKey.data.ok) {
+  if (driveFolders && s.google.authMode === 'token' && driveKey.data && !driveKey.data.ok) {
     items.push(
       item(
         'drive-key',
-        'drive',
+        'google',
         'needed',
         'Drive service-account key file',
         `${driveKey.data.message} Staging uploads fail. It is a file (${driveKey.data.keyPath}), so an import never brings it.`,
+      ),
+    );
+  }
+  if (s.features.builds && s.google.authMode !== 'token' && !driveIn) {
+    items.push(
+      item(
+        'drive-connect',
+        'google',
+        'optional',
+        'Allow Google Drive',
+        'Staging builds are not uploaded for QA until Drive is allowed on the Google sign-in.',
       ),
     );
   }

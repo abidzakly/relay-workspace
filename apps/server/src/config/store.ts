@@ -183,6 +183,10 @@ export class ConfigStore {
 
   /** The personal access token Reviews reads GitLab with (any project, as me). Server-internal only. */
   getReviewerToken(): string | undefined {
+    // One way in at a time: Advanced mode reads with the pasted token only, Connect with the sign-in only.
+    const mode = this.getGlobalStored().gitlab.authMode;
+    if (mode === 'token') return this.getPastedReviewerToken();
+    if (mode === 'connect') return this.fallbacks.gitlab?.();
     return this.getPastedReviewerToken() ?? this.fallbacks.gitlab?.();
   }
 
@@ -290,8 +294,12 @@ export class ConfigStore {
     const stored = RepoConfigStoredSchema.parse(row.config);
     if (!row.secretsEnc) throw new Error(`repo "${row.id}" has no secrets blob`);
     const secrets = JSON.parse(this.box.decrypt(row.secretsEnc, ctxRepo(row.id))) as RepoSecrets;
-    // No project token of its own: the GitLab sign-in stands in (empty while signed out).
-    if (!secrets.token && withFallback) secrets.token = this.fallbacks.gitlab?.() ?? '';
+    // Advanced mode: the repo's own project token only. Connect mode: the GitLab sign-in only (empty while signed
+    // out; the stored project token is kept but not used). Unset (before start-up resolved it): token, else sign-in.
+    const mode = this.getGlobalStored().gitlab.authMode;
+    if (withFallback && mode === 'connect') secrets.token = this.fallbacks.gitlab?.() ?? '';
+    else if (withFallback && mode === undefined && !secrets.token)
+      secrets.token = this.fallbacks.gitlab?.() ?? '';
     return { ...stored, gitlab: { ...stored.gitlab, ...secrets } };
   }
 

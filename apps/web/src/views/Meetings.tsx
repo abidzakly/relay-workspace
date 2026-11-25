@@ -170,7 +170,7 @@ export function Meetings() {
           body="Connect it once and your meetings show up here, with a floating alert while one is under way."
           action={
             <Button asChild size="sm">
-              <Link to="/settings#calendar">Open Calendar settings</Link>
+              <Link to="/settings#google">Open Calendar settings</Link>
             </Button>
           }
         />

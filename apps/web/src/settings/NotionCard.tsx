@@ -3,8 +3,6 @@ import { Link } from 'react-router';
 import { SECRET_MASK, type GlobalConfigPublic } from '@relay/shared';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { Switch } from '@/components/ui/switch';
 import { Textarea } from '@/components/ui/textarea';
 import { ConnectionChecklist } from '@/components/ConnectionChecklist';
 import { Field, errorMap } from '@/components/Field';
@@ -17,7 +15,7 @@ import { opt, splitList, useDraft } from './drafts';
 import { NotionSourcePicker } from './NotionSourcePicker';
 import { OAuthConnect } from './OAuthConnect';
 import { ErrorAlert, SectionCard } from './SectionCard';
-import { Advanced, ExtLink, Steps, Ui } from './SetupGuide';
+import { Advanced, ExtLink, ModeSwitch, Steps, Ui } from './SetupGuide';
 
 const PROP_FIELDS = [
   ['title', 'Title property', '“auto” = detect the title property'],
@@ -331,17 +329,12 @@ export function NotionCard({ settings }: { settings: GlobalConfigPublic }) {
           : 'Connect, then the setup walks you through the board, columns and statuses.'
       }
       action={
-        <div className="flex items-center gap-2">
-          <Label htmlFor="nt-advanced" className="font-normal">
-            Advanced mode
-          </Label>
-          <Switch
-            id="nt-advanced"
-            checked={advanced}
-            disabled={save.isPending}
-            onCheckedChange={setMode}
-          />
-        </div>
+        <ModeSwitch
+          id="nt-advanced"
+          advanced={advanced}
+          pending={save.isPending}
+          onChange={setMode}
+        />
       }
     >
       <ErrorAlert error={save.error} />

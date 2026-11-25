@@ -141,12 +141,26 @@ export class CalendarService {
 
   /** Signed in with a client pasted in Advanced. */
   private ownConnected(): boolean {
+    return this.googleMode() !== 'connect' && this.ownSignedIn();
+  }
+
+  /** A sign-in through the own client is stored (used only in Advanced mode). */
+  ownSignedIn(): boolean {
     return !!this.d.config.getSecret(REFRESH_TOKEN);
+  }
+
+  /** Google's way in: `connect` (the Google sign-in), `token` (Advanced: the own client). Unset = either. */
+  private googleMode() {
+    return this.d.config.getGlobalStored().google.authMode;
   }
 
   /** Signed in with "Connect with Google", and the grant covers the calendar. */
   private relayConnected(): boolean {
-    return !this.ownConnected() && !!this.d.oauth?.hasGoogleFeature('calendar');
+    return (
+      this.googleMode() !== 'token' &&
+      !this.ownConnected() &&
+      !!this.d.oauth?.hasGoogleFeature('calendar')
+    );
   }
 
   private connected(): boolean {
