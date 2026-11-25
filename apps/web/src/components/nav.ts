@@ -39,7 +39,7 @@ export const NAV: NavItem[] = [
   { to: '/board', label: 'Board', icon: Kanban, chord: 'b' },
   { to: '/mrs', label: 'MR Inbox', icon: Inbox, chord: 'm' },
   { to: '/review', label: 'Code Review', icon: GitCompare, chord: 'c' },
-  { to: '/branches', label: 'Branches', icon: GitBranch, chord: 't' },
+  { to: '/branches', label: 'Branches', icon: GitBranch, chord: 'f' },
   { to: '/reviews', label: 'Reviews', icon: ScanEye, chord: 'v' },
   { to: '/cockpit', label: 'Cockpit', icon: Bot, chord: 'x' },
   { to: '/sync', label: 'Sync Health', icon: Activity, chord: 'h' },
