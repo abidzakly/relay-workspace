@@ -10,6 +10,7 @@ import {
   type ExplainThreadResult,
   isSafeBranchName,
   parseFigmaUrl,
+  type RunBranchResult,
 } from '@relay/shared';
 import type { ConfigStore } from '../../config/store';
 import type { AppDb } from '../../db';
@@ -29,7 +30,7 @@ import { listCards } from '../notionStore';
 import type { ReadyForMrService } from '../readyForMr';
 import { threadCode } from '../threadCode';
 import type { CardContentService, CardContent } from './cardContent';
-import type { CockpitHost, WsRef } from './host';
+import { type CheckoutBranchResult, type CockpitHost, CockpitHostError, type WsRef } from './host';
 import type { CommitResult } from './branchOps';
 import type { ExistingBranch } from './workflowOps';
 import type { CockpitSessionService, SessionView } from './sessionService';
@@ -300,11 +301,46 @@ export class CockpitWorkflowService {
   }
 
   /** Puts a workspace on a branch, refusing when that would pull it from under a running agent. */
-  private async ensureBranch(workspaceId: string, branch: string): Promise<{ synced: boolean }> {
+  private async ensureBranch(workspaceId: string, branch: string): Promise<CheckoutBranchResult> {
     const ref = this.d.workspaces.ref(workspaceId);
     const status = await this.d.host.wsStatus(ref);
     if (status.branch !== branch) await this.refuseWhileAgentRuns(workspaceId);
     return this.d.host.wsCheckoutBranch(ref, branch);
+  }
+
+  /**
+   * "Run this branch" (Create MR, MR Inbox, Code Review, Test Bench run): the repo's workspace on the Mac, on `branch`,
+   * fetched and tracked when it is not local yet. A worktree that already holds the branch is used as is.
+   */
+  async prepareRunBranch(repoId: string, branch: string): Promise<RunBranchResult> {
+    const repoWorkspaceId = this.d.workspaces.forRepo(repoId);
+    if (!repoWorkspaceId) {
+      throw new ActionError(
+        404,
+        'no_workspace',
+        'No local workspace holds this repository yet. Add it under Settings → Workspaces first.',
+        { repoId },
+      );
+    }
+    const workspaceId = await this.holderOf(repoWorkspaceId, branch);
+    let r: CheckoutBranchResult;
+    try {
+      r = await this.ensureBranch(workspaceId, branch);
+    } catch (e) {
+      // The dialog needs the workspace (e.g. to clear a dirty tree in place), so every refusal names it.
+      const extra = (d: unknown) => ({ ...(typeof d === 'object' && d ? d : {}), workspaceId });
+      if (e instanceof CockpitHostError)
+        throw new CockpitHostError(e.code, e.message, e.status, extra(e.details));
+      if (e instanceof ActionError)
+        throw new ActionError(e.status, e.code, e.message, extra(e.details));
+      throw e;
+    }
+    const fetchFailed = r.fetchFailed ?? null;
+    this.d.log.info(
+      { workspaceId, branch, synced: r.synced, fetchFailed: fetchFailed?.reason ?? null },
+      'run branch prepared',
+    );
+    return { workspaceId, branch, synced: r.synced, fetchFailed };
   }
 
   /** The workspace an agent works on for a deck, on the deck's branch. Null = no workspace holds the repo. */

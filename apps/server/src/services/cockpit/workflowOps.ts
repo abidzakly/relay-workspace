@@ -2,7 +2,8 @@ import { execFile } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import { cp, mkdir } from 'node:fs/promises';
 import { basename, dirname, join, sep } from 'node:path';
-import { isSafeBranchName } from '@relay/shared';
+import { type FetchFailure, isSafeBranchName } from '@relay/shared';
+import { fetchOriginReport } from './fetchFailure';
 import { CockpitHostError } from './host';
 import { sessionEnv } from './sessions';
 import { git } from './workspaceFs';
@@ -177,13 +178,31 @@ export async function cleanTree(
 export async function checkoutBranch(
   cwd: string,
   branch: string,
-): Promise<{ branch: string; synced: boolean }> {
+): Promise<{ branch: string; synced: boolean; fetchFailed: FetchFailure | null }> {
   if (!isSafeBranchName(branch)) {
     throw new CockpitHostError('validation', 'invalid branch name', 422);
   }
-  await fetchOrigin(cwd);
+  const fetchFailed = await fetchOriginReport(cwd);
   const current = (await git(cwd, ['rev-parse', '--abbrev-ref', 'HEAD'])).trim();
   if (current !== branch) {
+    const local = await hasRef(cwd, `refs/heads/${branch}`);
+    if (!local && !(await hasRef(cwd, `refs/remotes/origin/${branch}`))) {
+      // Nothing to check out: say why, so a VPN that is off is not mistaken for a missing branch.
+      if (fetchFailed) {
+        throw new CockpitHostError(
+          'fetch_failed',
+          `Could not fetch ${branch} from origin: ${fetchFailed.message.split('\n')[0] ?? ''}`,
+          503,
+          { ...fetchFailed, branch },
+        );
+      }
+      throw new CockpitHostError(
+        'branch_not_on_remote',
+        `${branch} is not on origin: it may have been merged or deleted.`,
+        404,
+        { branch },
+      );
+    }
     if ((await git(cwd, ['status', '--porcelain'])).trim()) {
       throw new CockpitHostError(
         'ws_dirty',
@@ -191,17 +210,18 @@ export async function checkoutBranch(
         409,
       );
     }
-    if (await hasRef(cwd, `refs/heads/${branch}`)) {
+    if (local) {
       await refuseCheckedOutElsewhere(cwd, branch);
       await git(cwd, ['checkout', branch]);
     } else await git(cwd, ['checkout', '--track', '-b', branch, `origin/${branch}`]);
   }
-  if (!(await hasRef(cwd, `refs/remotes/origin/${branch}`))) return { branch, synced: false };
+  if (!(await hasRef(cwd, `refs/remotes/origin/${branch}`)))
+    return { branch, synced: false, fetchFailed };
   try {
     await git(cwd, ['merge', '--ff-only', `origin/${branch}`]);
-    return { branch, synced: true };
+    return { branch, synced: true, fetchFailed };
   } catch {
-    return { branch, synced: false };
+    return { branch, synced: false, fetchFailed };
   }
 }
 

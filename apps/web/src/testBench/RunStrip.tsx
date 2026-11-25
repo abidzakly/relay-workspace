@@ -8,14 +8,15 @@ import {
   TerminalSquare,
   TriangleAlert,
 } from 'lucide-react';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router';
 import type { FlutterRunMode } from '@relay/shared';
 import { Button } from '@/components/ui/button';
 import { Select } from '@/components/ui/select';
-import { DirtyTreePanel } from '@/cockpit/DirtyTreePanel';
-import { ApiError, describeError } from '@/lib/api';
-import { useWorkspaces, useWsCheckout, useWsStatuses } from '@/lib/cockpitApi';
+import { BranchPrepStatus } from '@/components/runBranch/BranchPrepStatus';
+import { useRunBranch } from '@/components/runBranch/useRunBranch';
+import { describeError } from '@/lib/api';
+import { useWorkspaces, useWsStatuses } from '@/lib/cockpitApi';
 import {
   pickedFlavor,
   readRunPrefs,
@@ -30,12 +31,15 @@ import {
 /**
  * Run the branch on the chosen phone: the cockpit's `flutter run` session in the repo's
  * workspace, with the entrypoint that workspace actually has. Logs open in a drawer on this page.
+ * Every run first puts the workspace on the branch (fetched and tracked when it is not local); failures open a dialog.
  */
 export function RunStrip({
   repo,
   branch,
   serial,
   ios = false,
+  autoPrepare = false,
+  onAutoPrepared,
   onOpenLog,
 }: {
   repo: string;
@@ -43,6 +47,9 @@ export function RunStrip({
   serial: string | null;
   /** The picked device is iOS: `flutter run` keeps `-t` and drops `--flavor`. */
   ios?: boolean;
+  /** Opened from "Run this branch": check the branch out as soon as the workspace is known. */
+  autoPrepare?: boolean;
+  onAutoPrepared?: () => void;
   onOpenLog: () => void;
 }) {
   const workspaces = useWorkspaces();
@@ -64,7 +71,7 @@ export function RunStrip({
   const targets = useRunTargets(ws?.id ?? null);
   const start = useStartSession();
   const kill = useKillSession();
-  const checkout = useWsCheckout();
+  const rb = useRunBranch(repo, branch);
   const [flavor, setFlavor] = useState('');
   const [mode, setMode] = useState<FlutterRunMode>('debug');
   useEffect(() => {
@@ -78,11 +85,31 @@ export function RunStrip({
   );
   const wrongBranch =
     status.data?.branch && status.data.branch !== branch ? status.data.branch : null;
-  const treeDirty = checkout.error instanceof ApiError && checkout.error.code === 'ws_dirty';
-  const doCheckout = () => ws && checkout.mutate({ workspaceId: ws.id, branch });
+  const doCheckout = () => rb.ensure();
   const flavors = targets.data?.flavors ?? [];
   const chosen = pickedFlavor(flavors, flavor);
   const canRun = !!targets.data && (flavors.length > 0 ? chosen !== '' : targets.data.plainMain);
+  const runOn = (deviceId: string) =>
+    rb.ensure((r) =>
+      start.mutate({
+        workspaceId: r.workspaceId,
+        kind: 'flutter',
+        deviceId,
+        mode,
+        ios,
+        ...(chosen ? { flavor: chosen } : {}),
+      }),
+    );
+
+  // "Run this branch": switch as soon as the workspace and its sessions are known, once. Not under a running app.
+  const autoDone = useRef(false);
+  useEffect(() => {
+    if (!autoPrepare || autoDone.current || workspaces.isPending || sessions.isPending) return;
+    autoDone.current = true;
+    onAutoPrepared?.();
+    // No workspace: the server says so, and the dialog points at Settings → Workspaces.
+    if (!run) rb.ensure();
+  }, [autoPrepare, workspaces.isPending, sessions.isPending, run, rb, onAutoPrepared]);
 
   if (workspaces.isPending) return null;
   if (!ws) {
@@ -92,32 +119,32 @@ export function RunStrip({
         <Link to="/cockpit" className="underline">
           Add one
         </Link>
-        .
+        .{rb.alert}
       </p>
     );
   }
 
   return (
     <div className="grid gap-2">
-      {wrongBranch && (
+      {wrongBranch && !rb.preparing && (
         <div className="grid gap-2">
           <div className="flex flex-wrap items-start gap-2">
             <p className="flex min-w-0 flex-1 items-start gap-1.5 text-xs text-warning">
               <TriangleAlert aria-hidden className="mt-0.5 size-3.5 shrink-0" />
               <span className="min-w-0 wrap-anywhere">
                 {ws.name} has <span className="font-mono">{wrongBranch}</span> checked out, not this
-                branch. Check it out before running.
+                branch. Running checks it out first.
               </span>
             </p>
             <Button
               size="sm"
               variant="outline"
               className="shrink-0"
-              disabled={checkout.isPending || !!run}
+              disabled={rb.preparing || !!run}
               title={run ? 'Stop the running app first' : `Check out ${branch} in ${ws.name}`}
               onClick={doCheckout}
             >
-              {checkout.isPending ? (
+              {rb.preparing ? (
                 <Loader2 className="size-4 motion-safe:animate-spin" />
               ) : (
                 <GitBranch className="size-4" />
@@ -125,25 +152,10 @@ export function RunStrip({
               Check out now
             </Button>
           </div>
-          {treeDirty ? (
-            <DirtyTreePanel
-              key={ws.id}
-              purpose="checkout"
-              target={branch}
-              workspaceId={ws.id}
-              disabled={checkout.isPending}
-              onCleared={() => {
-                checkout.reset();
-                doCheckout();
-              }}
-            />
-          ) : (
-            checkout.error && (
-              <p className="text-xs text-destructive">{describeError(checkout.error)}</p>
-            )
-          )}
         </div>
       )}
+      {rb.preparing && <BranchPrepStatus branch={branch} />}
+      {rb.alert}
       <div className="flex flex-wrap items-center gap-1.5">
         {run ? (
           <>
@@ -198,20 +210,11 @@ export function RunStrip({
             </Select>
             <Button
               size="sm"
-              disabled={!serial || start.isPending || !canRun}
-              onClick={() =>
-                serial &&
-                start.mutate({
-                  workspaceId: ws.id,
-                  kind: 'flutter',
-                  deviceId: serial,
-                  mode,
-                  ios,
-                  ...(chosen ? { flavor: chosen } : {}),
-                })
-              }
+              disabled={!serial || start.isPending || rb.preparing || !canRun}
+              title={wrongBranch ? `Checks out ${branch} first, then runs` : undefined}
+              onClick={() => serial && runOn(serial)}
             >
-              {start.isPending ? (
+              {start.isPending || rb.preparing ? (
                 <Loader2 className="size-4 motion-safe:animate-spin" />
               ) : (
                 <Play className="size-4" />

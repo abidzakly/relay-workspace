@@ -38,6 +38,7 @@ import { registerCockpitStream } from '../cockpitStream';
 import type { TestBenchService } from '../../services/testBench/testBench';
 import type { TestBenchFlow } from '../../services/testBench/flow';
 import { registerTestBenchRoutes } from './testBench';
+import { registerBenchBranchRoutes } from './benchBranch';
 import type { DeviceHost } from '../../services/device/deviceHost';
 import type { FigmaService } from '../../services/figma/figmaService';
 import type { AiRunService } from '../../services/testBench/aiRun';
@@ -235,6 +236,7 @@ const run = <T>(fn: () => Promise<T> | T) => wrapAction(() => wrapCockpit(async 
 
 export function registerCockpitRoutes(app: FastifyInstance, deps: CockpitDeps): void {
   if (deps.testBench) registerTestBenchRoutes(app, deps.testBench, deps.figma, deps.testBenchFlow);
+  registerBenchBranchRoutes(app, deps.workflow);
   if (deps.devices) registerDeviceRoutes(app, deps.devices);
   if (deps.aiRun && deps.evidenceDir) registerBenchRunRoutes(app, deps.aiRun, deps.evidenceDir);
   app.get('/api/ai/status', async () => deps.ai.status());

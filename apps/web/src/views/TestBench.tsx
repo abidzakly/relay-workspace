@@ -12,7 +12,7 @@ import {
   TriangleAlert,
   XCircle,
 } from 'lucide-react';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useLocation, useNavigate, useParams, useSearchParams } from 'react-router';
 import type { Finding, TestBenchState } from '@relay/shared';
 import { Badge } from '@/components/Badge';
@@ -114,8 +114,21 @@ function Readiness({ st }: { st: TestBenchState }) {
 
 export function TestBench() {
   const { repo = '' } = useParams();
-  const [search] = useSearchParams();
+  const [search, setSearch] = useSearchParams();
   const branch = search.get('branch') ?? '';
+  // "Run this branch" (Create MR, MR Inbox, Code Review): check the branch out on arrival, then drop the flag.
+  const autoRun = search.get('run') === '1';
+  const clearAutoRun = useCallback(
+    () =>
+      setSearch(
+        (p) => {
+          p.delete('run');
+          return p;
+        },
+        { replace: true },
+      ),
+    [setSearch],
+  );
   const navigate = useNavigate();
   const { key: locationKey } = useLocation();
   const qc = useQueryClient();
@@ -441,6 +454,8 @@ export function TestBench() {
             branch={branch}
             serial={serial}
             ios={pickedIos}
+            autoPrepare={autoRun}
+            onAutoPrepared={clearAutoRun}
             onOpenLog={() => setLogTab('app')}
           />
           <AiRunPanel

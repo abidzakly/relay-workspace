@@ -1,4 +1,4 @@
-import type { AgentEffort, TestRunProfile } from '@relay/shared';
+import type { AgentEffort, FetchFailure, TestRunProfile } from '@relay/shared';
 import type { CommitResult, SquashResult, WsCommit } from './branchOps';
 import type {
   CockpitSession,
@@ -42,6 +42,13 @@ export interface CockpitHostHealth {
   claude: { available: boolean; reason: string | null };
   /** `cursor-agent` CLI found and runnable. Absent on a host agent older than the Cursor fallback. */
   cursor?: { available: boolean; reason: string | null };
+}
+
+/** `wsCheckoutBranch`: `fetchFailed` set = origin unreachable, the local copy was used. Absent from older agents. */
+export interface CheckoutBranchResult {
+  branch: string;
+  synced: boolean;
+  fetchFailed?: FetchFailure | null;
 }
 
 export class CockpitHostError extends Error {
@@ -172,7 +179,7 @@ export interface CockpitHost {
     opts: { message?: string | undefined; amend: boolean; base: string },
   ): Promise<CommitResult>;
   /** Puts an existing branch (an MR's source) in the working tree; `synced` = it matches or contains origin's tip. */
-  wsCheckoutBranch(ref: WsRef, branch: string): Promise<{ branch: string; synced: boolean }>;
+  wsCheckoutBranch(ref: WsRef, branch: string): Promise<CheckoutBranchResult>;
   /** Stores a file for an agent inside `.git/` (never committed); returns its absolute path on the Mac. */
   wsSaveAttachment(
     ref: WsRef,

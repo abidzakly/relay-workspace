@@ -1,0 +1,424 @@
+/*
+ * "Run this branch" alert: a lit route from Relay to origin with the broken hop marked, on the paper/ink theme.
+ * Tone comes from the dialog's data-tone; every colour is a theme token, so light, dark and dayparts all follow.
+ */
+.rb-dialog {
+  --rb-tone: var(--destructive);
+  overflow: hidden;
+}
+.rb-dialog[data-tone='warn'] {
+  --rb-tone: var(--warning);
+}
+
+.rb-hero {
+  position: relative;
+  display: grid;
+  gap: 1.25rem;
+  padding: 1.5rem 1.25rem 1.1rem;
+  border-bottom: 1px solid var(--hairline);
+  background: color-mix(in oklch, var(--rb-tone) 6%, var(--popover));
+  isolation: isolate;
+  overflow: hidden;
+}
+@media (min-width: 640px) {
+  .rb-hero {
+    padding: 2rem 2rem 1.25rem;
+  }
+}
+.rb-hero-glow {
+  position: absolute;
+  inset: -40% -10% auto -20%;
+  height: 220%;
+  z-index: -1;
+  background:
+    radial-gradient(
+      closest-side at 18% 30%,
+      color-mix(in oklch, var(--rb-tone) 26%, transparent),
+      transparent
+    ),
+    radial-gradient(
+      closest-side at 85% 10%,
+      color-mix(in oklch, var(--emphasis) 14%, transparent),
+      transparent
+    );
+  animation: rb-drift 9s ease-in-out infinite alternate;
+}
+.rb-hero-grid {
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  background-image:
+    linear-gradient(var(--grid-line) 1px, transparent 1px),
+    linear-gradient(90deg, var(--grid-line) 1px, transparent 1px);
+  background-size: 18px 18px;
+  mask-image: linear-gradient(180deg, black, transparent 85%);
+}
+@keyframes rb-drift {
+  to {
+    transform: translate3d(6%, 4%, 0) scale(1.06);
+  }
+}
+
+.rb-eyebrow {
+  color: color-mix(in oklch, var(--rb-tone) 70%, var(--muted-foreground));
+  letter-spacing: 0.08em;
+}
+
+/* The beacon: a signal that went out and did not come back. */
+.rb-beacon {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 3.5rem;
+  height: 3.5rem;
+  flex-shrink: 0;
+}
+.rb-beacon-core {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 3.5rem;
+  height: 3.5rem;
+  border-radius: 999px;
+  color: var(--rb-tone);
+  background: color-mix(in oklch, var(--rb-tone) 12%, var(--popover));
+  box-shadow:
+    inset 0 0 0 1px color-mix(in oklch, var(--rb-tone) 35%, transparent),
+    0 10px 30px -12px color-mix(in oklch, var(--rb-tone) 60%, transparent);
+}
+.rb-beacon-ring {
+  position: absolute;
+  inset: 0;
+  border-radius: 999px;
+  border: 1.5px solid color-mix(in oklch, var(--rb-tone) 45%, transparent);
+  animation: rb-ping 2.4s cubic-bezier(0.2, 0.7, 0.2, 1) infinite;
+}
+.rb-beacon-ring-2 {
+  animation-delay: 1.2s;
+}
+@keyframes rb-ping {
+  from {
+    transform: scale(1);
+    opacity: 0.9;
+  }
+  to {
+    transform: scale(1.9);
+    opacity: 0;
+  }
+}
+
+.rb-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  max-width: 100%;
+  width: fit-content;
+  padding: 0.25rem 0.6rem;
+  border-radius: 999px;
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  color: var(--foreground);
+  background: color-mix(in oklch, var(--foreground) 6%, transparent);
+  box-shadow: inset 0 0 0 1px var(--hairline);
+}
+
+/* The route: Relay, the Mac, the VPN, origin. */
+.rb-route {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.rb-route-step {
+  position: relative;
+  display: grid;
+  justify-items: center;
+  gap: 0.35rem;
+}
+.rb-route-node {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  place-items: center;
+  width: 1.9rem;
+  height: 1.9rem;
+  border-radius: 999px;
+  color: var(--muted-foreground);
+  background: var(--popover);
+  box-shadow: inset 0 0 0 1px var(--hairline);
+  transition:
+    color 300ms,
+    box-shadow 300ms;
+}
+.rb-route-label {
+  font-family: var(--font-mono);
+  font-size: 0.65rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--muted-foreground);
+}
+.rb-route-step[data-state='ok'] .rb-route-node {
+  color: var(--success);
+  box-shadow: inset 0 0 0 1px color-mix(in oklch, var(--success) 45%, transparent);
+}
+.rb-route-step[data-state='fail'] .rb-route-node {
+  color: var(--popover);
+  background: var(--rb-tone);
+  box-shadow: 0 0 0 4px color-mix(in oklch, var(--rb-tone) 22%, transparent);
+  animation: rb-node-pulse 1.8s ease-in-out infinite;
+}
+.rb-route-step[data-state='fail'] .rb-route-label {
+  color: var(--rb-tone);
+  font-weight: 500;
+}
+.rb-route-step[data-state='idle'] {
+  opacity: 0.45;
+}
+@keyframes rb-node-pulse {
+  50% {
+    box-shadow: 0 0 0 7px color-mix(in oklch, var(--rb-tone) 10%, transparent);
+  }
+}
+.rb-route-link {
+  position: absolute;
+  top: 0.95rem;
+  right: calc(50% + 1.1rem);
+  width: calc(100% - 2.2rem);
+  height: 0;
+  border-top: 1.5px dashed var(--hairline);
+}
+.rb-route-link[data-state='ok'] {
+  border-top: 1.5px solid color-mix(in oklch, var(--success) 55%, transparent);
+  background-image: linear-gradient(90deg, transparent, var(--success), transparent);
+  background-size: 40% 100%;
+}
+.rb-route-link[data-state='cut'] {
+  border-top: 1.5px dashed var(--rb-tone);
+  -webkit-mask-image: linear-gradient(90deg, black 0 38%, transparent 38% 62%, black 62%);
+  mask-image: linear-gradient(90deg, black 0 38%, transparent 38% 62%, black 62%);
+  animation: rb-flow 1.2s linear infinite;
+}
+@keyframes rb-flow {
+  to {
+    border-top-color: color-mix(in oklch, var(--rb-tone) 45%, transparent);
+  }
+}
+
+/* Live "watching for the connection" line. */
+.rb-watch {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.55rem 0.75rem;
+  border-radius: 0.6rem;
+  font-size: 0.8rem;
+  color: var(--muted-foreground);
+  background: color-mix(in oklch, var(--foreground) 4%, transparent);
+  overflow: hidden;
+}
+.rb-watch::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    100deg,
+    transparent 30%,
+    color-mix(in oklch, var(--popover) 70%, transparent) 50%,
+    transparent 70%
+  );
+  transform: translateX(-100%);
+  animation: rb-shimmer 2.6s ease-in-out infinite;
+}
+.rb-watch-dot {
+  width: 0.5rem;
+  height: 0.5rem;
+  flex-shrink: 0;
+  border-radius: 999px;
+  background: var(--rb-tone);
+  animation: rb-blink 1.4s ease-in-out infinite;
+}
+@keyframes rb-shimmer {
+  to {
+    transform: translateX(100%);
+  }
+}
+@keyframes rb-blink {
+  50% {
+    opacity: 0.25;
+  }
+}
+
+.rb-steps {
+  display: grid;
+  gap: 0.5rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.rb-steps li {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.65rem;
+  font-size: 0.875rem;
+  line-height: 1.45;
+  animation: rb-rise 420ms var(--ease-settle) both;
+  animation-delay: calc(120ms + var(--i, 0) * 70ms);
+}
+.rb-step-n {
+  display: grid;
+  place-items: center;
+  width: 1.35rem;
+  height: 1.35rem;
+  flex-shrink: 0;
+  margin-top: 0.05rem;
+  border-radius: 999px;
+  font-family: var(--font-mono);
+  font-size: 0.7rem;
+  color: var(--rb-tone);
+  box-shadow: inset 0 0 0 1px color-mix(in oklch, var(--rb-tone) 40%, transparent);
+}
+@keyframes rb-rise {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+}
+
+.rb-cmd {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.6rem 0.75rem;
+  border-radius: 0.6rem;
+  font-family: var(--font-mono);
+  font-size: 0.85rem;
+  color: var(--terminal-foreground);
+  background: var(--terminal);
+}
+.rb-cmd code::before {
+  content: '$ ';
+  opacity: 0.5;
+}
+.rb-cmd .rb-copy {
+  color: var(--terminal-foreground);
+}
+
+.rb-copy {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  padding: 0.2rem 0.5rem;
+  border-radius: 999px;
+  font-family: var(--font-mono);
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--muted-foreground);
+  transition: background-color 150ms;
+}
+.rb-copy:hover {
+  background: color-mix(in oklch, currentColor 12%, transparent);
+}
+.rb-copy:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+}
+
+.rb-raw {
+  border-radius: 0.6rem;
+  box-shadow: inset 0 0 0 1px var(--hairline);
+}
+.rb-raw summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  padding: 0.5rem 0.75rem;
+  cursor: pointer;
+  font-size: 0.8rem;
+  color: var(--muted-foreground);
+  list-style: none;
+}
+.rb-raw summary::-webkit-details-marker {
+  display: none;
+}
+.rb-raw summary > span::before {
+  content: '▸';
+  display: inline-block;
+  margin-right: 0.45rem;
+  transition: transform 200ms;
+}
+.rb-raw[open] summary > span::before {
+  transform: rotate(90deg);
+}
+.rb-raw pre {
+  max-height: 11rem;
+  margin: 0;
+  padding: 0.75rem;
+  overflow: auto;
+  border-top: 1px solid var(--hairline);
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-word;
+  color: var(--foreground);
+}
+
+.rb-footer {
+  padding: 0.9rem 1.25rem 1.25rem;
+  border-top: 1px solid var(--hairline);
+  background: color-mix(in oklch, var(--foreground) 2%, var(--popover));
+}
+@media (min-width: 640px) {
+  .rb-footer {
+    padding: 1rem 2rem 1.5rem;
+  }
+}
+
+/* Prep line on the Test Bench: fetching, switching, ready. */
+.rb-prep {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.35rem 0.75rem;
+  padding: 0.5rem 0.7rem;
+  border-radius: 0.6rem;
+  font-size: 0.75rem;
+  color: var(--muted-foreground);
+  background: color-mix(in oklch, var(--emphasis) 6%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in oklch, var(--emphasis) 18%, transparent);
+}
+.rb-prep-step {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  transition: color 250ms;
+}
+.rb-prep-step[data-state='active'] {
+  color: var(--emphasis);
+}
+.rb-prep-step[data-state='done'] {
+  color: var(--success);
+}
+.rb-prep-step[data-state='todo'] {
+  opacity: 0.55;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .rb-hero-glow,
+  .rb-beacon-ring,
+  .rb-route-step[data-state='fail'] .rb-route-node,
+  .rb-route-link[data-state='cut'],
+  .rb-watch::after,
+  .rb-watch-dot,
+  .rb-steps li {
+    animation: none;
+  }
+  .rb-beacon-ring {
+    display: none;
+  }
+}

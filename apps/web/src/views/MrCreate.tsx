@@ -1,3 +1,4 @@
+import { RunBranchButton } from '@/components/runBranch/RunBranchButton';
 import {
   ArrowLeft,
   Check,
@@ -403,6 +404,7 @@ export function MrCreate() {
           <PageTitle>Create MR</PageTitle>
           <p className="truncate font-mono text-xs text-muted-foreground">{branch}</p>
         </div>
+        <RunBranchButton repo={repo} branch={branch} />
         {p.existingMrIid === null && !create.data && (
           <button
             type="button"
