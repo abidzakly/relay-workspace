@@ -129,7 +129,7 @@ export async function startBranch(
  * Git refuses to check out (or reset) a branch another worktree has checked out. Says so in words before git does.
  * The worktree at `cwd` itself does not count.
  */
-async function refuseCheckedOutElsewhere(cwd: string, branch: string): Promise<void> {
+export async function refuseCheckedOutElsewhere(cwd: string, branch: string): Promise<void> {
   const here = (await git(cwd, ['rev-parse', '--show-toplevel'])).trim();
   const list = await git(cwd, ['worktree', 'list', '--porcelain']);
   let path = '';

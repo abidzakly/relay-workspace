@@ -1,4 +1,4 @@
-import type { LocalBranch } from '@relay/shared';
+import type { LocalBranch, LocalBranchList } from '@relay/shared';
 import { git } from './workspaceFs';
 
 /**
@@ -16,6 +16,7 @@ const FORMAT = [
   '%(upstream:track,nobracket)',
   '%(upstream)',
   '%(HEAD)',
+  '%(authoremail)',
 ].join(SEP);
 
 /** `ahead 2, behind 1` / `gone` / `` → track. Pure, exported for tests. */
@@ -39,6 +40,7 @@ export function parseBranchRefs(text: string): LocalBranch[] {
     sha: null,
     committedAt: null,
     author: null,
+    authorEmail: null,
     subject: null,
     track: null,
   });
@@ -53,7 +55,10 @@ export function parseBranchRefs(text: string): LocalBranch[] {
       track = '',
       upstream = '',
       head = '',
+      email = '',
     ] = line.split(SEP);
+    // `<a@b.c>` → `a@b.c`, lower-cased: compared with `git config user.email`.
+    const authorEmail = email.trim().replace(/^<|>$/g, '').toLowerCase() || null;
     let name: string;
     let local: boolean;
     if (ref.startsWith('refs/heads/')) {
@@ -73,6 +78,7 @@ export function parseBranchRefs(text: string): LocalBranch[] {
       b.sha = sha || null;
       b.committedAt = at;
       b.author = author || null;
+      b.authorEmail = authorEmail;
       b.subject = subject || null;
       b.track = upstream.trim() ? parseTrack(track) : null;
     } else {
@@ -81,6 +87,7 @@ export function parseBranchRefs(text: string): LocalBranch[] {
         b.sha = sha || null;
         b.committedAt = at;
         b.author = author || null;
+        b.authorEmail = authorEmail;
         b.subject = subject || null;
       }
     }
@@ -91,12 +98,11 @@ export function parseBranchRefs(text: string): LocalBranch[] {
   return [...byName.values()].sort((a, b) => (b.committedAt ?? 0) - (a.committedAt ?? 0));
 }
 
-export async function wsListBranches(cwd: string): Promise<LocalBranch[]> {
-  const out = await git(cwd, [
-    'for-each-ref',
-    `--format=${FORMAT}`,
-    'refs/heads',
-    'refs/remotes/origin',
+/** The refs, and the workspace's `git config user.email` (whose branches are "mine"). */
+export async function wsListBranches(cwd: string): Promise<LocalBranchList> {
+  const [out, me] = await Promise.all([
+    git(cwd, ['for-each-ref', `--format=${FORMAT}`, 'refs/heads', 'refs/remotes/origin']),
+    git(cwd, ['config', '--get', 'user.email'], { allowExit: [1] }).catch(() => ''),
   ]);
-  return parseBranchRefs(out);
+  return { branches: parseBranchRefs(out), me: me.trim().toLowerCase() || null };
 }

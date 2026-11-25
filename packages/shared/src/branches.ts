@@ -18,6 +18,8 @@ export const LocalBranchSchema = z.object({
   sha: z.string().nullable(),
   committedAt: EpochMsSchema.nullable(),
   author: z.string().nullable(),
+  /** Lower-cased; absent from an older host agent. */
+  authorEmail: z.string().nullable().default(null),
   subject: z.string().nullable(),
   /** Local branch against its upstream. null = no upstream, or remote only. `gone` = upstream deleted. */
   track: z
@@ -25,6 +27,13 @@ export const LocalBranchSchema = z.object({
     .nullable(),
 });
 export type LocalBranch = z.infer<typeof LocalBranchSchema>;
+
+/** `list-branches` on the host: the refs plus whose commits are "mine" (the workspace's `git config user.email`). */
+export const LocalBranchListSchema = z.object({
+  branches: z.array(LocalBranchSchema),
+  me: z.string().nullable(),
+});
+export type LocalBranchList = z.infer<typeof LocalBranchListSchema>;
 
 export const BranchSourceStateSchema = z.union([
   z.object({ ok: z.literal(true) }),
@@ -47,6 +56,10 @@ export const BranchRowSchema = LocalBranchSchema.extend({
   isBase: z.boolean(),
   /** GitLab says it is merged into the default branch. */
   merged: z.boolean(),
+  /** Protected on GitLab: never deleted from Relay. */
+  protected: z.boolean().default(false),
+  /** The head commit is the user's (by email). null = cannot tell. */
+  mine: z.boolean().nullable().default(null),
   mr: z
     .object({
       iid: z.number().int(),
@@ -69,6 +82,8 @@ export const BranchListResultSchema = z.object({
   sources: z.object({ local: BranchSourceStateSchema, remote: BranchSourceStateSchema }),
   /** GitLab listed more branches than one read returns. */
   truncated: z.boolean(),
+  /** The workspace's `git config user.email`: what "mine" is compared with. */
+  meEmail: z.string().nullable().default(null),
 });
 export type BranchListResult = z.infer<typeof BranchListResultSchema>;
 
@@ -84,3 +99,29 @@ export const CardLinkBodySchema = z.object({
 });
 export type CardLinkBody = z.infer<typeof CardLinkBodySchema>;
 export const CardUnlinkBodySchema = z.object({ repo: RepoIdSchema, branch: BranchNameSchema });
+
+/** Delete a branch on the Mac, on origin, or both. Remote needs `confirmName` when the branch is not the user's. */
+export const BranchDeleteBodySchema = z
+  .object({
+    repo: RepoIdSchema,
+    branch: BranchNameSchema,
+    local: z.boolean(),
+    remote: z.boolean(),
+    /** `git branch -D`: drop commits no other branch has. */
+    force: z.boolean().default(false),
+    confirmName: z.string().max(255).optional(),
+  })
+  .refine((b) => b.local || b.remote, 'pick where to delete');
+export type BranchDeleteBody = z.input<typeof BranchDeleteBodySchema>;
+
+const DeletePartSchema = z.union([
+  z.object({ state: z.enum(['deleted', 'simulated', 'skipped']) }),
+  z.object({ state: z.literal('failed'), code: z.string(), message: z.string() }),
+]);
+export const BranchDeleteResultSchema = z.object({
+  local: DeletePartSchema,
+  remote: DeletePartSchema,
+  /** The head the branch pointed at, to recover it (`git branch <name> <sha>`). */
+  sha: z.string().nullable(),
+});
+export type BranchDeleteResult = z.infer<typeof BranchDeleteResultSchema>;

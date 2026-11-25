@@ -213,7 +213,12 @@ const RawBranchSchema = z.looseObject({
   protected: z.boolean().nullish(),
   merged: z.boolean().nullish(),
   commit: z
-    .looseObject({ committed_date: z.string().nullish(), id: z.string().nullish() })
+    .looseObject({
+      committed_date: z.string().nullish(),
+      id: z.string().nullish(),
+      author_email: z.string().nullish(),
+      author_name: z.string().nullish(),
+    })
     .nullish(),
 });
 
@@ -229,6 +234,8 @@ export function mapBranches(raw: unknown): Branch[] | undefined {
       protected: p.data.protected ?? false,
       merged: p.data.merged ?? false,
       committedAt: toMs(p.data.commit?.committed_date),
+      authorEmail: p.data.commit?.author_email?.trim().toLowerCase().slice(0, 320) || null,
+      authorName: p.data.commit?.author_name?.slice(0, 200) || null,
       sha:
         p.data.commit?.id && /^[0-9a-f]{40}$/i.test(p.data.commit.id)
           ? p.data.commit.id.toLowerCase()

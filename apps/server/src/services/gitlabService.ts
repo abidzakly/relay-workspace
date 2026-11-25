@@ -295,6 +295,11 @@ export class GitlabService {
       }
       throw e;
     }
+    return this.checked(res, p);
+  }
+
+  /** 200/204 return the response; anything else throws a classified `GitlabApiError`. */
+  private checked(res: HttpResponse, p: string): HttpResponse {
     this.noteRateLimit(res.headers);
     const s = res.status;
     if (s === 200 || s === 204) return res;
@@ -616,6 +621,26 @@ export class GitlabService {
   async listOpenMrsInto(targetBranch: string): Promise<{ mrs: MrFields[]; complete: boolean }> {
     const r = await this.listMrs({ state: 'opened', targetBranch, maxPages: 5 });
     return { mrs: r.mrs, complete: !r.truncated && r.skipped.length === 0 };
+  }
+
+  /**
+   * Deletes a branch on GitLab. Callers go through `guardedWrite` (dry-run + audit) and refuse the default,
+   * protected and MR branches first; GitLab refuses protected ones too (403).
+   */
+  async deleteBranch(name: string): Promise<void> {
+    const path = `/projects/${this.pid}/repository/branches/${encodeURIComponent(name)}`;
+    const p = pathOnly(path);
+    await this.waitForRateLimit(p);
+    let res: HttpResponse;
+    try {
+      res = await this.client.write('DELETE', path);
+    } catch (e) {
+      if (e instanceof HttpNetworkError) {
+        throw new GitlabApiError('network', undefined, p, undefined, e.kind);
+      }
+      throw e;
+    }
+    this.checked(res, p);
   }
 
   /** Branches, optionally filtered by GitLab's `search` (substring). At most 3 pages. */

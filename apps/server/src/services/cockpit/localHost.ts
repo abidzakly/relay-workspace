@@ -4,9 +4,10 @@ import type {
   DiffFile,
   FetchFailure,
   FlutterDevice,
-  LocalBranch,
+  LocalBranchList,
   RunTargets,
 } from '@relay/shared';
+import { wsDeleteBranch } from './branchDelete';
 import { wsListBranches } from './branchList';
 import { fetchOriginReport } from './fetchFailure';
 import { ensureAgentRules } from './agentRules';
@@ -128,8 +129,12 @@ export class LocalCockpitHost implements CockpitHost {
     return wsStatus(await this.cwd(ref));
   }
 
-  async wsListBranches(ref: WsRef): Promise<LocalBranch[]> {
+  async wsListBranches(ref: WsRef): Promise<LocalBranchList> {
     return wsListBranches(await this.cwd(ref));
+  }
+
+  async wsDeleteBranch(ref: WsRef, branch: string, force: boolean): Promise<{ sha: string }> {
+    return wsDeleteBranch(await this.cwd(ref), branch, force);
   }
 
   async wsFetch(ref: WsRef): Promise<FetchFailure | null> {

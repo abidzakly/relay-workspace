@@ -1,5 +1,12 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import type { BranchFetchResult, BranchListResult, CardLinkBody, StateCard } from '@relay/shared';
+import type {
+  BranchDeleteBody,
+  BranchDeleteResult,
+  BranchFetchResult,
+  BranchListResult,
+  CardLinkBody,
+  StateCard,
+} from '@relay/shared';
 import { api, get, post, put } from './api';
 import { readyKeys } from './mrCreateApi';
 import { testBenchKeys } from './testBenchApi';
@@ -54,6 +61,15 @@ export function useUnlinkCard() {
   return useMutation<{ ok: true; removed: boolean }, Error, { repo: string; branch: string }>({
     mutationFn: (b) => api('DELETE', '/api/branches/card-link', b),
     onSuccess: (_r, v) => after(v.repo, v.branch),
+  });
+}
+
+/** Deletes a branch on the Mac and/or origin. Refusals come back as errors; partial results as `failed` parts. */
+export function useDeleteBranch() {
+  const after = useAfterLink();
+  return useMutation<BranchDeleteResult, Error, BranchDeleteBody>({
+    mutationFn: (b) => post('/api/branches/delete', b),
+    onSettled: (_r, _e, v) => after(v.repo, v.branch),
   });
 }
 
