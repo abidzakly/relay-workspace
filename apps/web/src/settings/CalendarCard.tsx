@@ -3,7 +3,6 @@ import { CalendarIdSchema, type CalendarStatus, type GlobalConfigPublic } from '
 import { Field } from '@/components/Field';
 import { TimeAgo } from '@/components/TimeAgo';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
-import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -18,8 +17,8 @@ import {
 import { useSaveGlobal } from '@/lib/settingsApi';
 import { PriorityRulesEditor } from '@/meetings/PriorityRulesEditor';
 import { OAuthConnect } from './OAuthConnect';
-import { ErrorAlert, SectionCard } from './SectionCard';
-import { CopyLine, ExtLink } from './SetupGuide';
+import { ErrorAlert } from './SectionCard';
+import { Advanced, CopyLine, ExtLink } from './SetupGuide';
 
 const LEAD_CHOICES = [
   { value: 0, label: 'At the start' },
@@ -49,40 +48,41 @@ function parseIds(raw: string): { ids: string[]; bad: string | null } {
   return { ids, bad };
 }
 
-/** Google Calendar: "Connect with Google" (or your own OAuth client), a read-only sign-in, and the meeting alert. */
-export function CalendarCard({ settings }: { settings: GlobalConfigPublic }) {
+/**
+ * Google Calendar inside the Google card: the read-only sign-in (Connect mode) or your own OAuth client (Advanced
+ * mode), and the meeting alert preferences.
+ */
+export function CalendarSection({
+  settings,
+  advanced,
+}: {
+  settings: GlobalConfigPublic;
+  advanced: boolean;
+}) {
   const status = useCalendarStatus();
   return (
-    <SectionCard
-      id="calendar"
-      title="Google Calendar"
-      description="Reads your meetings (read-only) so a floating alert stays on screen while one is under way and you have not joined or dismissed it."
-      action={
-        status.data ? (
-          <Badge variant={status.data.connected ? 'default' : 'outline'}>
-            {status.data.connected ? 'Connected' : 'Not connected'}
-          </Badge>
-        ) : null
-      }
-    >
+    <div className="grid gap-4">
       {status.error ? <ErrorAlert error={status.error} /> : null}
       {status.data ? (
         <CalendarForm
           key={JSON.stringify([status.data.config, status.data.clientSecretSet])}
           status={status.data}
           settings={settings}
+          advanced={advanced}
         />
       ) : null}
-    </SectionCard>
+    </div>
   );
 }
 
 function CalendarForm({
   status,
   settings,
+  advanced,
 }: {
   status: CalendarStatus;
   settings: GlobalConfigPublic;
+  advanced: boolean;
 }) {
   const save = useSaveCalendarConfig();
   const connect = useConnectCalendar();
@@ -152,7 +152,7 @@ function CalendarForm({
         </Alert>
       ) : null}
 
-      {status.via !== 'own' ? (
+      {!advanced ? (
         <OAuthConnect
           provider="google"
           feature="calendar"
@@ -161,76 +161,72 @@ function CalendarForm({
         />
       ) : null}
 
-      <details
-        className="group rounded-control border border-hairline px-4 py-3 text-sm"
-        open={status.via === 'own' || undefined}
-      >
-        <summary className="cursor-pointer font-medium">
-          Advanced: use your own Google OAuth client instead
-        </summary>
-        <p className="mt-3 text-muted-foreground">
-          Only needed when “Connect with Google” is not set up for this Relay. A client saved here
-          wins over it.
-        </p>
-        <ol className="mt-3 grid list-decimal gap-1.5 pl-5 text-muted-foreground">
-          <li>
-            Open{' '}
-            <ExtLink href="https://console.cloud.google.com/projectcreate">Google Cloud</ExtLink>,
-            pick or create a project, and enable the{' '}
-            <ExtLink href="https://console.cloud.google.com/apis/library/calendar-json.googleapis.com">
-              Google Calendar API
-            </ExtLink>
-            .
-          </li>
-          <li>
-            Under{' '}
-            <ExtLink href="https://console.cloud.google.com/auth/overview">
-              Google Auth Platform
-            </ExtLink>
-            , set up the consent screen (External or Internal) and add yourself as a test user.
-          </li>
-          <li>
-            Under{' '}
-            <ExtLink href="https://console.cloud.google.com/auth/clients/create">Clients</ExtLink>,
-            create an OAuth client of type <span className="text-foreground">Desktop app</span>.
-            Copy its client ID and secret here.
-          </li>
-          <li>Save, then press Connect and allow read-only access.</li>
-        </ol>
-        <div className="mt-3 grid gap-1.5">
-          <Label>Redirect URI Relay uses (desktop clients accept it as is)</Label>
-          <CopyLine value={status.redirectUri} label="redirect URI" />
-        </div>
-        <div className="mt-4 grid gap-4">
-          <Field label="OAuth client ID" htmlFor="gc-client">
-            <Input
-              id="gc-client"
-              value={clientId}
-              onChange={(e) => setClientId(e.target.value)}
-              placeholder="1234…apps.googleusercontent.com"
-              autoComplete="off"
-            />
-          </Field>
-          <Field
-            label="OAuth client secret"
-            htmlFor="gc-secret"
-            hint={
-              status.clientSecretSet
-                ? 'Saved (encrypted). Type a new one to replace it.'
-                : undefined
-            }
-          >
-            <Input
-              id="gc-secret"
-              type="password"
-              value={secret}
-              onChange={(e) => setSecret(e.target.value)}
-              placeholder={status.clientSecretSet ? '•••••••• saved' : 'GOCSPX-…'}
-              autoComplete="off"
-            />
-          </Field>
-        </div>
-      </details>
+      {advanced ? (
+        <Advanced summary="Your own Google OAuth client" open={!status.connected}>
+          <p className="text-muted-foreground">
+            Advanced mode reads the calendar through an OAuth client you make yourself. The Google
+            sign-in, if any, is kept but not used.
+          </p>
+          <ol className="grid list-decimal gap-1.5 pl-5 text-muted-foreground">
+            <li>
+              Open{' '}
+              <ExtLink href="https://console.cloud.google.com/projectcreate">Google Cloud</ExtLink>,
+              pick or create a project, and enable the{' '}
+              <ExtLink href="https://console.cloud.google.com/apis/library/calendar-json.googleapis.com">
+                Google Calendar API
+              </ExtLink>
+              .
+            </li>
+            <li>
+              Under{' '}
+              <ExtLink href="https://console.cloud.google.com/auth/overview">
+                Google Auth Platform
+              </ExtLink>
+              , set up the consent screen (External or Internal) and add yourself as a test user.
+            </li>
+            <li>
+              Under{' '}
+              <ExtLink href="https://console.cloud.google.com/auth/clients/create">Clients</ExtLink>
+              , create an OAuth client of type <span className="text-foreground">Desktop app</span>.
+              Copy its client ID and secret here.
+            </li>
+            <li>Save, then press Connect and allow read-only access.</li>
+          </ol>
+          <div className="grid gap-1.5">
+            <Label>Redirect URI Relay uses (desktop clients accept it as is)</Label>
+            <CopyLine value={status.redirectUri} label="redirect URI" />
+          </div>
+          <div className="grid gap-4">
+            <Field label="OAuth client ID" htmlFor="gc-client">
+              <Input
+                id="gc-client"
+                value={clientId}
+                onChange={(e) => setClientId(e.target.value)}
+                placeholder="1234…apps.googleusercontent.com"
+                autoComplete="off"
+              />
+            </Field>
+            <Field
+              label="OAuth client secret"
+              htmlFor="gc-secret"
+              hint={
+                status.clientSecretSet
+                  ? 'Saved (encrypted). Type a new one to replace it.'
+                  : undefined
+              }
+            >
+              <Input
+                id="gc-secret"
+                type="password"
+                value={secret}
+                onChange={(e) => setSecret(e.target.value)}
+                placeholder={status.clientSecretSet ? '•••••••• saved' : 'GOCSPX-…'}
+                autoComplete="off"
+              />
+            </Field>
+          </div>
+        </Advanced>
+      ) : null}
 
       <Field
         label="Calendars"
@@ -316,7 +312,7 @@ function CalendarForm({
             <Button variant="outline" disabled={refresh.isPending} onClick={() => refresh.mutate()}>
               {refresh.isPending ? 'Reading…' : 'Read now'}
             </Button>
-            {status.via === 'own' ? (
+            {advanced && status.via === 'own' ? (
               <Button
                 variant="ghost"
                 disabled={disconnect.isPending}
@@ -326,7 +322,7 @@ function CalendarForm({
               </Button>
             ) : null}
           </>
-        ) : ready ? (
+        ) : advanced && ready ? (
           <Button
             variant="outline"
             disabled={dirty || connect.isPending}
@@ -335,7 +331,7 @@ function CalendarForm({
             {connect.isPending ? 'Opening Google…' : 'Connect with my own client'}
           </Button>
         ) : null}
-        {dirty && clientChanges && status.connected ? (
+        {advanced && dirty && clientChanges && status.connected ? (
           <span className="text-sm text-muted-foreground">
             Saving a new client disconnects the current sign-in.
           </span>

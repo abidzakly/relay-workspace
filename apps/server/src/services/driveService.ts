@@ -209,7 +209,12 @@ export class DriveService {
 
   /** Signed in with "Connect with Google" for Drive: no key file is needed. */
   usesSignIn(): boolean {
-    return !!this.d.google?.hasGoogleFeature('drive');
+    return this.mode() !== 'token' && !!this.d.google?.hasGoogleFeature('drive');
+  }
+
+  /** Google's way in: `connect` (the sign-in only), `token` (Advanced: the service account only). */
+  private mode() {
+    return this.d.config.getGlobalStored().google.authMode;
   }
 
   /** A repo without a folder id can still upload: Relay makes the folder. */
@@ -219,7 +224,15 @@ export class DriveService {
 
   /** Refuses an upload that cannot work before anything starts (a missing key when not signed in). */
   assertReady(): void {
-    if (!this.usesSignIn()) this.assertKeyUsable();
+    if (this.usesSignIn()) return;
+    if (this.mode() === 'connect') {
+      throw new DriveError(
+        'drive_not_connected',
+        'Allow Drive under Settings > Google first (or turn on Advanced mode to use a service account).',
+        422,
+      );
+    }
+    this.assertKeyUsable();
   }
 
   /** Refuses a key that cannot work before anything starts. Reads the file: call on a user's click, not per render. */

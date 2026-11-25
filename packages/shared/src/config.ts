@@ -109,6 +109,10 @@ const StatusGroupsSchema = z.object({
 });
 export type StatusGroups = z.infer<typeof StatusGroupsSchema>;
 
+/** How Relay reaches a service: its Connect sign-in, or Advanced mode (tokens / own clients, set by hand). */
+export const AuthModeSchema = z.enum(['connect', 'token']);
+export type AuthMode = z.infer<typeof AuthModeSchema>;
+
 const notionFields = {
   /** Encrypted at rest; never returned by the API. */
   token: SecretSchema.optional(),
@@ -117,7 +121,7 @@ const notionFields = {
    * mode: a pasted integration token and the mapping typed by hand). The other one is kept but ignored. Unset (older
    * configs) = `token` when a token is stored, else `connect`; the public config always carries the resolved mode.
    */
-  authMode: z.enum(['connect', 'token']).optional(),
+  authMode: AuthModeSchema.optional(),
   dataSourceId: z.string().min(1).optional(),
   version: z.string().min(1).default('2025-09-03'),
   props: NotionPropsSchema.prefault({}),
@@ -192,8 +196,19 @@ const globalCommon = {
     .object({
       host: HttpUrlSchema.optional(),
       myUsername: UsernameSchema.optional(),
+      /**
+       * One way in at a time: `connect` (the GitLab sign-in, for every repo and Reviews) or `token` (Advanced mode:
+       * each repo's project token and the Reviews personal token). The other one is kept but ignored. Unset = resolved
+       * once at start (see `resolveAuthModes`).
+       */
+      authMode: AuthModeSchema.optional(),
     })
     .prefault({}),
+  /**
+   * Google (Calendar and Drive): `connect` (the Google sign-in) or `token` (Advanced mode: your own OAuth client for
+   * Calendar, a service account for Drive). The other one is kept but ignored. Unset = resolved once at start.
+   */
+  google: z.object({ authMode: AuthModeSchema.optional() }).prefault({}),
   drive: z
     .object({
       serviceAccountKeyPath: z

@@ -8,8 +8,22 @@ For that to work, Relay must be registered once with each service as an "OAuth c
 a secret. Whoever runs Relay for a team does this **once**, then everyone puts the same values in their `.env`. These
 values identify the app, not you. Your own sign-in is kept encrypted on your machine, and is never exported.
 
-You can set up only some of them. A card whose client is missing says "Not set up yet", and the old way (a pasted
-token or key) keeps working.
+You can set up only some of them. A card whose client is missing says "Not set up yet": turn on its
+**Advanced mode** to use the old way (a pasted token, your own OAuth client, a service-account key).
+
+## One way in at a time
+
+The GitLab, Google and Notion cards each have an **Advanced mode** switch. Off (Connect mode), Relay uses only the
+sign-in. On, it uses only what you set by hand:
+
+| Card | Connect mode | Advanced mode |
+| --- | --- | --- |
+| GitLab | the GitLab sign-in, for every repo, Reviews and git over HTTPS | each repo's project token, the Reviews personal token |
+| Google: Calendar & Drive | the Google sign-in (Calendar and Drive are asked for separately) | your own OAuth client for Calendar, a service account for Drive |
+| Notion | the Notion sign-in, set up with the wizard at `/setup/notion` | an integration token and the mapping typed in |
+
+The way not in use is kept (the sign-in stays signed in, tokens stay stored) but ignored until you switch back. On
+first start after this change, each card picks the mode that keeps your current setup working.
 
 After you change `.env`, restart Relay.
 

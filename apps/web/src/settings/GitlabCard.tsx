@@ -1,3 +1,4 @@
+import { useQueryClient } from '@tanstack/react-query';
 import type { GlobalConfigPublic } from '@relay/shared';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -7,6 +8,7 @@ import { useSaveGlobal } from '@/lib/settingsApi';
 import { opt, useDraft } from './drafts';
 import { OAuthConnect } from './OAuthConnect';
 import { ErrorAlert, SectionCard } from './SectionCard';
+import { ModeSwitch } from './SetupGuide';
 
 export function toGitlabDraft(s: GlobalConfigPublic) {
   return {
@@ -22,18 +24,48 @@ export function GitlabCard({ settings }: { settings: GlobalConfigPublic }) {
   const { draft, set, dirty } = useDraft(initial);
   const save = useSaveGlobal();
   const errs = errorMap(save.error instanceof ApiError ? save.error.issues : []);
+  const advanced = settings.gitlab.authMode === 'token';
+  const mode = useSaveGlobal();
+  const qc = useQueryClient();
+  // Every GitLab reader changes with the mode (repos, Reviews, pickers): refetch them all.
+  const setMode = (on: boolean) =>
+    mode.mutate(
+      { patch: (s) => ({ ...s, gitlab: { ...s.gitlab, authMode: on ? 'token' : 'connect' } }) },
+      { onSuccess: () => void qc.invalidateQueries() },
+    );
 
   return (
     <SectionCard
       id="gitlab"
       title="GitLab & public URL"
-      description="Per-repo project and reviewers are set on each repository, under Repos."
+      description={
+        advanced
+          ? 'Advanced mode: each repo uses its own project token (set under Repos), Reviews a personal token (Reviewer access).'
+          : 'One GitLab sign-in for every repo, Reviews and git over HTTPS.'
+      }
+      action={
+        <ModeSwitch
+          id="gl-advanced"
+          advanced={advanced}
+          pending={mode.isPending}
+          onChange={setMode}
+        />
+      }
     >
-      <OAuthConnect
-        provider="gitlab"
-        gitlabHost={settings.gitlab.host}
-        what="One sign-in for every repo without a project token of its own, for Reviews and for git over HTTPS. What Relay writes (merge requests, comments, approvals) then shows under your name."
-      />
+      <ErrorAlert error={mode.error} />
+      {advanced ? (
+        <p className="rounded-control border border-hairline px-4 py-3 text-sm text-muted-foreground">
+          Relay uses only the tokens you paste: a project access token on each repository (Repos
+          &gt; Edit), and a personal access token under Reviewer access. The GitLab sign-in, if any,
+          is kept but not used.
+        </p>
+      ) : (
+        <OAuthConnect
+          provider="gitlab"
+          gitlabHost={settings.gitlab.host}
+          what="One sign-in for every repo, for Reviews and for git over HTTPS. What Relay writes (merge requests, comments, approvals) shows under your name. Project and personal tokens, if any, are kept but not used."
+        />
+      )}
       <div className="grid gap-4 sm:grid-cols-2">
         <Field
           label="GitLab host"

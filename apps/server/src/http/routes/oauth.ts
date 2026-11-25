@@ -29,8 +29,8 @@ const SchemaParams = z.object({ id: z.string().regex(/^[0-9a-f-]{32,36}$/i) });
 const escapeHtml = (s: string) => s.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
 
 /** Where "Back to Relay" goes: the card the sign-in started from. */
-function backTo(p: OAuthProvider, feature: string | undefined): string {
-  if (p === 'google') return feature === 'drive' ? '/settings#drive' : '/settings#calendar';
+function backTo(p: OAuthProvider, _feature?: string): string {
+  if (p === 'google') return '/settings#google';
   return p === 'gitlab' ? '/settings#gitlab' : '/settings#notion';
 }
 
@@ -227,9 +227,11 @@ export function registerOAuthRoutes(
   app.get('/api/oauth/gitlab/projects', async (req): Promise<GitlabProjectOption[]> => {
     const { search } = parseWith(ProjectQuery, req.query);
     const host = deps.store.getGlobalStored().gitlab.host;
-    const token = oauth.isConnected('gitlab')
-      ? await oauth.accessToken('gitlab').catch(() => undefined)
-      : deps.store.getReviewerToken();
+    const mode = deps.store.getGlobalStored().gitlab.authMode;
+    const token =
+      mode !== 'token' && oauth.isConnected('gitlab')
+        ? await oauth.accessToken('gitlab').catch(() => undefined)
+        : deps.store.getReviewerToken();
     if (!host || !token) throw new HttpError(422, 'gitlab_not_connected', 'Connect GitLab first.');
     const q = new URLSearchParams({
       membership: 'true',

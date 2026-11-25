@@ -92,10 +92,19 @@ export const SETTINGS_SECTIONS: SettingsSection[] = [
     ],
   },
   {
-    id: 'drive',
+    id: 'google',
     group: 'connections',
-    title: 'Google Drive',
+    title: 'Google: Calendar & Drive',
     keywords: [
+      'google',
+      'calendar',
+      'meeting',
+      'meet',
+      'oauth',
+      'client id',
+      'alert',
+      'floating',
+      'drive',
       'service account',
       'key',
       'anyone with the link',
@@ -103,12 +112,6 @@ export const SETTINGS_SECTIONS: SettingsSection[] = [
       'shared drive',
       'upload',
     ],
-  },
-  {
-    id: 'calendar',
-    group: 'connections',
-    title: 'Google Calendar',
-    keywords: ['google', 'calendar', 'meeting', 'meet', 'oauth', 'client id', 'alert', 'floating'],
   },
   {
     id: 'ai',
@@ -230,14 +233,21 @@ export function isGroupId(id: string): id is SettingsGroupId {
 }
 
 /** The group a hash points at: a group itself, or the group holding that section. */
-export function groupOfHash(hash: string): SettingsGroupId | null {
+/** Hashes of sections that were merged into another (old links and bookmarks keep working). */
+const MOVED: Record<string, string> = { drive: 'google', calendar: 'google' };
+const idOfHash = (hash: string) => {
   const id = hash.replace(/^#/, '');
+  return MOVED[id] ?? id;
+};
+
+export function groupOfHash(hash: string): SettingsGroupId | null {
+  const id = idOfHash(hash);
   if (isGroupId(id)) return id;
   return BY_ID.get(id)?.group ?? null;
 }
 
 export function sectionOfHash(hash: string): SettingsSection | null {
-  return BY_ID.get(hash.replace(/^#/, '')) ?? null;
+  return BY_ID.get(idOfHash(hash)) ?? null;
 }
 
 /** Every word of the query must appear in the title, the group name or a keyword. */

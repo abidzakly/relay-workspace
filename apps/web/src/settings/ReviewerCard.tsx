@@ -63,12 +63,17 @@ export function ReviewerCard({ settings }: { settings: GlobalConfigPublic }) {
   const status = token.data;
   const hostMissing = !settings.gitlab.host;
   const host = settings.gitlab.host?.replace(/\/+$/, '');
+  const advanced = settings.gitlab.authMode === 'token';
 
   return (
     <SectionCard
       id="reviewer"
       title="Reviewer access"
-      description="A personal GitLab token for Reviews: merge requests in any project where you are a reviewer or were mentioned."
+      description={
+        advanced
+          ? 'A personal GitLab token for Reviews: merge requests in any project where you are a reviewer or were mentioned.'
+          : 'Reviews reads GitLab with your GitLab sign-in: merge requests in any project where you are a reviewer or were mentioned.'
+      }
     >
       {!settings.features.reviews && (
         <Alert>
@@ -116,6 +121,12 @@ export function ReviewerCard({ settings }: { settings: GlobalConfigPublic }) {
             </div>
           )}
         </div>
+      ) : !advanced ? (
+        <p className="text-sm text-muted-foreground">
+          Connect GitLab under <Link to="/settings#gitlab">GitLab &amp; public URL</Link> first.
+          Reviews then uses that sign-in. To paste a personal token instead, turn on Advanced mode
+          there.
+        </p>
       ) : (
         <form
           className="grid gap-3"
@@ -132,7 +143,7 @@ export function ReviewerCard({ settings }: { settings: GlobalConfigPublic }) {
                 'Set the GitLab host above first.'
               ) : (
                 <>
-                  Or skip this: “Connect with GitLab” does the same. To make one, open{' '}
+                  To make one, open{' '}
                   <ExtLink
                     href={`${host}/-/user_settings/personal_access_tokens?name=Relay%20Reviews&scopes=api`}
                   >

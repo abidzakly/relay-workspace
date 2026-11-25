@@ -26,7 +26,7 @@ function callbackPage(ok: boolean, message: string): string {
 <p style="margin:0 0 .5rem;font-size:11px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:${ok ? '#3f3aa8' : '#a8261c'}">${ok ? 'Connected' : 'Not connected'}</p>
 <h1 style="margin:0 0 .75rem;font-size:22px;letter-spacing:-.02em">${escapeHtml(message)}</h1>
 <p style="margin:0 0 1.5rem;color:#5b5a55">${ok ? 'You can close this tab. Relay now watches your meetings.' : 'Go back to Relay and try again.'}</p>
-<a href="/settings#calendar" style="color:inherit">Back to Relay settings</a>
+<a href="/settings#google" style="color:inherit">Back to Relay settings</a>
 </main></body></html>`;
 }
 
