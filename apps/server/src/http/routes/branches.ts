@@ -1,5 +1,6 @@
 import type { FastifyInstance } from 'fastify';
 import {
+  BranchBulkDeleteBodySchema,
   BranchDeleteBodySchema,
   BranchFetchBodySchema,
   BranchRepoQuerySchema,
@@ -27,6 +28,10 @@ export function registerBranchesRoutes(app: FastifyInstance, branches: BranchesS
   app.post('/api/branches/delete', async (req) => {
     const body = parseWith(BranchDeleteBodySchema, req.body);
     return run(() => branches.delete(body));
+  });
+  app.post('/api/branches/delete-many', async (req) => {
+    const body = parseWith(BranchBulkDeleteBodySchema, req.body);
+    return run(() => branches.deleteMany(body));
   });
   app.put('/api/branches/card-link', async (req) => {
     const { repo, branch, cardId } = parseWith(CardLinkBodySchema, req.body);

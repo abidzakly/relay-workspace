@@ -1,5 +1,7 @@
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient, type QueryClient } from '@tanstack/react-query';
 import type {
+  BranchBulkDeleteBody,
+  BranchBulkDeleteResult,
   BranchDeleteBody,
   BranchDeleteResult,
   BranchFetchResult,
@@ -64,12 +66,66 @@ export function useUnlinkCard() {
   });
 }
 
+/**
+ * Shows a delete in the list at once, before the refetch lands: a branch gone from the Mac and origin disappears, a
+ * branch gone from one of them shows what is left.
+ */
+function patchDeleted(
+  qc: QueryClient,
+  repo: string,
+  deleted: { branch: string; result: BranchDeleteResult }[],
+) {
+  qc.setQueryData<BranchListResult>(branchKeys.list(repo), (d) => {
+    if (!d) return d;
+    const byName = new Map(deleted.map((x) => [x.branch, x.result]));
+    const rows = d.rows.flatMap((row) => {
+      const r = byName.get(row.name);
+      if (!r) return [row];
+      const next = { ...row };
+      if (r.local.state === 'deleted') {
+        next.local = false;
+        next.current = false;
+        next.holder = null;
+        next.track = null;
+        next.worktreePath = null;
+      }
+      if (r.remote.state === 'deleted') {
+        next.remote = false;
+        next.mr = null;
+      }
+      return next.local || next.remote ? [next] : [];
+    });
+    return { ...d, rows };
+  });
+}
+
 /** Deletes a branch on the Mac and/or origin. Refusals come back as errors; partial results as `failed` parts. */
 export function useDeleteBranch() {
+  const qc = useQueryClient();
   const after = useAfterLink();
   return useMutation<BranchDeleteResult, Error, BranchDeleteBody>({
     mutationFn: (b) => post('/api/branches/delete', b),
+    onSuccess: (r, v) => patchDeleted(qc, v.repo, [{ branch: v.branch, result: r }]),
     onSettled: (_r, _e, v) => after(v.repo, v.branch),
+  });
+}
+
+/** Several branches at once, one after another on the server. */
+export function useDeleteManyBranches() {
+  const qc = useQueryClient();
+  return useMutation<BranchBulkDeleteResult, Error, BranchBulkDeleteBody>({
+    mutationFn: (b) => post('/api/branches/delete-many', b),
+    onSuccess: (r, v) =>
+      patchDeleted(
+        qc,
+        v.repo,
+        r.items.flatMap((i) => (i.result ? [{ branch: i.branch, result: i.result }] : [])),
+      ),
+    onSettled: (_r, _e, v) => {
+      void qc.invalidateQueries({ queryKey: branchKeys.list(v.repo) });
+      void qc.invalidateQueries({ queryKey: ['cockpit', 'ready'] });
+      void qc.invalidateQueries({ queryKey: ['test-bench', v.repo] });
+    },
   });
 }
 

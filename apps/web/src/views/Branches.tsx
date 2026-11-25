@@ -1,6 +1,8 @@
 import {
   ArrowDown,
   ArrowUp,
+  Check,
+  CheckSquare,
   FolderGit2,
   GitCompare,
   GitPullRequestCreate,
@@ -13,11 +15,13 @@ import {
   Search,
   Trash2,
   TriangleAlert,
+  X,
 } from 'lucide-react';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useLocation, useNavigate, useParams, useSearchParams } from 'react-router';
 import type { BranchRow, BranchSourceState } from '@relay/shared';
 import { CardLinkDialog } from '@/components/cardLink/CardLinkDialog';
+import { BulkDeleteDialog } from '@/components/branches/BulkDeleteDialog';
 import { DeleteBranchDialog } from '@/components/branches/DeleteBranchDialog';
 import { Dropdown } from '@/components/Dropdown';
 import { PageTitle } from '@/components/PageTitle';
@@ -88,6 +92,15 @@ export function Branches() {
   const [limit, setLimit] = useState(PAGE);
   const [linking, setLinking] = useState<BranchRow | null>(null);
   const [deleting, setDeleting] = useState<BranchRow | null>(null);
+  // Several branches at once: a selection of names, kept to the rows that still exist.
+  const [selecting, setSelecting] = useState(false);
+  const [selected, setSelected] = useState<Set<string>>(() => new Set());
+  const [bulkOpen, setBulkOpen] = useState(false);
+  const lastPicked = useRef<string | null>(null);
+  useEffect(() => {
+    setSelected(new Set());
+    setSelecting(false);
+  }, [repo]);
   useEffect(() => setLimit(PAGE), [repo, filter, query]);
 
   const rows = q.data?.rows ?? [];
@@ -104,6 +117,48 @@ export function Branches() {
     : rows;
   const test = FILTERS.find((f) => f.id === filter)!.test;
   const shown = searched.filter(test);
+  useEffect(() => {
+    const names = new Set(rows.map((r) => r.name));
+    setSelected((cur) => {
+      const next = new Set([...cur].filter((n) => names.has(n)));
+      return next.size === cur.size ? cur : next;
+    });
+  }, [rows]);
+  useEffect(() => {
+    if (!selecting) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && !bulkOpen && !deleting) {
+        setSelected(new Set());
+        setSelecting(false);
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [selecting, bulkOpen, deleting]);
+  const selectable = shown.filter((r) => !r.isBase);
+  const toggle = (name: string, range: boolean) => {
+    setSelected((cur) => {
+      const next = new Set(cur);
+      const on = !cur.has(name);
+      if (range && lastPicked.current) {
+        const names = selectable.map((r) => r.name);
+        const a = names.indexOf(lastPicked.current);
+        const b = names.indexOf(name);
+        if (a >= 0 && b >= 0) {
+          for (const n of names.slice(Math.min(a, b), Math.max(a, b) + 1)) {
+            if (on) next.add(n);
+            else next.delete(n);
+          }
+          return next;
+        }
+      }
+      if (on) next.add(name);
+      else next.delete(name);
+      return next;
+    });
+    lastPicked.current = name;
+  };
+  const allShownSelected = selectable.length > 0 && selectable.every((r) => selected.has(r.name));
   const noWorkspace =
     q.data?.sources.local.ok === false && q.data.sources.local.code === 'no_workspace';
 
@@ -172,6 +227,37 @@ export function Branches() {
             <span className="br-filter-n">{searched.filter(f.test).length}</span>
           </button>
         ))}
+        <span className="flex-1" />
+        {selecting && (
+          <button
+            type="button"
+            className="br-filter"
+            onClick={() =>
+              setSelected((cur) => {
+                const next = new Set(cur);
+                for (const r of selectable) {
+                  if (allShownSelected) next.delete(r.name);
+                  else next.add(r.name);
+                }
+                return next;
+              })
+            }
+          >
+            {allShownSelected ? 'Unselect shown' : `Select all shown`}
+            <span className="br-filter-n">{selectable.length}</span>
+          </button>
+        )}
+        <button
+          type="button"
+          className="br-filter"
+          aria-pressed={selecting}
+          onClick={() => {
+            setSelecting((v) => !v);
+            setSelected(new Set());
+          }}
+        >
+          <CheckSquare aria-hidden className="size-3.5" /> {selecting ? 'Done' : 'Select'}
+        </button>
       </div>
 
       {fetchOrigin.data?.fetchFailed && (
@@ -228,6 +314,9 @@ export function Branches() {
                     canRun={!noWorkspace}
                     onLink={() => setLinking(r)}
                     onDelete={() => setDeleting(r)}
+                    selecting={selecting}
+                    selected={selected.has(r.name)}
+                    onToggle={(range) => toggle(r.name, range)}
                   />
                 ))}
         </ul>
@@ -248,6 +337,34 @@ export function Branches() {
         </p>
       )}
 
+      {selecting && selected.size > 0 && (
+        <div className="br-bulkbar" role="region" aria-label="Selected branches">
+          <span className="text-sm">
+            <span className="font-mono font-medium">{selected.size}</span> selected
+          </span>
+          <span className="flex-1" />
+          <Button variant="ghost" size="sm" onClick={() => setSelected(new Set())}>
+            <X className="size-4" /> Clear
+          </Button>
+          <Button variant="destructive" size="sm" onClick={() => setBulkOpen(true)}>
+            <Trash2 className="size-4" /> Delete…
+          </Button>
+        </div>
+      )}
+      {bulkOpen && repo && q.data && (
+        <BulkDeleteDialog
+          repo={repo}
+          list={q.data}
+          names={[...selected]}
+          onClose={(done) => {
+            setBulkOpen(false);
+            if (done) {
+              setSelected(new Set());
+              setSelecting(false);
+            }
+          }}
+        />
+      )}
       {deleting && repo && q.data && (
         <DeleteBranchDialog
           repo={repo}
@@ -309,6 +426,9 @@ function Row({
   canRun,
   onLink,
   onDelete,
+  selecting,
+  selected,
+  onToggle,
 }: {
   repo: string;
   base: string;
@@ -317,11 +437,35 @@ function Row({
   canRun: boolean;
   onLink: () => void;
   onDelete: () => void;
+  selecting: boolean;
+  selected: boolean;
+  onToggle: (range: boolean) => void;
 }) {
   const compare = `/review/${encodeURIComponent(repo)}/compare?${new URLSearchParams({ from: base, to: r.name }).toString()}`;
   const where = r.local && r.remote ? null : r.local ? 'local only' : 'origin only';
   return (
-    <li className="br-row" data-kind={kindOf(r)} style={{ ['--i' as string]: index }}>
+    <li
+      className={cn('br-row', selecting && 'br-row-selecting')}
+      data-kind={kindOf(r)}
+      data-selected={selected}
+      style={{ ['--i' as string]: index }}
+    >
+      {selecting && (
+        <button
+          type="button"
+          role="checkbox"
+          aria-checked={selected}
+          disabled={r.isBase}
+          className="br-select"
+          aria-label={r.isBase ? 'The base branch cannot be selected' : `Select ${r.name}`}
+          title={
+            r.isBase ? 'The base branch is never deleted from Relay' : 'Shift-click selects a range'
+          }
+          onClick={(e) => onToggle(e.shiftKey)}
+        >
+          {selected && <Check className="size-3" />}
+        </button>
+      )}
       <div className="grid min-w-0 gap-1">
         <div className="flex min-w-0 flex-wrap items-center gap-1.5">
           <span className="br-name">{r.name}</span>
