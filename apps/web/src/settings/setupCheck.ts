@@ -118,14 +118,18 @@ function useSetupItems(): { items: SetupItem[]; loading: boolean } {
       ),
     );
   }
-  if (!s.notion.tokenSet && !notionIn) {
+  // One way in at a time: the sign-in (Connect mode) or the integration token (Advanced mode).
+  const notionToken = s.notion.authMode === 'token';
+  if (notionToken ? !s.notion.tokenSet : !notionIn) {
     items.push(
       item(
         'notion-token',
         'notion',
         'optional',
-        'Notion integration token',
-        'Only needed for the Board, Sync Health, KPI and Sprints. The token comes with an import only when sealed.',
+        notionToken ? 'Notion integration token' : 'Connect Notion',
+        notionToken
+          ? 'Advanced mode is on but no token is saved. The token comes with an import only when sealed.'
+          : 'Only needed for the Board, Sync Health, KPI and Sprints. Connect, then run the Notion setup.',
       ),
     );
   }

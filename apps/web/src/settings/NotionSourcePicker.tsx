@@ -1,10 +1,10 @@
 import { useState } from 'react';
 import { Button } from '@/components/ui/button';
-import { useNotionDataSources, useOAuthStatus } from '@/lib/oauthApi';
+import { useNotionDataSources } from '@/lib/oauthApi';
 import { ErrorAlert } from './SectionCard';
 
 /**
- * Picks the data source from what the Notion sign-in (or saved token) can see, so its id never has to be found and
+ * Picks the data source from what the saved integration token can see, so its id never has to be found and
  * typed. The list is read only when asked for.
  */
 export function NotionSourcePicker({
@@ -16,8 +16,8 @@ export function NotionSourcePicker({
   value: string;
   onPick: (id: string) => void;
 }) {
-  const oauth = useOAuthStatus();
-  const usable = tokenSet || !!oauth.data?.notion.connected;
+  // Shown in Advanced mode only, where the saved token is what Relay reads with.
+  const usable = tokenSet;
   const [open, setOpen] = useState(false);
   const list = useNotionDataSources(open && usable);
   if (!usable) return null;

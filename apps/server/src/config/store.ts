@@ -135,8 +135,15 @@ export class ConfigStore {
 
   private globalFull(withFallback: boolean): GlobalConfig {
     const stored = this.getGlobalStored();
-    const token = this.getNotionToken() ?? (withFallback ? this.fallbacks.notion?.() : undefined);
-    return { ...stored, notion: { ...stored.notion, ...(token ? { token } : {}) } };
+    const own = this.getNotionToken();
+    // One way in at a time: Advanced mode uses only the pasted token, Connect only the sign-in.
+    const authMode = stored.notion.authMode ?? (own ? 'token' : 'connect');
+    // The public view (no fallback) reports the stored token in either mode, so Settings can show it is kept.
+    const token = !withFallback ? own : authMode === 'token' ? own : this.fallbacks.notion?.();
+    return {
+      ...stored,
+      notion: { ...stored.notion, authMode, ...(token ? { token } : {}) },
+    };
   }
 
   getGlobalPublic(): GlobalConfigPublic {

@@ -319,6 +319,42 @@ function labelOf(value: Record<string, unknown> | undefined): string | undefined
   return textOf(value);
 }
 
+/** A short text of any property value, as Notion shows it: for previews (the setup wizard's sample cards). */
+export function previewText(value: unknown): string {
+  const v = rec(value);
+  switch (v.type) {
+    case 'people':
+      return arr(v.people)
+        .map((p) => str(rec(p).name) ?? '')
+        .filter(Boolean)
+        .join(', ');
+    case 'created_by':
+      return str(rec(v.created_by).name) ?? '';
+    case 'date':
+      return str(rec(v.date).start) ?? '';
+    case 'number':
+      return typeof v.number === 'number' ? String(v.number) : '';
+    case 'multi_select':
+      return arr(v.multi_select)
+        .map((o) => str(rec(o).name) ?? '')
+        .join(', ');
+    case 'relation':
+      return arr(v.relation).length ? `${arr(v.relation).length} linked` : '';
+    case 'unique_id': {
+      const u = rec(v.unique_id);
+      return typeof u.number === 'number'
+        ? `${str(u.prefix) ? `${str(u.prefix)}-` : ''}${u.number}`
+        : '';
+    }
+    case 'formula': {
+      const f = rec(v.formula);
+      return str(f.string) ?? (typeof f.number === 'number' ? String(f.number) : '');
+    }
+    default:
+      return labelOf(v) ?? '';
+  }
+}
+
 const ROMAN: Record<string, number> = { I: 1, II: 2, III: 3, IV: 4, V: 5, VI: 6 };
 
 /** A number from number / formula(number) / select or text holding a number ("3", "3 pts"). */
