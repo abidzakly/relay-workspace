@@ -1,4 +1,4 @@
-import type { AgentEffort, FetchFailure, TestRunProfile } from '@relay/shared';
+import type { AgentEffort, FetchFailure, LocalBranch, TestRunProfile } from '@relay/shared';
 import type { CommitResult, SquashResult, WsCommit } from './branchOps';
 import type {
   CockpitSession,
@@ -113,6 +113,10 @@ export interface CockpitHost {
   /** Writes the standing agent rules into the workspace, excluded from git (`agentRules.ts`). */
   wsEnsureAgentRules(ref: WsRef): Promise<void>;
   wsStatus(ref: WsRef): Promise<WsStatus>;
+  /** Local heads and origin/* refs as of the last fetch (Branches page). */
+  wsListBranches(ref: WsRef): Promise<LocalBranch[]>;
+  /** `git fetch origin`, reporting why it failed (VPN off, credentials). null = fetched. */
+  wsFetch(ref: WsRef): Promise<FetchFailure | null>;
   wsDiff(ref: WsRef, mode: DiffMode, base?: string): Promise<{ files: DiffFile[]; label: string }>;
   wsTree(ref: WsRef): Promise<{ paths: string[]; truncated: boolean }>;
   wsReadFile(ref: WsRef, rel: string): Promise<{ content: string; hash: string; size: number }>;

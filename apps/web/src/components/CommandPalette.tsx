@@ -245,7 +245,40 @@ function PaletteBody({ confirmWrite, bulkReady }: WriteOpeners) {
       }),
     );
 
+    {
+      out.push(
+        item({
+          id: 'branches:run',
+          kind: 'action',
+          label: 'Run a branch…',
+          hint: 'Any branch, local or remote, on a test device',
+          keywords: 'test device phone run checkout branch quick',
+          run: () => void navigate('/branches'),
+        }),
+        item({
+          id: 'branches:mr',
+          kind: 'write',
+          label: 'Create MR for a branch…',
+          hint: 'Pick a branch on the Branches page',
+          keywords: 'merge request new create mr branch',
+          run: () => void navigate('/branches?filter=nomr'),
+        }),
+      );
+    }
     for (const repo of reposQ.data ?? []) {
+      {
+        out.push(
+          item({
+            id: `branches:${repo.id}`,
+            kind: 'view',
+            label: `Branches of ${repo.name}`,
+            hint: 'Run, review or create an MR',
+            keywords: `branch run checkout ${repo.id}`,
+            searchOnly: true,
+            run: () => void navigate(`/branches/${encodeURIComponent(repo.id)}`),
+          }),
+        );
+      }
       out.push(
         item({
           id: `release:${repo.id}`,

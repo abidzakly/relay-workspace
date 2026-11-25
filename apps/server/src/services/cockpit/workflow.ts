@@ -1,3 +1,4 @@
+import { cardForBranch } from '../cardLinks';
 import { createHash } from 'node:crypto';
 import { and, eq, inArray } from 'drizzle-orm';
 import {
@@ -691,7 +692,7 @@ export class CockpitWorkflowService {
     }
     const workspaceId = this.reviseWorkspace(input.repoId);
     const base = this.d.config.getRepo(input.repoId)?.baseBranch ?? 'main';
-    const c = listCards(this.d.store).find((x) => x.branchName?.trim() === input.branch) ?? null;
+    const c = cardForBranch(this.d.store, input.branch, input.repoId)?.card ?? null;
     const card = c ? { id: c.id, title: c.title, url: c.url ?? null } : null;
     return this.reviseOnBranch(workspaceId, input, {
       mr: null,

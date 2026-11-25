@@ -1,3 +1,4 @@
+import { cardForBranch } from '../cardLinks';
 import { eq } from 'drizzle-orm';
 import {
   WORKSPACE_COLORS,
@@ -12,7 +13,6 @@ import { workspaces } from '../../db/schema';
 import type { EventBus } from '../../sync/eventBus';
 import { ActionError } from '../actionError';
 import type { DeckDiff } from '../deck/reviewDeck';
-import { listCards } from '../notionStore';
 import type { CockpitHost, WsRef } from './host';
 import type { ExistingBranch } from './workflowOps';
 
@@ -206,7 +206,7 @@ export class WorkspaceService {
       this.d.host.wsStatus(ref).catch(() => null),
     ]);
     const card = status?.branch
-      ? (listCards(this.d.store).find((c) => c.branchName?.trim() === status.branch) ?? null)
+      ? (cardForBranch(this.d.store, status.branch, w.repoId ?? undefined)?.card ?? null)
       : null;
     return {
       title: card?.title ?? `${w.name}${status?.branch ? ` · ${status.branch}` : ''}`,

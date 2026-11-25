@@ -39,6 +39,7 @@ export * from './mrCreate';
 export * from './cockpit';
 export * from './testBench';
 export * from './runBranch';
+export * from './branches';
 export * from './device';
 export * from './calendar';
 export * from './cleanup';

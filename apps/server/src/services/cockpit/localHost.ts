@@ -1,5 +1,14 @@
 import { commitTree, squashForMr, wsLog } from './branchOps';
-import type { CockpitSession, DiffFile, FlutterDevice, RunTargets } from '@relay/shared';
+import type {
+  CockpitSession,
+  DiffFile,
+  FetchFailure,
+  FlutterDevice,
+  LocalBranch,
+  RunTargets,
+} from '@relay/shared';
+import { wsListBranches } from './branchList';
+import { fetchOriginReport } from './fetchFailure';
 import { ensureAgentRules } from './agentRules';
 import {
   addWorktree,
@@ -117,6 +126,14 @@ export class LocalCockpitHost implements CockpitHost {
 
   async wsStatus(ref: WsRef): Promise<WsStatus> {
     return wsStatus(await this.cwd(ref));
+  }
+
+  async wsListBranches(ref: WsRef): Promise<LocalBranch[]> {
+    return wsListBranches(await this.cwd(ref));
+  }
+
+  async wsFetch(ref: WsRef): Promise<FetchFailure | null> {
+    return fetchOriginReport(await this.cwd(ref));
   }
 
   async wsDiff(

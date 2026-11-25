@@ -1,3 +1,4 @@
+import { CardLinkDialog } from '@/components/cardLink/CardLinkDialog';
 import { RunBranchButton } from '@/components/runBranch/RunBranchButton';
 import {
   ArrowLeft,
@@ -14,6 +15,7 @@ import {
   TriangleAlert,
   Wand2,
   X,
+  Link2,
 } from 'lucide-react';
 import { useState, type KeyboardEvent } from 'react';
 import { Link, useLocation, useNavigate, useParams, useSearchParams } from 'react-router';
@@ -343,6 +345,7 @@ export function MrCreate() {
   const [skipTest, setSkipTest] = useState(false);
   const [testReason, setTestReason] = useState('');
   const [proposing, setProposing] = useState(false);
+  const [linking, setLinking] = useState(false);
 
   if (!repo || !branch) {
     return <Alert variant="destructive">Invalid address.</Alert>;
@@ -531,11 +534,21 @@ export function MrCreate() {
               ) : (
                 <TriangleAlert className="mt-0.5 size-4 shrink-0" />
               )}
-              {w.message}
+              <span className="min-w-0 flex-1">{w.message}</span>
+              {w.code === 'no_notion_url' && (
+                <button
+                  type="button"
+                  onClick={() => setLinking(true)}
+                  className="-my-1 inline-flex h-8 shrink-0 items-center gap-1.5 rounded-lg border border-destructive/30 px-2.5 text-xs font-medium text-destructive transition-[background-color,transform] duration-150 hover:bg-destructive/10 focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none active:scale-[0.97]"
+                >
+                  <Link2 className="size-3.5" aria-hidden /> Link a card
+                </button>
+              )}
             </li>
           ))}
         </ul>
       )}
+      {linking && <CardLinkDialog repo={repo} branch={branch} onClose={() => setLinking(false)} />}
       <StackPicture p={p} />
 
       {repoWs && <IntegrityGate wsId={repoWs.id} wsName={repoWs.name} />}

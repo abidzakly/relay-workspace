@@ -4,7 +4,14 @@ import {
   AgentUnreachableError,
   type HostAgentClient,
 } from '../../hostAgent/client';
-import type { CockpitSession, DiffFile, FlutterDevice, RunTargets } from '@relay/shared';
+import type {
+  CockpitSession,
+  DiffFile,
+  FetchFailure,
+  FlutterDevice,
+  LocalBranch,
+  RunTargets,
+} from '@relay/shared';
 import { readNdjson } from '../../hostAgent/protocol';
 import type { HostAgentModels } from './agentAccount';
 import type { SessionEvent } from './sessions';
@@ -96,6 +103,13 @@ export class RemoteCockpitHost implements CockpitHost {
   }
   wsStatus(ref: WsRef): Promise<WsStatus> {
     return this.ws('status', { ref });
+  }
+  wsListBranches(ref: WsRef): Promise<LocalBranch[]> {
+    return this.ws('list-branches', { ref });
+  }
+  async wsFetch(ref: WsRef): Promise<FetchFailure | null> {
+    const r = await this.ws<{ fetchFailed: FetchFailure | null }>('fetch', { ref }, 60_000);
+    return r.fetchFailed;
   }
   wsDiff(ref: WsRef, mode: DiffMode, base?: string): Promise<{ files: DiffFile[]; label: string }> {
     return this.ws('diff', { ref, mode, ...(base ? { base } : {}) });
