@@ -29,6 +29,7 @@ import {
   type AiProvider,
   type AiTier,
 } from './provider';
+import { isModelUnavailable, modelUnavailableReason } from './modelFallback';
 import { renderTemplate } from './templates';
 
 /**
@@ -335,14 +336,25 @@ export class AiService {
       (choice.model && (choice.engine ? choice.engine === engine : engine !== 'cursor_cli')
         ? choice.model
         : undefined) ?? (engine === 'cursor_cli' ? CURSOR_MODEL : AI_MODELS[tier]);
+    const builtIn = (engine: AiEngine): string =>
+      engine === 'cursor_cli' ? CURSOR_MODEL : AI_MODELS[tier];
     const by = (engine: AiEngine): AiGeneratedBy => ({ engine, model: modelFor(engine) });
+    // Effort is Claude's flag; Cursor's effort is part of its model id.
+    const effortFor = (engine: AiEngine) =>
+      engine !== 'cursor_cli' && (!choice.engine || choice.engine === engine)
+        ? choice.effort
+        : undefined;
     const prompt = renderTemplate(template, vars, this.d.prompts?.()[template]);
     // Automatic choice keeps the original key (Claude's model). A pinned engine keys on that engine and its model, so
     // a pinned Cursor answer is cached too and never mixed up with a Claude one.
     const keyModel = choice.engine
       ? `${choice.engine}:${modelFor(choice.engine)}`
       : modelFor('claude_cli');
-    const key = createHash('sha256').update(`${template}\n${keyModel}\n${prompt}`).digest('hex');
+    // An effort chosen in Settings is part of the key; without one the key stays as it was (existing cache hits).
+    const keyEffort = choice.effort ? `@${choice.effort}` : '';
+    const key = createHash('sha256')
+      .update(`${template}\n${keyModel}${keyEffort}\n${prompt}`)
+      .digest('hex');
     if (!opts.fresh) {
       const hit = this.d.store.db.select().from(aiCache).where(eq(aiCache.key, key)).get();
       if (hit) {
@@ -375,14 +387,37 @@ export class AiService {
     for (const provider of providers) {
       const started = this.now();
       let output: AiOutput<T>;
-      try {
-        output = (await provider.complete({
+      let fallbackFrom: string | undefined;
+      const ask = async (model: string) =>
+        (await provider.complete({
           template,
           prompt,
           schema,
           tier,
-          model: modelFor(provider.engine),
+          model,
+          effort: effortFor(provider.engine),
         })) as AiOutput<T>;
+      try {
+        const chosen = modelFor(provider.engine);
+        try {
+          output = await ask(chosen);
+        } catch (e) {
+          // The chosen model was refused (outside the plan, unknown id): answer on the built-in one and say so.
+          const fallback = builtIn(provider.engine);
+          if (!isModelUnavailable(e) || chosen === fallback) throw e;
+          this.d.log.warn(
+            {
+              engine: provider.engine,
+              template,
+              model: chosen,
+              fallback,
+              why: modelUnavailableReason(e),
+            },
+            'ai model refused, using the default',
+          );
+          fallbackFrom = chosen;
+          output = await ask(fallback);
+        }
         const problem = aiOutputProblem(template, output);
         if (problem) throw new AiError('ai_bad_output', problem);
       } catch (e) {
@@ -406,6 +441,16 @@ export class AiService {
       this.cooling.delete(provider.engine);
       // A Cursor fallback is not cached: the same prompt gets Opus again once Claude is back. Cursor chosen in
       // Settings is the answer the user wants, so it is.
+      // A fallback answer is not cached under the chosen model's key: the user should see the notice again until the
+      // setting is fixed.
+      if (fallbackFrom) {
+        return {
+          output,
+          cached: false,
+          engine: provider.engine,
+          generatedBy: { engine: provider.engine, model: builtIn(provider.engine), fallbackFrom },
+        };
+      }
       if (provider.engine !== 'cursor_cli' || choice.engine === 'cursor_cli')
         this.remember(key, template, provider.engine, output);
       return { output, cached: false, engine: provider.engine, generatedBy: by(provider.engine) };

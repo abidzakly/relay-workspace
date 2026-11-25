@@ -13,7 +13,7 @@ const AiSchema = z.object({
   prompt: z.string().min(1).max(2_000_000),
   model: z.string().regex(/^[a-z0-9.-]{1,64}$/),
   engine: z.enum(['claude', 'cursor']).optional(),
-  effort: z.enum(['low', 'medium', 'high']).optional(),
+  effort: z.enum(['low', 'medium', 'high', 'xhigh', 'max']).optional(),
   timeoutMs: z
     .number()
     .int()
@@ -137,7 +137,7 @@ const SessionStart = z.object({
     .string()
     .regex(/^[a-z0-9.-]{1,64}$/i)
     .optional(),
-  execEffort: z.enum(['low', 'medium', 'high', 'xhigh']).optional(),
+  execEffort: z.enum(['low', 'medium', 'high', 'xhigh', 'max']).optional(),
   execSwitch: z.enum(['ask', 'auto']).optional(),
   title: z.string().max(300).optional(),
   cardId: z.string().max(64).optional(),
@@ -170,6 +170,10 @@ export async function sendHostError(reply: FastifyReply, e: unknown): Promise<Fa
 export function registerCockpitAgentRoutes(app: FastifyInstance, host: LocalCockpitHost): void {
   app.get('/v1/cockpit/health', async (req) =>
     host.health((req.query as { refresh?: string } | undefined)?.refresh === '1'),
+  );
+
+  app.get('/v1/cockpit/agent-models', async (req) =>
+    host.agentModels((req.query as { refresh?: string } | undefined)?.refresh === '1'),
   );
 
   // Workspaces: every call re-validates the path against the agent's roots.

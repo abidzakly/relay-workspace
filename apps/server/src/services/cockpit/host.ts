@@ -8,6 +8,7 @@ import type {
   RunTargets,
   SessionKind,
 } from '@relay/shared';
+import type { HostAgentModels } from './agentAccount';
 import type { SessionEvent } from './sessions';
 import type { ExistingBranch, IntegrityStep } from './workflowOps';
 import type {
@@ -32,8 +33,8 @@ export interface AiRunRequest {
   timeoutMs: number;
   /** Which CLI answers; default `claude`. */
   engine?: 'claude' | 'cursor' | undefined;
-  /** Claude's thinking effort: `low` for the fast tier. Cursor ignores it. */
-  effort?: 'low' | 'medium' | 'high' | undefined;
+  /** Claude's thinking effort: `low` for the fast tier, or the one chosen in Settings. Cursor ignores it. */
+  effort?: AgentEffort | undefined;
 }
 
 export interface CockpitHostHealth {
@@ -97,6 +98,8 @@ export interface CockpitHost {
   health(refresh?: boolean): Promise<CockpitHostHealth>;
   /** `claude -p` or `cursor-agent -p` headless; resolves with the model's final text (not parsed). */
   ai(req: AiRunRequest): Promise<{ text: string }>;
+  /** The models the local logins may use and their subscriptions. Optional: an older host agent lacks it. */
+  agentModels?(refresh?: boolean): Promise<HostAgentModels>;
 
   // ── workspaces
   wsValidate(ref: WsRef): Promise<WsValidation>;

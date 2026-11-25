@@ -23,7 +23,8 @@ export type DocItem =
   | { kind: 'text'; text: string }
   | { kind: 'tools'; tools: DocTool[] }
   | { kind: 'ask'; ask: DocAsk }
-  | { kind: 'notice'; level: 'info' | 'error'; text: string };
+  | { kind: 'notice'; level: 'info' | 'error'; text: string }
+  | { kind: 'fallback'; agent: 'claude' | 'cursor'; from: string; to: string; reason: string };
 
 export interface ConversationDoc {
   items: DocItem[];
@@ -113,6 +114,14 @@ export function foldEvent(doc: ConversationDoc, e: ConversationEvent): Conversat
       return { ...doc, mode: e.mode };
     case 'model':
       return { ...doc, model: e.model };
+    case 'model_fallback':
+      return {
+        ...doc,
+        items: [
+          ...items,
+          { kind: 'fallback', agent: e.engine, from: e.from, to: e.to, reason: e.reason },
+        ],
+      };
   }
 }
 

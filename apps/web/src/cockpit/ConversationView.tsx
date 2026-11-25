@@ -6,6 +6,7 @@ import {
   Layers,
   Loader2,
   SendHorizontal,
+  Sparkles,
   X,
 } from 'lucide-react';
 import { useEffect, useRef, useState, type KeyboardEvent } from 'react';
@@ -13,6 +14,7 @@ import { Link } from 'react-router';
 import { agentModelLabel, type ConversationCommand, type ConversationMode } from '@relay/shared';
 import { Markdown } from '@/components/Markdown';
 import { MicButton } from '@/components/MicButton';
+import { useModelFallbackStore } from '@/components/ModelFallbackAlert';
 import { Button } from '@/components/ui/button';
 import { Select } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
@@ -351,6 +353,8 @@ function Block({
       return <ToolsLine tools={item.tools} />;
     case 'ask':
       return <AskCard ask={item.ask} onCommand={onCommand} />;
+    case 'fallback':
+      return <FallbackNote item={item} />;
     case 'notice':
       return (
         <p
@@ -366,6 +370,33 @@ function Block({
         </p>
       );
   }
+}
+
+/** A refused model in the transcript: a calm callout, and the corner alert once. */
+function FallbackNote({ item }: { item: Extract<DocItem, { kind: 'fallback' }> }) {
+  useEffect(() => {
+    useModelFallbackStore
+      .getState()
+      .push({ agent: item.agent, from: item.from, to: item.to, reason: item.reason });
+  }, [item]);
+  const to =
+    item.to === 'default'
+      ? 'the default model'
+      : item.to === 'auto'
+        ? 'Auto'
+        : agentModelLabel(item.to);
+  return (
+    <div
+      role="status"
+      className="flex items-start gap-2.5 rounded-xl border border-warning/30 bg-warning/10 px-3 py-2.5 text-sm"
+    >
+      <Sparkles className="mt-0.5 size-4 shrink-0 text-warning" aria-hidden />
+      <p className="min-w-0 [overflow-wrap:anywhere]">
+        <span className="font-medium">{agentModelLabel(item.from)}</span> is {item.reason}.{' '}
+        <span className="text-muted-foreground">Switched to {to} and sent your message again.</span>
+      </p>
+    </div>
+  );
 }
 
 const readDraft = (key: string): string => {

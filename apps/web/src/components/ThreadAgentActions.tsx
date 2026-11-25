@@ -1,7 +1,7 @@
 import { Bot, Check, Copy, Loader2, Sparkles, Wrench } from 'lucide-react';
 import { useState } from 'react';
 import { useNavigate } from 'react-router';
-import { AGENT_MODEL_CHOICES, type ExplainThreadResult } from '@relay/shared';
+import { AGENT_MODEL_CHOICES, agentModelLabel, type ExplainThreadResult } from '@relay/shared';
 import { describeError } from '@/lib/api';
 import { useSettings } from '@/lib/settingsApi';
 import { useThreadAgent, useThreadExplain, type ThreadAgentMode } from '@/lib/workflowApi';
@@ -159,7 +159,9 @@ export function ThreadAgentActions({
               {m.label}
             </option>
           ))}
-          {!models.some((m) => m.id === model) && <option value={model}>{model}</option>}
+          {!models.some((m) => m.id === model) && (
+            <option value={model}>{agentModelLabel(model)}</option>
+          )}
         </Select>
       </div>
       {showContext && (

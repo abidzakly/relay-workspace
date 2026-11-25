@@ -26,7 +26,7 @@ export const PersistedSpecSchema = z.object({
   kind: z.enum(['claude', 'cursor']),
   model: z.string().optional(),
   execModel: z.string().optional(),
-  execEffort: z.enum(['low', 'medium', 'high', 'xhigh']).optional(),
+  execEffort: z.enum(['low', 'medium', 'high', 'xhigh', 'max']).optional(),
   execSwitch: z.enum(['ask', 'auto']).optional(),
   /** The CLI's own session (Claude) or chat (Cursor) id: `--resume`. */
   resumeId: z.string().max(128).optional(),

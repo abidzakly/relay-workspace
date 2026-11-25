@@ -134,6 +134,8 @@ export type ConversationEvent =
   | { k: 'mode'; mode: ConversationMode }
   /** The model the session runs on: the start model, a picker change, or the exec switch after plan approval. */
   | { k: 'model'; model: string }
+  /** The chosen model was refused (not in the plan, unknown id): the session moved to `to` and retried the turn. */
+  | { k: 'model_fallback'; engine: 'claude' | 'cursor'; from: string; to: string; reason: string }
   | { k: 'notice'; level: 'info' | 'error'; text: string };
 
 export const ConversationCommandSchema = z.discriminatedUnion('type', [

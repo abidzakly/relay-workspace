@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { catalogModelLabel } from './agentModels';
 
 /**
  * AI templates. Each template has ONE output schema, validated with zod whichever engine
@@ -39,12 +40,14 @@ export const AiModelChoiceSchema = z.object({
     .string()
     .regex(/^[a-z0-9.-]{1,64}$/i)
     .optional(),
+  /** Claude engines only: thinking effort; unset = by tier (low for quick answers, medium otherwise). */
+  effort: z.enum(['low', 'medium', 'high', 'xhigh', 'max']).optional(),
 });
 export type AiModelChoice = z.infer<typeof AiModelChoiceSchema>;
 export const AiModelsSchema = z.partialRecord(z.enum(AI_MODEL_KEYS), AiModelChoiceSchema);
 export type AiModels = z.infer<typeof AiModelsSchema>;
 
-export const AGENT_EFFORTS = ['low', 'medium', 'high', 'xhigh'] as const;
+export const AGENT_EFFORTS = ['low', 'medium', 'high', 'xhigh', 'max'] as const;
 export const AgentEffortSchema = z.enum(AGENT_EFFORTS);
 export type AgentEffort = z.infer<typeof AgentEffortSchema>;
 
@@ -71,11 +74,19 @@ export const AGENT_MODEL_CHOICES = {
     { id: 'claude-sonnet-5-5', label: 'Sonnet 5.5' },
     { id: 'claude-haiku-5-5', label: 'Haiku 5.5' },
   ],
-  cursor: [{ id: 'composer-2.5-fast', label: 'Composer 2.5 Fast' }],
+  cursor: [
+    { id: 'composer-2.5-fast', label: 'Composer 2.5 Fast' },
+    { id: 'auto', label: 'Auto' },
+  ],
 } as const;
 
 /** Which agent and model produced an AI answer, shown next to the answer. */
-export const AiGeneratedBySchema = z.object({ engine: z.enum(AI_ENGINES), model: z.string() });
+export const AiGeneratedBySchema = z.object({
+  engine: z.enum(AI_ENGINES),
+  model: z.string(),
+  /** Set when the chosen model was refused (not in the plan, unknown id) and the default answered instead. */
+  fallbackFrom: z.string().optional(),
+});
 export type AiGeneratedBy = z.infer<typeof AiGeneratedBySchema>;
 
 const ENGINE_LABELS: Record<AiEngine, string> = {
@@ -90,12 +101,13 @@ const MODEL_LABELS: Readonly<Record<string, string>> = {
   'composer-2.5-fast': 'Composer 2.5 Fast',
 };
 
-/** "Sonnet 5.5" for a known model id, else the id. */
-export const agentModelLabel = (id: string): string => MODEL_LABELS[id] ?? id;
+/** "Sonnet 5.5" for a known model id (any id in the model catalog), else the id. */
+export const agentModelLabel = (id: string): string =>
+  MODEL_LABELS[id] ?? catalogModelLabel(id) ?? id;
 
 /** e.g. "Cursor · Composer 2.5 Fast". An unlisted model shows its id. */
 export function aiGeneratedByLabel(by: AiGeneratedBy): string {
-  return `${ENGINE_LABELS[by.engine]} · ${MODEL_LABELS[by.model] ?? by.model}`;
+  return `${ENGINE_LABELS[by.engine]} · ${agentModelLabel(by.model)}`;
 }
 
 export const HUNK_TIERS = ['trivial', 'normal', 'critical'] as const;

@@ -4,6 +4,7 @@ import { CommandButton, CommandPalette } from '@/components/CommandPalette';
 import { ConnectionIndicator } from '@/components/ConnectionIndicator';
 import { ContinueTesting } from '@/components/ContinueTesting';
 import { MeetingAlert } from '@/components/MeetingAlert';
+import { ModelFallbackAlert } from './ModelFallbackAlert';
 import { NotificationBell } from '@/components/NotificationBell';
 import { OnboardingDialog } from '@/components/OnboardingDialog';
 import { NotificationToggle } from '@/components/NotificationToggle';
@@ -37,6 +38,7 @@ export function Layout() {
         <OnboardingDialog />
         <RewardLayer />
         <MeetingAlert />
+        <ModelFallbackAlert />
         <WorkspaceShell>
           <Outlet />
         </WorkspaceShell>
@@ -53,6 +55,7 @@ export function Layout() {
       <OnboardingDialog />
       <RewardLayer />
       <MeetingAlert />
+      <ModelFallbackAlert />
       <aside className="relative z-10 flex shrink-0 flex-col border-b border-hairline bg-background/85 backdrop-blur-sm md:sticky md:top-0 md:h-screen md:w-60 md:border-r md:border-b-0 md:bg-transparent md:backdrop-blur-none">
         <div className="flex items-center justify-between gap-2 px-4 py-3 md:px-6 md:pt-6 md:pb-5">
           <NavLink to="/overview" className="min-w-0 type-micro text-foreground">

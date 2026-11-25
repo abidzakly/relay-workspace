@@ -1,13 +1,16 @@
 import { useMutation, useQueries, useQuery, useQueryClient } from '@tanstack/react-query';
-import type {
-  AiEngineStatus,
-  CommitMessageResult,
-  ConnectionTestResult,
-  DiffFile,
-  Workspace,
-  WorkspaceCreate,
-  WsFile,
-  WsStatusView,
+import {
+  builtinCursorModels,
+  CLAUDE_MODELS,
+  type AgentModelCatalog,
+  type AiEngineStatus,
+  type CommitMessageResult,
+  type ConnectionTestResult,
+  type DiffFile,
+  type Workspace,
+  type WorkspaceCreate,
+  type WsFile,
+  type WsStatusView,
 } from '@relay/shared';
 import { del, get, post, put } from './api';
 
@@ -20,6 +23,24 @@ export const cockpitKeys = {
   ai: ['cockpit', 'ai'] as const,
 };
 const e = encodeURIComponent;
+
+/**
+ * The models the Settings pickers offer, limited to what the local Claude and Cursor logins may use. Until the server
+ * answers (and when it cannot read the CLIs) the full built-in catalog shows.
+ */
+export function useAgentModels() {
+  return useQuery({
+    queryKey: [...cockpitKeys.ai, 'models'] as const,
+    queryFn: () => get<AgentModelCatalog>('/api/ai/models'),
+    staleTime: 10 * 60_000,
+    placeholderData: (): AgentModelCatalog => ({
+      claude: [...CLAUDE_MODELS],
+      cursor: builtinCursorModels(),
+      source: 'builtin',
+      accounts: { claude: null, cursor: null },
+    }),
+  });
+}
 
 export function useAiStatus() {
   return useQuery({
