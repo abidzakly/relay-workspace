@@ -1,5 +1,4 @@
 import { useState } from 'react';
-import { Check, Copy } from 'lucide-react';
 import { CalendarIdSchema, type CalendarStatus, type GlobalConfigPublic } from '@relay/shared';
 import { Field } from '@/components/Field';
 import { TimeAgo } from '@/components/TimeAgo';
@@ -20,6 +19,7 @@ import { useSaveGlobal } from '@/lib/settingsApi';
 import { PriorityRulesEditor } from '@/meetings/PriorityRulesEditor';
 import { OAuthConnect } from './OAuthConnect';
 import { ErrorAlert, SectionCard } from './SectionCard';
+import { CopyLine, ExtLink } from './SetupGuide';
 
 const LEAD_CHOICES = [
   { value: 0, label: 'At the start' },
@@ -47,32 +47,6 @@ function parseIds(raw: string): { ids: string[]; bad: string | null } {
   const ids = [...new Set(raw.split(/[\s,]+/).filter(Boolean))];
   const bad = ids.find((id) => !CalendarIdSchema.safeParse(id).success) ?? null;
   return { ids, bad };
-}
-
-function CopyLine({ value }: { value: string }) {
-  const [copied, setCopied] = useState(false);
-  return (
-    <div className="flex min-w-0 items-center gap-2">
-      <code className="min-w-0 flex-1 truncate rounded-control border border-hairline px-2.5 py-2 font-mono text-2xs">
-        {value}
-      </code>
-      <Button
-        type="button"
-        variant="outline"
-        size="icon"
-        aria-label="Copy redirect URI"
-        title="Copy redirect URI"
-        onClick={() =>
-          void navigator.clipboard?.writeText(value).then(() => {
-            setCopied(true);
-            setTimeout(() => setCopied(false), 1500);
-          })
-        }
-      >
-        {copied ? <Check /> : <Copy />}
-      </Button>
-    </div>
-  );
 }
 
 /** Google Calendar: "Connect with Google" (or your own OAuth client), a read-only sign-in, and the meeting alert. */
@@ -200,22 +174,32 @@ function CalendarForm({
         </p>
         <ol className="mt-3 grid list-decimal gap-1.5 pl-5 text-muted-foreground">
           <li>
-            Open console.cloud.google.com, pick or create a project, and enable the{' '}
-            <span className="text-foreground">Google Calendar API</span>.
+            Open{' '}
+            <ExtLink href="https://console.cloud.google.com/projectcreate">Google Cloud</ExtLink>,
+            pick or create a project, and enable the{' '}
+            <ExtLink href="https://console.cloud.google.com/apis/library/calendar-json.googleapis.com">
+              Google Calendar API
+            </ExtLink>
+            .
           </li>
           <li>
-            Under <span className="text-foreground">Google Auth Platform</span>, set up the consent
-            screen (External or Internal) and add yourself as a test user.
+            Under{' '}
+            <ExtLink href="https://console.cloud.google.com/auth/overview">
+              Google Auth Platform
+            </ExtLink>
+            , set up the consent screen (External or Internal) and add yourself as a test user.
           </li>
           <li>
-            Create an OAuth client of type <span className="text-foreground">Desktop app</span>.
+            Under{' '}
+            <ExtLink href="https://console.cloud.google.com/auth/clients/create">Clients</ExtLink>,
+            create an OAuth client of type <span className="text-foreground">Desktop app</span>.
             Copy its client ID and secret here.
           </li>
           <li>Save, then press Connect and allow read-only access.</li>
         </ol>
         <div className="mt-3 grid gap-1.5">
           <Label>Redirect URI Relay uses (desktop clients accept it as is)</Label>
-          <CopyLine value={status.redirectUri} />
+          <CopyLine value={status.redirectUri} label="redirect URI" />
         </div>
         <div className="mt-4 grid gap-4">
           <Field label="OAuth client ID" htmlFor="gc-client">

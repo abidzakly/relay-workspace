@@ -2,6 +2,7 @@ import type { GoogleFeature, OAuthProvider, OAuthStatus } from '@relay/shared';
 import { Button } from '@/components/ui/button';
 import { useConnect } from '@/lib/oauthApi';
 import { ErrorAlert } from './SectionCard';
+import { Advanced, ConnectGuide } from './SetupGuide';
 
 const NAMES: Record<OAuthProvider, string> = {
   google: 'Google',
@@ -23,6 +24,7 @@ export function OAuthConnect({
   feature,
   what,
   disconnectNote,
+  gitlabHost,
 }: {
   provider: OAuthProvider;
   /** Google only: what this card asks access for. */
@@ -31,6 +33,8 @@ export function OAuthConnect({
   what: string;
   /** Shown next to Disconnect (e.g. that Google signs out Calendar and Drive together). */
   disconnectNote?: string;
+  /** GitLab only: the host, so the setup guide links straight to its Applications page. */
+  gitlabHost?: string | undefined;
 }) {
   const { status, start, disconnect, waiting } = useConnect(provider, (s) =>
     isConnected(s, provider, feature),
@@ -42,10 +46,22 @@ export function OAuthConnect({
   const connected = isConnected(s, provider, feature);
 
   if (!c.available && !c.connected) {
+    // The client is missing from .env (not just a missing GitLab host): show how to register it, right here.
+    const needsClient = !!c.unavailableReason?.includes('.env');
     return (
-      <div className="rounded-control border border-dashed border-hairline px-4 py-3 text-sm text-muted-foreground">
-        <span className="font-medium text-foreground">Connect with {name}</span> ·{' '}
-        {c.unavailableReason}
+      <div className="grid gap-3 rounded-control border border-dashed border-hairline px-4 py-3 text-sm">
+        <p className="text-muted-foreground">
+          <span className="font-medium text-foreground">Connect with {name}</span> ·{' '}
+          {needsClient ? 'Not set up for this Relay yet.' : c.unavailableReason}
+        </p>
+        {needsClient ? (
+          <Advanced
+            summary={`How to set up “Connect with ${name}” (one time)`}
+            className="border-solid"
+          >
+            <ConnectGuide provider={provider} redirectUri={c.redirectUri} gitlabHost={gitlabHost} />
+          </Advanced>
+        ) : null}
       </div>
     );
   }

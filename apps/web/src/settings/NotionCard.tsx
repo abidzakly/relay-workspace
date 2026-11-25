@@ -11,6 +11,7 @@ import { opt, splitList, useDraft } from './drafts';
 import { NotionSourcePicker } from './NotionSourcePicker';
 import { OAuthConnect } from './OAuthConnect';
 import { ErrorAlert, SectionCard } from './SectionCard';
+import { Advanced, ExtLink, Steps, Ui } from './SetupGuide';
 
 const PROP_FIELDS = [
   ['title', 'Title property', '“auto” = detect the title property'],
@@ -87,11 +88,14 @@ export function NotionCard({ settings }: { settings: GlobalConfigPublic }) {
           : undefined
         : draft.token;
 
+  const errIn = (prefix: string) => Object.keys(errs).some((k) => k.startsWith(prefix));
+  const manualOpen = settings.notion.tokenSet || !!errs['notion.token'] || !!errs['notion.version'];
+
   return (
     <SectionCard
       id="notion"
       title="Notion mapping"
-      description="Property names must match your database. “Test connection” reads the saved settings."
+      description="Press Connect, then pick your board. Everything folded below has working defaults."
     >
       <OAuthConnect
         provider="notion"
@@ -99,22 +103,10 @@ export function NotionCard({ settings }: { settings: GlobalConfigPublic }) {
       />
       <div className="grid gap-4 sm:grid-cols-2">
         <Field
-          label="Integration token (optional with Connect)"
-          htmlFor="nt-token"
-          error={errs['notion.token']}
-          hint={
-            settings.notion.tokenSet
-              ? 'Stored encrypted. Type to replace; empty the field and save to remove it.'
-              : 'Stored encrypted (AES-256-GCM); never shown again.'
-          }
-        >
-          <SecretInput id="nt-token" value={draft.token} onChange={(v) => set('token', v)} />
-        </Field>
-        <Field
           label="Data source id"
           htmlFor="nt-ds"
           error={errs['notion.dataSourceId']}
-          hint="The data source (not the database) id. Pick it from Notion, or paste it."
+          hint="Your board. Press “Pick from Notion” after connecting, or paste the data source (not the database) id."
         >
           <div className="grid gap-2">
             <Input
@@ -129,13 +121,6 @@ export function NotionCard({ settings }: { settings: GlobalConfigPublic }) {
             />
           </div>
         </Field>
-        <Field label="Notion-Version" htmlFor="nt-ver" error={errs['notion.version']}>
-          <Input
-            id="nt-ver"
-            value={draft.version}
-            onChange={(e) => set('version', e.target.value)}
-          />
-        </Field>
         <Field
           label="“Ready” status"
           htmlFor="nt-ready"
@@ -148,20 +133,6 @@ export function NotionCard({ settings }: { settings: GlobalConfigPublic }) {
             onChange={(e) => set('readyStatus', e.target.value)}
           />
         </Field>
-      </div>
-
-      <div className="grid gap-4 sm:grid-cols-2">
-        {PROP_FIELDS.map(([key, label, hint]) => (
-          <Field
-            key={key}
-            label={label}
-            htmlFor={`nt-${key}`}
-            hint={hint}
-            error={errs[`notion.props.${key}`]}
-          >
-            <Input id={`nt-${key}`} value={draft[key]} onChange={(e) => set(key, e.target.value)} />
-          </Field>
-        ))}
       </div>
 
       <Field
@@ -191,23 +162,105 @@ export function NotionCard({ settings }: { settings: GlobalConfigPublic }) {
         />
       </Field>
 
-      <div className="grid gap-4 sm:grid-cols-2">
-        {GROUP_FIELDS.map(([key, label, hint]) => (
+      <Advanced summary="Database property names" open={errIn('notion.props.')}>
+        <p className="text-muted-foreground">
+          The defaults match the standard board. Change a name only if that column is named
+          differently in your database.
+        </p>
+        <div className="grid gap-4 sm:grid-cols-2">
+          {PROP_FIELDS.map(([key, label, hint]) => (
+            <Field
+              key={key}
+              label={label}
+              htmlFor={`nt-${key}`}
+              hint={hint}
+              error={errs[`notion.props.${key}`]}
+            >
+              <Input
+                id={`nt-${key}`}
+                value={draft[key]}
+                onChange={(e) => set(key, e.target.value)}
+              />
+            </Field>
+          ))}
+        </div>
+      </Advanced>
+
+      <Advanced summary="Status groups" open={errIn('notion.statusGroups.')}>
+        <div className="grid gap-4 sm:grid-cols-2">
+          {GROUP_FIELDS.map(([key, label, hint]) => (
+            <Field
+              key={key}
+              label={label}
+              htmlFor={`nt-g-${key}`}
+              hint={`${hint} Comma separated.`}
+              error={errs[`notion.statusGroups.${key}`]}
+            >
+              <Input
+                id={`nt-g-${key}`}
+                value={draft[key]}
+                onChange={(e) => set(key, e.target.value)}
+              />
+            </Field>
+          ))}
+        </div>
+      </Advanced>
+
+      <Advanced
+        summary="Advanced: integration token (without Connect) and API version"
+        open={manualOpen}
+      >
+        <p className="text-muted-foreground">
+          Only needed when “Connect with Notion” is not set up for this Relay. A saved token is used
+          when you are not connected.
+        </p>
+        <Steps>
+          <li>
+            Open{' '}
+            <ExtLink href="https://www.notion.so/profile/integrations">Notion integrations</ExtLink>
+            , press <Ui>New integration</Ui>, pick your workspace and type <Ui>Internal</Ui>.
+          </li>
+          <li>
+            Under <Ui>Capabilities</Ui> allow read content, update content and read user information
+            (with email). Save, then copy the <Ui>Internal Integration Secret</Ui> (
+            <code>ntn_…</code>).
+          </li>
+          <li>
+            Open your board in Notion, press <Ui>•••</Ui> &gt; <Ui>Connections</Ui> and add the
+            integration, so it can see the database.
+          </li>
+          <li>
+            Paste the secret below, press Save, then <Ui>Pick from Notion</Ui> under “Data source
+            id”.
+          </li>
+        </Steps>
+        <div className="grid gap-4 sm:grid-cols-2">
           <Field
-            key={key}
-            label={label}
-            htmlFor={`nt-g-${key}`}
-            hint={`${hint} Comma separated.`}
-            error={errs[`notion.statusGroups.${key}`]}
+            label="Integration token"
+            htmlFor="nt-token"
+            error={errs['notion.token']}
+            hint={
+              settings.notion.tokenSet
+                ? 'Stored encrypted. Type to replace; empty the field and save to remove it.'
+                : 'Stored encrypted (AES-256-GCM); never shown again.'
+            }
+          >
+            <SecretInput id="nt-token" value={draft.token} onChange={(v) => set('token', v)} />
+          </Field>
+          <Field
+            label="Notion-Version"
+            htmlFor="nt-ver"
+            error={errs['notion.version']}
+            hint="The Notion API version Relay speaks, with Connect or a token. Leave it as is unless “Test connection” says otherwise."
           >
             <Input
-              id={`nt-g-${key}`}
-              value={draft[key]}
-              onChange={(e) => set(key, e.target.value)}
+              id="nt-ver"
+              value={draft.version}
+              onChange={(e) => set('version', e.target.value)}
             />
           </Field>
-        ))}
-      </div>
+        </div>
+      </Advanced>
 
       <ErrorAlert error={save.error && Object.keys(errs).length === 0 ? save.error : null} />
       <div className="flex flex-wrap items-center gap-3">

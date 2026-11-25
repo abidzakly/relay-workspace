@@ -17,6 +17,7 @@ import {
 } from '@/lib/reviewsApi';
 import { useSaveGlobal } from '@/lib/settingsApi';
 import { ErrorAlert, SectionCard } from './SectionCard';
+import { ExtLink, Ui } from './SetupGuide';
 
 function CopyValue({ label, value }: { label: string; value: string }) {
   const [copied, setCopied] = useState(false);
@@ -61,6 +62,7 @@ export function ReviewerCard({ settings }: { settings: GlobalConfigPublic }) {
   const [value, setValue] = useState('');
   const status = token.data;
   const hostMissing = !settings.gitlab.host;
+  const host = settings.gitlab.host?.replace(/\/+$/, '');
 
   return (
     <SectionCard
@@ -126,9 +128,21 @@ export function ReviewerCard({ settings }: { settings: GlobalConfigPublic }) {
             label="Personal access token"
             htmlFor="rv-token"
             hint={
-              hostMissing
-                ? 'Set the GitLab host above first.'
-                : 'Or skip this: “Connect with GitLab” above does the same. GitLab > Preferences > Access tokens. Scope read_api to read, api to also comment and approve.'
+              hostMissing ? (
+                'Set the GitLab host above first.'
+              ) : (
+                <>
+                  Or skip this: “Connect with GitLab” does the same. To make one, open{' '}
+                  <ExtLink
+                    href={`${host}/-/user_settings/personal_access_tokens?name=Relay%20Reviews&scopes=api`}
+                  >
+                    Access tokens
+                  </ExtLink>{' '}
+                  (name and scope are filled in), set an expiry, press <Ui>Create token</Ui> and
+                  paste it here. Scope <code>api</code> comments and approves; <code>read_api</code>{' '}
+                  only reads.
+                </>
+              )
             }
           >
             <Input
