@@ -30,16 +30,21 @@ export const USERNAME_RE = /^[A-Za-z0-9_][A-Za-z0-9_.-]{0,254}$/;
 export const UsernameSchema = z.string().regex(USERNAME_RE, 'invalid username');
 
 /**
- * Safe git ref name (branch). Subset of what git allows:
- * no leading "-" (option injection), no whitespace, no shell/glob characters,
- * no "..", no "//", no segment starting with "." or ending with ".lock".
+ * Git ref name (branch) as `git check-ref-format --branch` accepts it, plus two guards of Relay's own: no leading "-"
+ * (option injection) and no leading "+" (a forced-push refspec). Everything else git allows is allowed, `+ ( ) { } = %`
+ * and non-ASCII included: real branches use them (`update-version/v1.0.16+67`, `…7–30hari`).
+ *
+ * Safe because no branch name ever reaches a shell: git runs through `execFile` argument arrays (no `shell: true`, no
+ * `sh -c` anywhere in the server), and GitLab paths encode it with `encodeURIComponent`.
  */
-const REF_CHARS_RE = /^[A-Za-z0-9][A-Za-z0-9._/{}-]*$/;
+// eslint-disable-next-line no-control-regex
+const REF_BAD_CHARS_RE = /[\u0000-\u0020\u007f~^:?*[\\]/;
 
 function refShapeOk(s: string, allowTrailingSlash: boolean): boolean {
-  if (s.length === 0 || s.length > 200) return false;
-  if (!REF_CHARS_RE.test(s)) return false;
-  if (s.includes('..') || s.includes('//')) return false;
+  if (s.length === 0 || s.length > 255) return false;
+  if (s.startsWith('-') || s.startsWith('+') || s.startsWith('/')) return false;
+  if (REF_BAD_CHARS_RE.test(s)) return false;
+  if (s.includes('..') || s.includes('//') || s.includes('@{') || s === '@') return false;
   if (s.endsWith('.')) return false;
   if (!allowTrailingSlash && s.endsWith('/')) return false;
   const segments = s.split('/');

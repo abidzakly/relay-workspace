@@ -1,6 +1,7 @@
 import { lstat, readdir, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { isSafeBranchName } from '@relay/shared';
 import { CockpitHostError } from './host';
 import { git } from './workspaceFs';
 
@@ -62,9 +63,12 @@ const TMP_PATTERNS: readonly [RegExp, TmpKind][] = [
 ];
 
 const GROUP_RE = /^[A-Za-z0-9_-][A-Za-z0-9._-]{0,119}$/;
-const COCKPIT_REF_RE = /^refs\/cockpit\/[A-Za-z0-9._-]+(\/[A-Za-z0-9._-]+)+$/;
-const BRANCH_RE = /^[A-Za-z0-9._][A-Za-z0-9._/-]{0,254}$/;
-const BASE_RE = /^[A-Za-z0-9._/-]{1,200}$/;
+/** `refs/cockpit/<kind>/<name…>`: the name part follows the branch rules (it often is a branch: pre-squash backups). */
+const isCockpitRef = (name: string) => {
+  if (!name.startsWith('refs/cockpit/')) return false;
+  const rest = name.slice('refs/cockpit/'.length);
+  return rest.includes('/') && isSafeBranchName(rest);
+};
 const SHA_RE = /^[0-9a-f]{40,64}$/;
 
 const tmpKind = (name: string): TmpKind | null =>
@@ -92,7 +96,7 @@ async function sizeOf(
 const lines = (s: string) => s.split('\n').filter(Boolean);
 
 export async function wsCleanupFacts(cwd: string, base: string): Promise<WsCleanupFacts> {
-  if (!BASE_RE.test(base) || base.startsWith('-')) {
+  if (!isSafeBranchName(base)) {
     throw new CockpitHostError('validation', 'invalid base branch', 422);
   }
   const gitDir = (await git(cwd, ['rev-parse', '--absolute-git-dir'])).trim();
@@ -164,7 +168,7 @@ export async function wsCleanupApply(
   base: string,
   items: readonly WsCleanupItem[],
 ): Promise<CleanupApplyResult> {
-  if (!BASE_RE.test(base) || base.startsWith('-')) {
+  if (!isSafeBranchName(base)) {
     throw new CockpitHostError('validation', 'invalid base branch', 422);
   }
   const done: string[] = [];
@@ -194,11 +198,7 @@ export async function wsCleanupApply(
           break;
         }
         case 'ref': {
-          if (
-            !COCKPIT_REF_RE.test(item.name) ||
-            item.name.includes('..') ||
-            !SHA_RE.test(item.sha)
-          ) {
+          if (!isCockpitRef(item.name) || !SHA_RE.test(item.sha)) {
             throw new Error('not a cockpit ref');
           }
           // Old-value check: a ref that changed since the scan is kept.
@@ -206,7 +206,7 @@ export async function wsCleanupApply(
           break;
         }
         case 'branch': {
-          if (!BRANCH_RE.test(item.name) || item.name.includes('..') || !SHA_RE.test(item.tip)) {
+          if (!isSafeBranchName(item.name) || !SHA_RE.test(item.tip)) {
             throw new Error('invalid branch');
           }
           if (item.name === head) throw new Error('checked out');

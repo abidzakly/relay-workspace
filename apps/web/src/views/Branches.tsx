@@ -253,6 +253,8 @@ export function Branches() {
           repo={repo}
           row={deleting}
           hasWorkspace={!!q.data.workspaceId}
+          workspaceId={q.data.workspaceId}
+          base={q.data.baseBranch}
           gitlabOk={q.data.sources.remote.ok}
           onClose={() => setDeleting(null)}
         />
@@ -354,6 +356,11 @@ function Row({
                   {r.track.behind}
                 </>
               )}
+            </span>
+          )}
+          {r.holder && (
+            <span className="br-tag" data-tone="muted" title={r.holder.path}>
+              worktree · {r.holder.name}
             </span>
           )}
           {r.track?.gone && (

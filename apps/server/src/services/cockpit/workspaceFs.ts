@@ -1,3 +1,4 @@
+import { isSafeBranchName } from '@relay/shared';
 import { execFile } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import {
@@ -376,7 +377,7 @@ export async function wsDiff(
   }
   if (mode === 'branch') {
     const b = base?.trim() || 'main';
-    if (!/^[A-Za-z0-9._/-]{1,200}$/.test(b) || b.startsWith('-')) {
+    if (!isSafeBranchName(b)) {
       throw new CockpitHostError('validation', 'invalid base branch', 422);
     }
     const mb = (await git(cwd, ['merge-base', b, 'HEAD'])).trim();

@@ -2,6 +2,7 @@ import {
   ArrowUp,
   Check,
   CircleSlash,
+  Copy,
   GitBranch,
   Laptop,
   Loader2,
@@ -13,6 +14,7 @@ import {
 import { useState, type ReactNode } from 'react';
 import { Link } from 'react-router';
 import type { BranchDeleteResult, BranchRow } from '@relay/shared';
+import { DirtyTreePanel } from '@/cockpit/DirtyTreePanel';
 import { TimeAgo } from '@/components/TimeAgo';
 import { Button } from '@/components/ui/button';
 import {
@@ -47,10 +49,39 @@ function remoteBlock(row: BranchRow, gitlabOk: boolean, repo: string): ReactNode
   return null;
 }
 
-function localBlock(row: BranchRow, hasWorkspace: boolean): string | null {
+function CopyCommand({ command }: { command: string }) {
+  const [done, setDone] = useState(false);
+  return (
+    <span className="db-cmd">
+      <code>{command}</code>
+      <button
+        type="button"
+        onClick={(e) => {
+          e.preventDefault();
+          void navigator.clipboard?.writeText(command).then(() => {
+            setDone(true);
+            window.setTimeout(() => setDone(false), 1400);
+          });
+        }}
+        aria-label="Copy the command"
+      >
+        {done ? <Check className="size-3" /> : <Copy className="size-3" />}
+      </button>
+    </span>
+  );
+}
+
+function localBlock(row: BranchRow, hasWorkspace: boolean): ReactNode {
   if (!hasWorkspace) return 'No workspace on this Mac holds this repo.';
   if (!row.local) return 'Not on this Mac.';
-  if (row.current) return 'Checked out right now: switch the workspace to another branch first.';
+  if (row.holder && !row.holder.managed) {
+    return (
+      <>
+        Checked out in a worktree Relay did not make. Remove it on the Mac first:
+        <CopyCommand command={`git worktree remove "${row.holder.path}"`} />
+      </>
+    );
+  }
   return null;
 }
 
@@ -111,12 +142,17 @@ export function DeleteBranchDialog({
   repo,
   row,
   hasWorkspace,
+  workspaceId,
+  base,
   gitlabOk,
   onClose,
 }: {
   repo: string;
   row: BranchRow;
   hasWorkspace: boolean;
+  /** The repo workspace on the Mac (to clear its tree before switching off the branch). */
+  workspaceId: string | null;
+  base: string;
   gitlabOk: boolean;
   onClose: () => void;
 }) {
@@ -127,8 +163,11 @@ export function DeleteBranchDialog({
   const [remote, setRemote] = useState(false);
   const [typed, setTyped] = useState('');
   const [result, setResult] = useState<BranchDeleteResult | null>(null);
+  // The branch is held (checked out here, or in a Relay worktree): free it first. Required to delete locally.
+  const [freeIt, setFreeIt] = useState(true);
 
-  const doLocal = local && lBlock === null;
+  const held = row.current || !!row.holder?.managed;
+  const doLocal = local && lBlock === null && (!held || freeIt);
   const doRemote = remote && rBlock === null;
   const needName = doRemote && row.mine !== true;
   const nameOk = !needName || typed.trim() === row.name;
@@ -136,6 +175,15 @@ export function DeleteBranchDialog({
     del.error instanceof ApiError && del.error.code === 'branch_unmerged'
       ? Number((del.error.details as { unique?: number } | undefined)?.unique ?? 0)
       : 0;
+  const code = del.error instanceof ApiError ? del.error.code : null;
+  const dirtyWorktree =
+    code === 'worktree_dirty'
+      ? Number(
+          (del.error as ApiError).details &&
+            ((del.error as ApiError).details as { count?: number }).count,
+        )
+      : null;
+  const wsDirty = code === 'ws_dirty';
   const ahead = row.track?.ahead ?? 0;
   const busy = del.isPending;
 
@@ -147,6 +195,8 @@ export function DeleteBranchDialog({
         local: doLocal,
         remote: doRemote,
         force,
+        removeWorktree: doLocal && !!row.holder?.managed,
+        ...(doLocal && row.current ? { switchTo: base } : {}),
         ...(needName ? { confirmName: typed.trim() } : {}),
       },
       { onSuccess: setResult },
@@ -244,6 +294,42 @@ export function DeleteBranchDialog({
                 blocked={lBlock}
                 onChange={setLocal}
               />
+              {local && lBlock === null && held && (
+                <label className="db-sub" data-on={freeIt}>
+                  <input
+                    type="checkbox"
+                    className="sr-only"
+                    checked={freeIt}
+                    onChange={(e) => setFreeIt(e.target.checked)}
+                  />
+                  <span className="db-check" aria-hidden>
+                    {freeIt && <Check className="size-3" />}
+                  </span>
+                  <span className="grid min-w-0 gap-0.5 text-xs">
+                    {row.current ? (
+                      <>
+                        <span className="text-sm font-medium">
+                          Switch the workspace to <span className="font-mono">{base}</span> first
+                        </span>
+                        <span className="text-muted-foreground">
+                          It is checked out right now. Uncommitted changes stop the switch: you can
+                          keep or set them aside.
+                        </span>
+                      </>
+                    ) : (
+                      <>
+                        <span className="text-sm font-medium">
+                          Also remove its worktree{' '}
+                          <span className="font-mono">{row.holder!.name}</span>
+                        </span>
+                        <span className="truncate text-muted-foreground" title={row.holder!.path}>
+                          {row.holder!.path}
+                        </span>
+                      </>
+                    )}
+                  </span>
+                </label>
+              )}
               <Target
                 icon={Server}
                 title="On origin (GitLab)"
@@ -288,7 +374,27 @@ export function DeleteBranchDialog({
                 </span>
               </p>
             )}
-            {del.error && unmerged === 0 && (
+            {dirtyWorktree !== null && (
+              <p className="db-unmerged" role="alert">
+                <TriangleAlert aria-hidden className="mt-0.5 size-4 shrink-0" />
+                <span>
+                  {dirtyWorktree > 0
+                    ? `${dirtyWorktree} uncommitted change${dirtyWorktree > 1 ? 's' : ''} in ${row.holder?.name ?? 'the worktree'} will be lost with it.`
+                    : `Relay could not read ${row.holder?.name ?? 'the worktree'}: whatever is uncommitted there is lost with it.`}
+                </span>
+              </p>
+            )}
+            {wsDirty && workspaceId && (
+              <DirtyTreePanel
+                key={workspaceId}
+                purpose="checkout"
+                target={base}
+                workspaceId={workspaceId}
+                disabled={busy}
+                onCleared={() => submit(false)}
+              />
+            )}
+            {del.error && unmerged === 0 && dirtyWorktree === null && !wsDirty && (
               <p className="text-sm text-destructive">{describeError(del.error)}</p>
             )}
           </div>
@@ -304,14 +410,14 @@ export function DeleteBranchDialog({
               <Button variant="ghost" onClick={onClose} disabled={busy}>
                 Cancel
               </Button>
-              {unmerged > 0 ? (
+              {unmerged > 0 || dirtyWorktree !== null ? (
                 <Button variant="destructive" onClick={() => submit(true)} disabled={busy}>
                   {busy ? (
                     <Loader2 className="size-4 motion-safe:animate-spin" />
                   ) : (
                     <Trash2 className="size-4" />
                   )}
-                  Delete anyway
+                  {dirtyWorktree !== null ? 'Remove and delete anyway' : 'Delete anyway'}
                 </Button>
               ) : (
                 <Button

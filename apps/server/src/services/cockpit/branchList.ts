@@ -17,6 +17,7 @@ const FORMAT = [
   '%(upstream)',
   '%(HEAD)',
   '%(authoremail)',
+  '%(worktreepath)',
 ].join(SEP);
 
 /** `ahead 2, behind 1` / `gone` / `` → track. Pure, exported for tests. */
@@ -37,6 +38,7 @@ export function parseBranchRefs(text: string): LocalBranch[] {
     local: false,
     remote: false,
     current: false,
+    worktreePath: null,
     sha: null,
     committedAt: null,
     author: null,
@@ -56,6 +58,7 @@ export function parseBranchRefs(text: string): LocalBranch[] {
       upstream = '',
       head = '',
       email = '',
+      worktree = '',
     ] = line.split(SEP);
     // `<a@b.c>` → `a@b.c`, lower-cased: compared with `git config user.email`.
     const authorEmail = email.trim().replace(/^<|>$/g, '').toLowerCase() || null;
@@ -75,6 +78,7 @@ export function parseBranchRefs(text: string): LocalBranch[] {
       // The local head describes the branch as it will run; the remote fills in only what is missing.
       b.local = true;
       b.current = head.trim() === '*';
+      b.worktreePath = worktree.trim() || null;
       b.sha = sha || null;
       b.committedAt = at;
       b.author = author || null;

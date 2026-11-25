@@ -537,6 +537,8 @@ async function main(): Promise<void> {
         audit,
         host: cockpitHost,
         workspaces,
+        sessions,
+        workflow,
       }),
       testBenchFlow: benchFlow,
       devices,

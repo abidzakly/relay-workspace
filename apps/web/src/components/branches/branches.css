@@ -389,6 +389,49 @@
 .db-target[data-on='true'][data-danger='true'] .db-check {
   background: var(--destructive);
 }
+.db-sub {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.6rem;
+  margin: -0.25rem 0 0 1.75rem;
+  padding: 0.6rem 0.75rem;
+  border-radius: 0.6rem;
+  cursor: pointer;
+  border-left: 2px solid var(--hairline);
+  background: color-mix(in oklch, var(--foreground) 3%, transparent);
+}
+.db-sub[data-on='true'] .db-check {
+  background: var(--foreground);
+  box-shadow: none;
+}
+.db-sub:has(input:focus-visible) {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+}
+.db-cmd {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  margin-top: 0.35rem;
+  padding: 0.3rem 0.5rem;
+  border-radius: 0.45rem;
+  font-family: var(--font-mono);
+  font-size: 0.7rem;
+  color: var(--terminal-foreground);
+  background: var(--terminal);
+}
+.db-cmd code {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.db-cmd button {
+  flex-shrink: 0;
+  padding: 0.2rem;
+  border-radius: 0.3rem;
+}
+.db-cmd button:hover {
+  background: color-mix(in oklch, currentColor 15%, transparent);
+}
 .db-unmerged {
   display: flex;
   gap: 0.5rem;

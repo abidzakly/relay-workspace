@@ -1,3 +1,4 @@
+import { basename, dirname, join, sep } from 'node:path';
 import { and, eq } from 'drizzle-orm';
 import type {
   BranchDeleteBody,
@@ -18,6 +19,9 @@ import { guardedWrite } from '../dryRun';
 import { cardForBranch, removeCardLink, setCardLink } from '../cardLinks';
 import { CockpitHostError, type CockpitHost } from '../cockpit/host';
 import type { WorkspaceService } from '../cockpit/workspaces';
+import type { CockpitSessionService } from '../cockpit/sessionService';
+import type { CockpitWorkflowService } from '../cockpit/workflow';
+import { WORKTREES_DIR } from '../cockpit/workflowOps';
 import { GitlabApiError, GitlabService } from '../gitlabService';
 import type { HttpClient } from '../httpClient';
 import { listCards } from '../notionStore';
@@ -30,6 +34,10 @@ export interface BranchesDeps {
   audit: AuditWriter;
   host: CockpitHost;
   workspaces: WorkspaceService;
+  /** Sessions running in a worktree keep it from being removed. */
+  sessions?: CockpitSessionService;
+  /** Switches the repo workspace off a branch before it is deleted. */
+  workflow?: CockpitWorkflowService;
 }
 
 const errState = (code: string, message: string): BranchSourceState => ({
@@ -136,6 +144,8 @@ export class BranchesService {
       merged: false,
       protected: false,
       mine: null,
+      worktreePath: null,
+      holder: null,
       mr: null,
       card: null,
     });
@@ -204,6 +214,24 @@ export class BranchesService {
       }
     }
 
+    // Who else holds a branch: a worktree (Relay's own under .cockpit-worktrees, or one made by hand).
+    if (workspaceId) {
+      const repoWs = this.d.workspaces.get(workspaceId);
+      const root = join(dirname(repoWs.absPath), WORKTREES_DIR, basename(repoWs.absPath)) + sep;
+      const worktrees = this.d.workspaces.worktreesOf(workspaceId);
+      for (const row of rows.values()) {
+        const path = row.worktreePath;
+        if (!path || row.current || path === repoWs.absPath) continue;
+        const ws = worktrees.find((w) => w.absPath === path) ?? null;
+        row.holder = {
+          path,
+          workspaceId: ws?.id ?? null,
+          name: ws?.name ?? basename(path),
+          managed: path.startsWith(root),
+        };
+      }
+    }
+
     return {
       repoId,
       baseBranch: base,
@@ -247,7 +275,16 @@ export class BranchesService {
    * each part reports on its own, so a remote failure after a local delete is said as it is.
    */
   async delete(body: BranchDeleteBody): Promise<BranchDeleteResult> {
-    const { repo: repoId, branch, local, remote, force = false, confirmName } = body;
+    const {
+      repo: repoId,
+      branch,
+      local,
+      remote,
+      force = false,
+      confirmName,
+      removeWorktree = false,
+      switchTo,
+    } = body;
     const list = await this.list(repoId);
     const row = list.rows.find((r) => r.name === branch);
     if (!row)
@@ -264,11 +301,68 @@ export class BranchesService {
       }
       if (!row.local) throw new ActionError(409, 'not_local', `${branch} is not on this Mac.`);
       if (row.current) {
-        throw new ActionError(
-          409,
-          'branch_checked_out_here',
-          `${branch} is checked out in the workspace: switch it to another branch first.`,
-        );
+        if (!switchTo) {
+          throw new ActionError(
+            409,
+            'branch_checked_out_here',
+            `${branch} is checked out in the workspace: switch it to ${list.baseBranch} first.`,
+            { base: list.baseBranch },
+          );
+        }
+        if (switchTo !== list.baseBranch || !this.d.workflow) {
+          throw new ActionError(
+            422,
+            'bad_switch',
+            `Only a switch to ${list.baseBranch} is offered here.`,
+          );
+        }
+      }
+      if (row.holder) {
+        const h = row.holder;
+        if (!h.managed) {
+          throw new ActionError(
+            409,
+            'worktree_not_relay',
+            `${branch} is checked out in a worktree Relay did not make (${h.path}). Remove it on the Mac first.`,
+            { path: h.path, command: `git worktree remove "${h.path}"` },
+          );
+        }
+        if (!removeWorktree) {
+          throw new ActionError(
+            409,
+            'branch_in_worktree',
+            `${branch} is checked out in the worktree ${h.name}: remove that worktree too.`,
+            { path: h.path, workspaceId: h.workspaceId, name: h.name },
+          );
+        }
+        if (h.workspaceId && this.d.sessions) {
+          const live = (await this.d.sessions.list()).some(
+            (x) => x.workspaceId === h.workspaceId && x.state !== 'exited',
+          );
+          if (live) {
+            throw new ActionError(
+              409,
+              'agent_running',
+              `A session is still running in ${h.name}: stop it first, its files would vanish.`,
+            );
+          }
+        }
+        if (!force) {
+          const status = await this.d.host
+            .wsStatus({ path: h.path, wsId: h.workspaceId ?? list.workspaceId })
+            .catch(() => null);
+          const count = status ? status.dirty.length : -1;
+          if (count !== 0) {
+            throw new ActionError(
+              409,
+              'worktree_dirty',
+              count > 0
+                ? `${h.name} has ${count} uncommitted change${count > 1 ? 's' : ''}: removing it loses them.`
+                : `Relay could not read ${h.name}: it may hold uncommitted changes.`,
+              { count, path: h.path },
+            );
+          }
+        }
       }
     }
     if (remote) {
@@ -319,6 +413,23 @@ export class BranchesService {
     };
 
     if (local && list.workspaceId) {
+      // Free the branch first: off the workspace's HEAD, out of its worktree. Failures here leave everything as is.
+      if (row.current && switchTo && this.d.workflow) {
+        await this.d.workflow.checkoutBranch(list.workspaceId, switchTo);
+      }
+      if (row.holder?.managed && removeWorktree) {
+        const h = row.holder;
+        if (h.workspaceId) await this.d.workspaces.removeWorktree(h.workspaceId);
+        else await this.d.host.wsRemoveWorktree(this.d.workspaces.ref(list.workspaceId), h.path);
+        this.d.audit.write({
+          actor: 'user',
+          action: 'worktree.remove',
+          targetType: 'worktree',
+          targetId: h.path,
+          before: { branch, workspaceId: h.workspaceId, force },
+          after: null,
+        });
+      }
       try {
         const r = await this.d.host.wsDeleteBranch(
           this.d.workspaces.ref(list.workspaceId),
