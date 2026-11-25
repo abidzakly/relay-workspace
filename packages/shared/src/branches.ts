@@ -15,6 +15,8 @@ export const LocalBranchSchema = z.object({
   remote: z.boolean(),
   /** Checked out in the repo workspace. */
   current: z.boolean(),
+  /** The worktree that has it checked out (the repo workspace's own path when `current`). Older agents: null. */
+  worktreePath: z.string().nullable().default(null),
   sha: z.string().nullable(),
   committedAt: EpochMsSchema.nullable(),
   author: z.string().nullable(),
@@ -70,6 +72,18 @@ export const BranchRowSchema = LocalBranchSchema.extend({
     })
     .nullable(),
   card: BranchCardRefSchema.nullable(),
+  /** Checked out in another worktree: deleting the branch needs that worktree gone first. */
+  holder: z
+    .object({
+      path: z.string(),
+      /** Its cockpit workspace, when Relay knows it. */
+      workspaceId: z.string().nullable(),
+      name: z.string(),
+      /** Made by Relay (under `.cockpit-worktrees`): Relay may remove it. */
+      managed: z.boolean(),
+    })
+    .nullable()
+    .default(null),
 });
 export type BranchRow = z.infer<typeof BranchRowSchema>;
 
@@ -107,8 +121,12 @@ export const BranchDeleteBodySchema = z
     branch: BranchNameSchema,
     local: z.boolean(),
     remote: z.boolean(),
-    /** `git branch -D`: drop commits no other branch has. */
+    /** `git branch -D`: drop commits no other branch has (and a held worktree's uncommitted changes). */
     force: z.boolean().default(false),
+    /** The branch is checked out in a Relay worktree: remove that worktree first. */
+    removeWorktree: z.boolean().default(false),
+    /** The branch is checked out in the repo workspace: switch it to this (the base branch) first. */
+    switchTo: BranchNameSchema.optional(),
     confirmName: z.string().max(255).optional(),
   })
   .refine((b) => b.local || b.remote, 'pick where to delete');
