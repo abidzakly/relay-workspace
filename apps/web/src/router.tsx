@@ -22,6 +22,7 @@ const DeckView = lazy(() =>
 );
 const MrCreate = lazy(() => import('@/views/MrCreate').then((m) => ({ default: m.MrCreate })));
 const TestBench = lazy(() => import('@/views/TestBench').then((m) => ({ default: m.TestBench })));
+const Branches = lazy(() => import('@/views/Branches').then((m) => ({ default: m.Branches })));
 const Cockpit = lazy(() => import('@/views/Cockpit').then((m) => ({ default: m.Cockpit })));
 const Kpi = lazy(() => import('@/views/Kpi').then((m) => ({ default: m.Kpi })));
 const MrDetail = lazy(() => import('@/views/MrDetail').then((m) => ({ default: m.MrDetail })));
@@ -93,6 +94,8 @@ export const router = createBrowserRouter([
       { path: 'review/:source/:id/deck', element: page(DeckView) },
       { path: 'mr-create/:repo', element: page(MrCreate) },
       { path: 'test-bench/:repo', element: page(TestBench) },
+      { path: 'branches', element: page(Branches) },
+      { path: 'branches/:repo', element: page(Branches) },
       { path: 'cockpit', element: page(Cockpit) },
       { path: 'sync', element: page(SyncHealth) },
       { path: 'release', element: page(ReleaseTrain) },

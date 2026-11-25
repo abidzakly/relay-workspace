@@ -1,3 +1,4 @@
+import { cardForBranch } from './cardLinks';
 import { eq } from 'drizzle-orm';
 import {
   type DeckSource,
@@ -29,7 +30,6 @@ import { GitlabApiError, GitlabService } from './gitlabService';
 import type { HttpClient } from './httpClient';
 import { buildMrPayload, mrTemplate } from './mrTemplate';
 import { mapGitlabError } from './mrActions';
-import { listCards } from './notionStore';
 import type { AiService } from './ai/aiService';
 
 /**
@@ -132,7 +132,7 @@ export class MrCreateService {
     const base = repo.baseBranch;
     if (branch === base)
       throw new MrCreateError(422, 'base_branch', 'Pick a feature branch, not the base branch.');
-    const card = listCards(this.d.store).find((c) => c.branchName?.trim() === branch) ?? null;
+    const card = cardForBranch(this.d.store, branch, repoId)?.card ?? null;
     const me = this.d.config.getGlobal().gitlab.myUsername ?? null;
     const template = mrTemplate({
       branch,
@@ -245,7 +245,7 @@ export class MrCreateService {
     const repo = this.d.config.getRepo(repoId);
     const svc = this.svc(repoId);
     const compare = await svc.compare(base || repo!.baseBranch, branch).catch(mapGitlabError);
-    const card = listCards(this.d.store).find((c) => c.branchName?.trim() === branch);
+    const card = cardForBranch(this.d.store, branch, repoId)?.card;
     const diff = compare.files
       .map((f) => `### ${f.path}\n${f.diff ?? '(binary / terlalu besar)'}`)
       .join('\n\n')

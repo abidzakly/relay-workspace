@@ -1,3 +1,4 @@
+import { cardForBranch } from '../cardLinks';
 import { randomUUID } from 'node:crypto';
 import { and, desc, eq, isNull } from 'drizzle-orm';
 import type {
@@ -27,7 +28,6 @@ import {
 } from '../../db/schema';
 import type { EventBus } from '../../sync/eventBus';
 import { ActionError } from '../actionError';
-import { listCards } from '../notionStore';
 import { NotionApiError, type NotionService } from '../notionService';
 import { parseBody, parseFigmaUrl, type ParsedBody } from './body';
 
@@ -72,8 +72,9 @@ export class TestBenchService {
 
   // ── lookups
 
-  cardOf(branch: string): Card | null {
-    return listCards(this.d.store).find((c) => c.branchName?.trim() === branch) ?? null;
+  /** A card linked to the branch in Relay first, else the card whose Branch formula is the branch. */
+  cardOf(branch: string, repoId?: string): Card | null {
+    return cardForBranch(this.d.store, branch, repoId)?.card ?? null;
   }
 
   private requireCard(branch: string): Card {
@@ -202,7 +203,7 @@ export class TestBenchService {
     branch: string,
     opts: { refresh?: boolean } = {},
   ): Promise<TestBenchState> {
-    const card = this.cardOf(branch);
+    const card = this.cardOf(branch, repoId);
     const headSha = await this.d.headOf(repoId, branch).catch(() => null);
     let body: CardBody | null = null;
     let bodyError: string | null = null;

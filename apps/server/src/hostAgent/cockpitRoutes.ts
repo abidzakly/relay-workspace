@@ -30,6 +30,8 @@ const WsSchemas = {
   validate: z.object({ ref: RefSchema }),
   'agent-rules': z.object({ ref: RefSchema }),
   status: z.object({ ref: RefSchema }),
+  'list-branches': z.object({ ref: RefSchema }),
+  fetch: z.object({ ref: RefSchema }),
   tree: z.object({ ref: RefSchema }),
   checkpoint: z.object({ ref: RefSchema }),
   diff: z.object({
@@ -206,6 +208,10 @@ export function registerCockpitAgentRoutes(app: FastifyInstance, host: LocalCock
             return { ok: true };
           case 'status':
             return await host.wsStatus(b.ref);
+          case 'list-branches':
+            return await host.wsListBranches(b.ref);
+          case 'fetch':
+            return { fetchFailed: await host.wsFetch(b.ref) };
           case 'tree':
             return await host.wsTree(b.ref);
           case 'checkpoint':

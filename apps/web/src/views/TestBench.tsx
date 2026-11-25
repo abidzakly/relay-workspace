@@ -1,3 +1,6 @@
+import { BranchSwitcher } from '@/components/branches/BranchSwitcher';
+import { QuickRunBanner } from '@/components/branches/QuickRunBanner';
+import { branchesPath } from '@/lib/branchesApi';
 import { useQueryClient } from '@tanstack/react-query';
 import {
   ArrowLeft,
@@ -223,7 +226,11 @@ export function TestBench() {
       type="button"
       className="rv-icon-btn"
       aria-label="Back"
-      onClick={() => void (locationKey === 'default' ? navigate(mrCreatePath) : navigate(-1))}
+      onClick={() =>
+        void (locationKey === 'default'
+          ? navigate(q.data && !q.data.card ? branchesPath(repo) : mrCreatePath)
+          : navigate(-1))
+      }
     >
       <ArrowLeft className="size-4" />
     </button>
@@ -279,6 +286,8 @@ export function TestBench() {
     );
 
   const unauthorized = (devices.data?.devices ?? []).filter((d) => d.state === 'unauthorized');
+  // No card: run the app as is. The AC, Figma and "mark tested" parts need a card.
+  const quick = !st.card;
 
   return (
     <div className="grid w-full min-w-0 gap-4 p-1 sm:p-4">
@@ -288,6 +297,7 @@ export function TestBench() {
           <PageTitle>Test on device</PageTitle>
           <p className="truncate font-mono text-xs text-muted-foreground">{branch}</p>
         </div>
+        <BranchSwitcher repo={repo} branch={branch} />
         {st.card?.url && (
           <Button size="sm" variant="ghost" asChild>
             <a href={safeHref(st.card.url) ?? undefined} target="_blank" rel="noopener noreferrer">
@@ -314,16 +324,19 @@ export function TestBench() {
         </Button>
       </header>
 
-      <MrSteps
-        steps={[
-          { label: 'Test on device', state: 'current' },
-          { label: 'Review deck', state: 'todo', to: mrCreatePath },
-          { label: 'Create MR', state: 'todo', to: mrCreatePath },
-        ]}
-      />
+      {quick && <QuickRunBanner repo={repo} branch={branch} />}
+      {!quick && (
+        <MrSteps
+          steps={[
+            { label: 'Test on device', state: 'current' },
+            { label: 'Review deck', state: 'todo', to: mrCreatePath },
+            { label: 'Create MR', state: 'todo', to: mrCreatePath },
+          ]}
+        />
+      )}
 
       {st.card && <p className="text-sm">{st.card.title}</p>}
-      {(st.bodyError || refreshError) && (
+      {!quick && (st.bodyError || refreshError) && (
         <Alert variant="warning">
           <AlertTitle>Card body</AlertTitle>
           <AlertDescription>
@@ -338,47 +351,58 @@ export function TestBench() {
         </p>
       )}
 
-      <Readiness st={st} />
+      {!quick && <Readiness st={st} />}
+
+      {!quick && (
+        <div
+          role="tablist"
+          aria-label="Test Bench panes"
+          className="flex rounded-control border p-0.5 xl:hidden"
+        >
+          {PANES.map(({ id, label, icon: Icon }) => (
+            <button
+              key={id}
+              role="tab"
+              type="button"
+              aria-selected={pane === id}
+              onClick={() => setPane(id)}
+              className={cn(
+                'tactile flex h-9 flex-1 items-center justify-center gap-1.5 rounded-control text-sm',
+                pane === id ? 'bg-accent font-medium' : 'text-muted-foreground',
+              )}
+            >
+              <Icon aria-hidden className="size-4" /> {label}
+            </button>
+          ))}
+        </div>
+      )}
 
       <div
-        role="tablist"
-        aria-label="Test Bench panes"
-        className="flex rounded-control border p-0.5 xl:hidden"
+        className={cn(
+          'grid min-w-0 gap-6',
+          quick
+            ? 'mx-auto w-full max-w-xl'
+            : 'xl:grid-cols-[minmax(0,1fr)_minmax(18rem,22rem)_minmax(0,1fr)] xl:items-start',
+        )}
       >
-        {PANES.map(({ id, label, icon: Icon }) => (
-          <button
-            key={id}
-            role="tab"
-            type="button"
-            aria-selected={pane === id}
-            onClick={() => setPane(id)}
-            className={cn(
-              'tactile flex h-9 flex-1 items-center justify-center gap-1.5 rounded-control text-sm',
-              pane === id ? 'bg-accent font-medium' : 'text-muted-foreground',
-            )}
-          >
-            <Icon aria-hidden className="size-4" /> {label}
-          </button>
-        ))}
-      </div>
-
-      <div className="grid min-w-0 gap-6 xl:grid-cols-[minmax(0,1fr)_minmax(18rem,22rem)_minmax(0,1fr)] xl:items-start">
-        <div className={cn('min-w-0', pane !== 'checks' && 'hidden xl:block')}>
-          <AcChecklist
-            repo={repo}
-            branch={branch}
-            st={st}
-            selectedKey={selectedKey}
-            onSelect={(k) => setSelectedKey((cur) => (cur === k ? null : k))}
-            onAddFinding={(acKey) => setDialog({ editing: null, acKey })}
-            onEditFinding={(f) => setDialog({ editing: f, acKey: f.acKey })}
-          />
-        </div>
+        {!quick && (
+          <div className={cn('min-w-0', pane !== 'checks' && 'hidden xl:block')}>
+            <AcChecklist
+              repo={repo}
+              branch={branch}
+              st={st}
+              selectedKey={selectedKey}
+              onSelect={(k) => setSelectedKey((cur) => (cur === k ? null : k))}
+              onAddFinding={(acKey) => setDialog({ editing: null, acKey })}
+              onEditFinding={(f) => setDialog({ editing: f, acKey: f.acKey })}
+            />
+          </div>
+        )}
 
         <div
           className={cn(
             'grid min-w-0 grid-cols-[minmax(0,1fr)] content-start gap-3 xl:sticky xl:top-4',
-            pane !== 'phone' && 'hidden xl:grid',
+            pane !== 'phone' && !quick && 'hidden xl:grid',
           )}
         >
           <Dropdown
@@ -458,13 +482,15 @@ export function TestBench() {
             onAutoPrepared={clearAutoRun}
             onOpenLog={() => setLogTab('app')}
           />
-          <AiRunPanel
-            repo={repo}
-            branch={branch}
-            st={st}
-            serial={pickedIsAdb ? serial : null}
-            onOpenLog={() => setLogTab('agent')}
-          />
+          {!quick && (
+            <AiRunPanel
+              repo={repo}
+              branch={branch}
+              st={st}
+              serial={pickedIsAdb ? serial : null}
+              onOpenLog={() => setLogTab('agent')}
+            />
+          )}
           {pickedIsAdb ? (
             <DeviceMirror
               key={serial}
@@ -479,86 +505,90 @@ export function TestBench() {
           )}
         </div>
 
-        <div className={cn('min-w-0', pane !== 'design' && 'hidden xl:block')}>
-          <FigmaPanel
-            repo={repo}
-            branch={branch}
-            st={st}
-            selectedKey={selectedKey}
-            mode={mode}
-            onMode={setMode}
-            opacity={opacity}
-            onOpacity={setOpacity}
-          />
-        </div>
+        {!quick && (
+          <div className={cn('min-w-0', pane !== 'design' && 'hidden xl:block')}>
+            <FigmaPanel
+              repo={repo}
+              branch={branch}
+              st={st}
+              selectedKey={selectedKey}
+              mode={mode}
+              onMode={setMode}
+              opacity={opacity}
+              onOpacity={setOpacity}
+            />
+          </div>
+        )}
       </div>
 
-      <div className="sticky bottom-0 z-30 rounded-surface border bg-background px-4 py-3 shadow-lift">
-        <div className="flex flex-wrap items-center gap-2">
-          <p className="hidden min-w-0 flex-1 text-sm text-muted-foreground sm:block">
-            {st.readiness.ready
-              ? 'Every check passed. Mark it tested to continue to the review deck.'
-              : st.readiness.blockers.join(' · ')}
-          </p>
-          {(finish.error || fix.error) && (
-            <p className="w-full text-sm text-destructive">
-              {describeError(finish.error ?? fix.error)}
+      {!quick && (
+        <div className="sticky bottom-0 z-30 rounded-surface border bg-background px-4 py-3 shadow-lift">
+          <div className="flex flex-wrap items-center gap-2">
+            <p className="hidden min-w-0 flex-1 text-sm text-muted-foreground sm:block">
+              {st.readiness.ready
+                ? 'Every check passed. Mark it tested to continue to the review deck.'
+                : st.readiness.blockers.join(' · ')}
             </p>
-          )}
-          {fixing > 0 && (
-            <p className="w-full text-xs text-muted-foreground">
-              An agent is fixing {fixing} finding{fixing > 1 ? 's' : ''}. They move to Regression
-              checks when its commit lands.
-            </p>
-          )}
-          {openFindings > 0 && run?.status === 'done' && run.verdict === 'not_ready' && (
-            <Button
-              variant="secondary"
-              className="h-auto min-h-9 w-full whitespace-normal text-center sm:w-auto"
-              disabled={fix.isPending}
-              onClick={sendToAgent}
-            >
-              {fix.isPending ? (
-                <Loader2 className="size-4 motion-safe:animate-spin" />
-              ) : (
-                <Sparkles className="size-4" />
-              )}
-              Fix {openFindings} with AI
-            </Button>
-          )}
-          {run?.status === 'done' && run.verdict === 'ready' && st.testOk ? (
-            <Button
-              asChild
-              className="h-auto min-h-9 w-full whitespace-normal text-center sm:w-auto"
-            >
-              <Link to={mrCreatePath}>Continue to review deck</Link>
-            </Button>
-          ) : (
-            <>
+            {(finish.error || fix.error) && (
+              <p className="w-full text-sm text-destructive">
+                {describeError(finish.error ?? fix.error)}
+              </p>
+            )}
+            {fixing > 0 && (
+              <p className="w-full text-xs text-muted-foreground">
+                An agent is fixing {fixing} finding{fixing > 1 ? 's' : ''}. They move to Regression
+                checks when its commit lands.
+              </p>
+            )}
+            {openFindings > 0 && run?.status === 'done' && run.verdict === 'not_ready' && (
               <Button
-                variant="outline"
+                variant="secondary"
                 className="h-auto min-h-9 w-full whitespace-normal text-center sm:w-auto"
-                disabled={!canNotReady || finish.isPending}
-                onClick={() => finishWith('not_ready')}
+                disabled={fix.isPending}
+                onClick={sendToAgent}
               >
-                <XCircle className="size-4" /> Not ready, save findings
-              </Button>
-              <Button
-                className="h-auto min-h-9 w-full whitespace-normal text-center sm:w-auto"
-                disabled={!st.readiness.ready || finish.isPending}
-                onClick={() => finishWith('ready')}
-              >
-                {finish.isPending ? (
+                {fix.isPending ? (
                   <Loader2 className="size-4 motion-safe:animate-spin" />
                 ) : (
-                  <CheckCircle2 className="size-4" />
+                  <Sparkles className="size-4" />
                 )}
-                Tested: all AC and Figma pass
+                Fix {openFindings} with AI
               </Button>
-            </>
-          )}
+            )}
+            {run?.status === 'done' && run.verdict === 'ready' && st.testOk ? (
+              <Button
+                asChild
+                className="h-auto min-h-9 w-full whitespace-normal text-center sm:w-auto"
+              >
+                <Link to={mrCreatePath}>Continue to review deck</Link>
+              </Button>
+            ) : (
+              <>
+                <Button
+                  variant="outline"
+                  className="h-auto min-h-9 w-full whitespace-normal text-center sm:w-auto"
+                  disabled={!canNotReady || finish.isPending}
+                  onClick={() => finishWith('not_ready')}
+                >
+                  <XCircle className="size-4" /> Not ready, save findings
+                </Button>
+                <Button
+                  className="h-auto min-h-9 w-full whitespace-normal text-center sm:w-auto"
+                  disabled={!st.readiness.ready || finish.isPending}
+                  onClick={() => finishWith('ready')}
+                >
+                  {finish.isPending ? (
+                    <Loader2 className="size-4 motion-safe:animate-spin" />
+                  ) : (
+                    <CheckCircle2 className="size-4" />
+                  )}
+                  Tested: all AC and Figma pass
+                </Button>
+              </>
+            )}
+          </div>
         </div>
-      </div>
+      )}
 
       {dialog && st.body && (
         <FindingDialog

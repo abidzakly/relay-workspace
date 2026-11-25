@@ -1,3 +1,4 @@
+import { BranchesService } from './services/branches/branchesService';
 import { homedir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { AuditWriter } from './audit/auditLog';
@@ -519,6 +520,15 @@ async function main(): Promise<void> {
     scripts,
     cockpit: {
       testBench,
+      branches: new BranchesService({
+        config: store,
+        store: app,
+        http,
+        log,
+        audit,
+        host: cockpitHost,
+        workspaces,
+      }),
       testBenchFlow: benchFlow,
       devices,
       figma,
