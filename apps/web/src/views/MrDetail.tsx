@@ -1,3 +1,4 @@
+import { RunBranchButton } from '@/components/runBranch/RunBranchButton';
 import * as DialogPrimitive from '@radix-ui/react-dialog';
 import {
   ArrowRight,
@@ -339,6 +340,9 @@ export function MrDetail() {
                         <Wand2 className="size-4" aria-hidden />
                         <span className="hidden sm:inline">Make more changes</span>
                       </button>
+                    )}
+                    {q.data && (
+                      <RunBranchButton repo={q.data.mr.repoId} branch={q.data.mr.sourceBranch} />
                     )}
                     <Link
                       {...reviewLink(repo, n, `/mrs/${repo}/${iid}${search}`, 'MR detail')}

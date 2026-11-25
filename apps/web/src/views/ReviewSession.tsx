@@ -1,3 +1,4 @@
+import { RunBranchButton } from '@/components/runBranch/RunBranchButton';
 import { ArrowLeft, ExternalLink, GitBranch, GitCommitHorizontal, MoveRight } from 'lucide-react';
 import { useEffect } from 'react';
 import { Link, Navigate, useLocation, useParams, useSearchParams } from 'react-router';
@@ -228,6 +229,7 @@ export function MrReviewSession() {
           {!mr.repoId.startsWith('~') && (
             <ModeSwitch source={{ kind: 'mr', repoId: mr.repoId, iid: mr.iid }} />
           )}
+          <RunBranchButton repo={mr.repoId} branch={mr.sourceBranch} variant="icon" />
           <GitlabLink href={mr.webUrl} />
         </>
       }
@@ -351,6 +353,7 @@ export function CompareReviewSession() {
           {!d.repoId.startsWith('~') && (
             <ModeSwitch source={{ kind: 'compare', repoId: d.repoId, from: d.from, to: d.to }} />
           )}
+          <RunBranchButton repo={d.repoId} branch={d.to} variant="icon" />
           <GitlabLink href={d.webUrl} />
         </>
       }

@@ -18,6 +18,7 @@ import type {
 import {
   CockpitHostError,
   type AiRunRequest,
+  type CheckoutBranchResult,
   type CockpitHost,
   type CockpitHostHealth,
   type SessionStartOpts,
@@ -223,7 +224,7 @@ export class RemoteCockpitHost implements CockpitHost {
     return this.ws('commit', { ref, ...opts });
   }
 
-  wsCheckoutBranch(ref: WsRef, branch: string): Promise<{ branch: string; synced: boolean }> {
+  wsCheckoutBranch(ref: WsRef, branch: string): Promise<CheckoutBranchResult> {
     return this.ws('checkout-branch', { ref, branch });
   }
 
