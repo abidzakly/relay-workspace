@@ -6,6 +6,7 @@ import {
 } from '../../hostAgent/client';
 import type { CockpitSession, DiffFile, FlutterDevice, RunTargets } from '@relay/shared';
 import { readNdjson } from '../../hostAgent/protocol';
+import type { HostAgentModels } from './agentAccount';
 import type { SessionEvent } from './sessions';
 import type { ExistingBranch, IntegrityStep } from './workflowOps';
 import type {
@@ -68,6 +69,17 @@ export class RemoteCockpitHost implements CockpitHost {
   ai(req: AiRunRequest): Promise<{ text: string }> {
     return viaAgent(() =>
       this.agent.json<{ text: string }>('POST', '/v1/cockpit/ai', req, req.timeoutMs + 10_000),
+    );
+  }
+
+  agentModels(refresh = false): Promise<HostAgentModels> {
+    return viaAgent(() =>
+      this.agent.json<HostAgentModels>(
+        'GET',
+        `/v1/cockpit/agent-models${refresh ? '?refresh=1' : ''}`,
+        undefined,
+        60_000,
+      ),
     );
   }
 

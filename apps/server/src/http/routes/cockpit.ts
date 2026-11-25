@@ -2,6 +2,7 @@ import type { FastifyInstance } from 'fastify';
 import type { AiService } from '../../services/ai/aiService';
 import { AiError } from '../../services/ai/provider';
 import { CockpitHostError, type CockpitHost } from '../../services/cockpit/host';
+import { registerAiModelRoutes } from './aiModels';
 import {
   DeckExplainRequestSchema,
   DeckGradeRequestSchema,
@@ -239,6 +240,7 @@ export function registerCockpitRoutes(app: FastifyInstance, deps: CockpitDeps): 
   app.get('/api/ai/status', async () => deps.ai.status());
   // Real round trips: not read-only in cost (a few tokens), changes no configuration, so no audit row.
   app.post('/api/ai/test', async () => deps.ai.test());
+  registerAiModelRoutes(app, deps.host);
   app.get('/api/cockpit/health', async () => wrapCockpit(() => deps.host.health()));
 
   // ── Workspaces: directories on the Mac; the host re-validates every path

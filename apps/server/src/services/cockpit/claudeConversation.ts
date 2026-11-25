@@ -10,6 +10,7 @@ import {
 } from '@relay/shared';
 import type { NodePtyProcess } from '../ptyBackend';
 import { launchSpec, signalTree } from '../../util/platform';
+import { isModelUnavailable, modelUnavailableReason } from '../ai/modelFallback';
 
 /**
  * A Claude session as a document instead of a terminal: `claude -p` speaking stream-json over stdio, the same control
@@ -165,6 +166,9 @@ interface PendingAsk {
   ask: 'plan' | 'question' | 'permission';
 }
 
+/** Where a refused model falls back to: the CLI's own default for this login. */
+const FALLBACK_MODEL = 'default';
+
 export class ClaudeConversation implements NodePtyProcess {
   private readonly child: ChildProcessWithoutNullStreams;
   private readonly cwd: string;
@@ -188,6 +192,12 @@ export class ClaudeConversation implements NodePtyProcess {
   private readonly asks = new Map<string, PendingAsk>();
   private readonly shownTools = new Set<string>();
   private stderr = '';
+  /** The model the session runs on now, as last set. */
+  private model: string | null = null;
+  /** The last prompt sent, so a turn refused for its model can be sent again on the default. */
+  private lastPrompt: string | null = null;
+  /** `set_model` requests in flight: request id → model. */
+  private readonly modelRequests = new Map<string, string>();
 
   constructor(o: ClaudeConversationOptions) {
     this.cwd = o.cwd;
@@ -218,7 +228,10 @@ export class ClaudeConversation implements NodePtyProcess {
       this.finish(1);
     });
     this.child.on('close', (code) => this.finish(code ?? 0));
-    if (o.model) this.emit({ k: 'model', model: o.model });
+    if (o.model) {
+      this.model = o.model;
+      this.emit({ k: 'model', model: o.model });
+    }
   }
 
   get pid(): number {
@@ -271,8 +284,39 @@ export class ClaudeConversation implements NodePtyProcess {
     if (!this.exited) this.child.stdin.write(`${JSON.stringify(o)}\n`);
   }
 
-  private control(request: Json): void {
-    this.send({ type: 'control_request', request_id: randomUUID(), request });
+  private control(request: Json): string {
+    const id = randomUUID();
+    this.send({ type: 'control_request', request_id: id, request });
+    return id;
+  }
+
+  /** Switches the model and remembers the request, so a refusal can fall back. */
+  private setModel(model: string): void {
+    this.modelRequests.set(this.control({ subtype: 'set_model', model }), model);
+    this.model = model;
+    this.emit({ k: 'model', model });
+  }
+
+  /**
+   * The model was refused (outside the plan, unknown id): move to the CLI's default, tell the user, and send the
+   * refused turn again when there was one. Never loops: the default itself is not retried.
+   */
+  private fallBack(from: string, why: unknown, retry: boolean): boolean {
+    if (from === FALLBACK_MODEL) return false;
+    this.setModel(FALLBACK_MODEL);
+    this.emit({
+      k: 'model_fallback',
+      engine: 'claude',
+      from,
+      to: FALLBACK_MODEL,
+      reason: modelUnavailableReason(why),
+    });
+    if (retry && this.lastPrompt) {
+      this.turnsInFlight++;
+      this.turnEnded = false;
+      this.send({ type: 'user', message: { role: 'user', content: this.lastPrompt } });
+    }
+    return true;
   }
 
   private emit(e: ConversationEvent): void {
@@ -293,6 +337,7 @@ export class ClaudeConversation implements NodePtyProcess {
     switch (cmd.type) {
       case 'prompt':
         this.emit({ k: 'user', text: cmd.text });
+        this.lastPrompt = cmd.text;
         this.turnsInFlight++;
         this.turnEnded = false;
         this.send({ type: 'user', message: { role: 'user', content: cmd.text } });
@@ -310,8 +355,7 @@ export class ClaudeConversation implements NodePtyProcess {
         this.emit({ k: 'mode', mode: cmd.mode });
         break;
       case 'model':
-        this.control({ subtype: 'set_model', model: cmd.model });
-        this.emit({ k: 'model', model: cmd.model });
+        this.setModel(cmd.model);
         break;
     }
     this.status();
@@ -386,8 +430,7 @@ export class ClaudeConversation implements NodePtyProcess {
   /** The plan was approved: execute on the cheaper model. The picker in the session can still change it. */
   private switchToExec(): void {
     if (!this.execModel) return;
-    this.control({ subtype: 'set_model', model: this.execModel });
-    this.emit({ k: 'model', model: this.execModel });
+    this.setModel(this.execModel);
     if (this.execEffort) {
       this.control({ subtype: 'apply_flag_settings', settings: { effortLevel: this.execEffort } });
     }
@@ -518,6 +561,10 @@ export class ClaudeConversation implements NodePtyProcess {
   }
 
   private onControlResponse(r: Json): void {
+    const reqId = str(r.request_id);
+    const asked = reqId ? this.modelRequests.get(reqId) : undefined;
+    if (reqId) this.modelRequests.delete(reqId);
+    if (r.subtype === 'error' && asked && this.fallBack(asked, str(r.error) ?? '', false)) return;
     if (r.subtype === 'error') {
       this.emit({
         k: 'notice',
@@ -535,6 +582,15 @@ export class ClaudeConversation implements NodePtyProcess {
     if (stopped) this.emit({ k: 'turn', outcome: 'stopped' });
     else if (e.is_error === true) {
       const message = str(e.result) ?? (Array.isArray(e.errors) ? str(e.errors[0]) : null);
+      if (
+        message &&
+        this.model &&
+        isModelUnavailable(message) &&
+        this.fallBack(this.model, message, true)
+      ) {
+        this.status();
+        return;
+      }
       this.emit({ k: 'turn', outcome: 'failed', ...(message ? { message } : {}) });
     } else this.emit({ k: 'turn', outcome: 'done' });
     this.status();

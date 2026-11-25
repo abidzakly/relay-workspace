@@ -27,6 +27,7 @@ import {
 } from './sessions';
 import { SessionStore } from './sessionStore';
 import type { Logger } from '../../util/logger';
+import { hostAgentModels, type HostAgentModels } from './agentAccount';
 import { claudeAvailability, runClaudeCli } from './claudeCli';
 import { cursorAvailability, runCursorCli } from './cursorCli';
 import {
@@ -87,6 +88,10 @@ export class LocalCockpitHost implements CockpitHost {
 
   ai(req: AiRunRequest): Promise<{ text: string }> {
     return req.engine === 'cursor' ? runCursorCli(req) : runClaudeCli(req);
+  }
+
+  agentModels(refresh = false): Promise<HostAgentModels> {
+    return hostAgentModels(refresh);
   }
 
   protected cwd(ref: WsRef): Promise<string> {

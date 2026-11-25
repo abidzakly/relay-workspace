@@ -1,7 +1,12 @@
 import Anthropic from '@anthropic-ai/sdk';
 import { zodOutputFormat } from '@anthropic-ai/sdk/helpers/zod';
 import { z } from 'zod';
-import { AI_JSON_INSTRUCTION, type AiEngine, type AiTemplate } from '@relay/shared';
+import {
+  AI_JSON_INSTRUCTION,
+  type AgentEffort,
+  type AiEngine,
+  type AiTemplate,
+} from '@relay/shared';
 import { CURSOR_MODEL } from '../cockpit/cursorCli';
 import type { CockpitHost } from '../cockpit/host';
 
@@ -23,7 +28,12 @@ export interface AiCompleteRequest<S extends z.ZodType> {
   tier: AiTier;
   /** Overrides the built-in model for this engine. */
   model?: string | undefined;
+  /** Claude engines: overrides the tier's effort (Settings > AI). */
+  effort?: AgentEffort | undefined;
 }
+
+const effortOf = (req: { tier: AiTier; effort?: AgentEffort | undefined }): AgentEffort =>
+  req.effort ?? (req.tier === 'fast' ? 'low' : 'medium');
 
 export class AiError extends Error {
   constructor(
@@ -81,7 +91,7 @@ ${schema}`;
   const { text } = await host.ai({
     prompt,
     ...run,
-    ...(run.engine === 'claude' ? { effort: req.tier === 'fast' ? 'low' : 'medium' } : {}),
+    ...(run.engine === 'claude' ? { effort: effortOf(req) } : {}),
   });
   const parsed = req.schema.safeParse(extractJson(text));
   if (!parsed.success) throw new AiError('ai_bad_output', 'the answer did not match the schema');
@@ -137,12 +147,15 @@ export class AnthropicApiProvider implements AiProvider {
         messages: [{ role: 'user', content: req.prompt }],
         output_config: {
           format: zodOutputFormat(req.schema as unknown as z.ZodObject),
-          effort: req.tier === 'fast' ? 'low' : 'medium',
+          effort: effortOf(req),
         },
       });
     } catch (e) {
       if (e instanceof Anthropic.AuthenticationError) {
         throw new AiError('ai_unavailable', 'ANTHROPIC_API_KEY was rejected');
+      }
+      if (e instanceof Anthropic.NotFoundError) {
+        throw new AiError('ai_failed', `model not found: ${req.model ?? AI_MODELS[req.tier]}`);
       }
       if (e instanceof Anthropic.RateLimitError) throw new AiError('ai_failed', 'rate limited');
       if (e instanceof Anthropic.APIError) throw new AiError('ai_failed', `API error ${e.status}`);

@@ -1,7 +1,7 @@
 import { Loader2, Wand2 } from 'lucide-react';
 import { useState } from 'react';
 import { useNavigate } from 'react-router';
-import { AGENT_MODEL_CHOICES } from '@relay/shared';
+import { AGENT_MODEL_CHOICES, agentModelLabel } from '@relay/shared';
 import { Button } from '@/components/ui/button';
 import {
   Dialog,
@@ -152,7 +152,9 @@ export function MrReviseDialog({
                       {m.label}
                     </option>
                   ))}
-                  {!models.some((m) => m.id === model) && <option value={model}>{model}</option>}
+                  {!models.some((m) => m.id === model) && (
+                    <option value={model}>{agentModelLabel(model)}</option>
+                  )}
                 </Select>
               </label>
             </div>

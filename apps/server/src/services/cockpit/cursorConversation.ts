@@ -8,6 +8,7 @@ import {
 } from '@relay/shared';
 import type { NodePtyProcess } from '../ptyBackend';
 import { launchSpec, signalTree } from '../../util/platform';
+import { isModelUnavailable, modelUnavailableReason } from '../ai/modelFallback';
 import { toolSummary, type ConversationStatus } from './claudeConversation';
 
 /**
@@ -126,6 +127,9 @@ export interface CursorConversationOptions {
   ) => ChildProcessWithoutNullStreams;
 }
 
+/** Where a refused model falls back to: Cursor picks the model itself. */
+const FALLBACK_MODEL = 'auto';
+
 export class CursorConversation implements NodePtyProcess {
   private readonly o: CursorConversationOptions;
   private child: ChildProcessWithoutNullStreams | null = null;
@@ -154,9 +158,16 @@ export class CursorConversation implements NodePtyProcess {
   private gotResult = false;
   private stopReason: 'user' | 'plan_escape' | null = null;
   private stderr = '';
+  /** The start of stderr: the tail above drops it, and Cursor says why it refused a model in the first line. */
+  private stderrHead = '';
+  /** Per-turn args; the model in them moves to `auto` when Cursor refuses it. */
+  private readonly args: string[];
+  /** The running turn, so a turn refused for its model can run again on `auto`. */
+  private turn: { text: string; mode: ConversationMode } | null = null;
 
   constructor(o: CursorConversationOptions) {
     this.o = o;
+    this.args = [...o.args];
     this.mode = o.startMode ?? 'plan';
     this.chatId = o.resumeId ?? null;
     if (o.model) this.emit({ k: 'model', model: o.model });
@@ -310,6 +321,7 @@ export class CursorConversation implements NodePtyProcess {
   }
 
   private startTurn(text: string, mode: ConversationMode): void {
+    this.turn = { text, mode };
     this.turnMode = mode;
     this.turnEnded = false;
     this.planText = null;
@@ -317,6 +329,7 @@ export class CursorConversation implements NodePtyProcess {
     this.gotResult = false;
     this.stopReason = null;
     this.stderr = '';
+    this.stderrHead = '';
     this.shownTools.clear();
     const args = [
       '-p',
@@ -324,7 +337,7 @@ export class CursorConversation implements NodePtyProcess {
       'stream-json',
       '--stream-partial-output',
       '--trust',
-      ...this.o.args,
+      ...this.args,
       ...(mode === 'plan' ? ['--mode', 'plan'] : this.o.forceAfterPlan ? ['--force'] : []),
       ...(this.chatId ? ['--resume', this.chatId] : []),
     ];
@@ -355,6 +368,7 @@ export class CursorConversation implements NodePtyProcess {
     child.stdin.on('error', () => undefined);
     child.stderr.setEncoding('utf8');
     child.stderr.on('data', (d: string) => {
+      if (this.stderrHead.length < 512) this.stderrHead = (this.stderrHead + d).slice(0, 512);
       this.stderr = (this.stderr + d).slice(-STDERR_MAX);
     });
     createInterface({ input: child.stdout }).on('line', (l) => {
@@ -459,8 +473,35 @@ export class CursorConversation implements NodePtyProcess {
     });
   }
 
+  /** The model in this session's args, if any. */
+  private currentModel(): string | null {
+    const at = this.args.indexOf('--model');
+    return at >= 0 ? (this.args[at + 1] ?? null) : null;
+  }
+
+  /**
+   * Cursor refused the model (not in the account's plan, unknown id): switch to `auto`, tell the user, and queue the
+   * same turn again. Never loops: `auto` itself is not retried.
+   */
+  private fallBack(why: string): boolean {
+    const from = this.currentModel();
+    if (!from || from === FALLBACK_MODEL || !this.turn || !isModelUnavailable(why)) return false;
+    this.args[this.args.indexOf('--model') + 1] = FALLBACK_MODEL;
+    this.emit({ k: 'model', model: FALLBACK_MODEL });
+    this.emit({
+      k: 'model_fallback',
+      engine: 'cursor',
+      from,
+      to: FALLBACK_MODEL,
+      reason: modelUnavailableReason(why),
+    });
+    this.queue.unshift(this.turn);
+    return true;
+  }
+
   private onResult(e: Json): void {
     this.gotResult = true;
+    if (e.is_error === true && this.fallBack(str(e.result) ?? '')) return;
     if (e.is_error === true) {
       const message = str(e.result);
       this.emit({ k: 'turn', outcome: 'failed', ...(message ? { message } : {}) });
@@ -500,6 +541,8 @@ export class CursorConversation implements NodePtyProcess {
       this.emit({ k: 'turn', outcome: 'stopped' });
     } else if (this.stopReason === 'user') {
       this.emit({ k: 'turn', outcome: 'stopped' });
+    } else if (!this.gotResult && this.fallBack(this.stderrHead)) {
+      // Queued again on `auto`: endTurn starts it.
     } else if (!this.gotResult) {
       const message = this.stderr.trim() || `cursor-agent exited with ${code}`;
       this.emit({ k: 'turn', outcome: 'failed', message });

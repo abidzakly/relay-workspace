@@ -11,9 +11,9 @@ import {
 } from '@relay/shared';
 import { useAiCheckStore } from '@/components/AiCheck';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
 import { Select } from '@/components/ui/select';
-import { useAiStatus } from '@/lib/cockpitApi';
+import { useAgentModels, useAiStatus } from '@/lib/cockpitApi';
+import { ModelPicker } from './ModelPicker';
 import { useSaveGlobal } from '@/lib/settingsApi';
 import { ErrorAlert, SectionCard } from './SectionCard';
 
@@ -73,6 +73,7 @@ export function AiCard({ settings }: { settings: GlobalConfigPublic }) {
       </div>
       <div className="grid gap-2">
         <p className="text-sm font-medium">Agent models</p>
+        <PlanLine />
         <p className="text-xs text-muted-foreground">
           A Claude session plans on the plan model. When you approve the plan, it switches to the
           execution model and effort. Cursor has no approval hook, so it keeps one model.
@@ -80,21 +81,25 @@ export function AiCard({ settings }: { settings: GlobalConfigPublic }) {
         <div className="grid items-center gap-2 sm:grid-cols-[10rem_1fr_8rem]">
           <span className="text-sm">Claude plan / execute</span>
           <div className="grid gap-2 sm:grid-cols-2">
-            <ModelInput
+            <ModelPicker
+              agent="claude"
               label="Plan model"
               value={settings.agentModels.planModel}
               disabled={save.isPending}
-              onCommit={(planModel) =>
+              onChange={(planModel) =>
+                planModel &&
                 save.mutate({
                   patch: (s) => ({ ...s, agentModels: { ...s.agentModels, planModel } }),
                 })
               }
             />
-            <ModelInput
+            <ModelPicker
+              agent="claude"
               label="Execution model"
               value={settings.agentModels.execModel}
               disabled={save.isPending}
-              onCommit={(execModel) =>
+              onChange={(execModel) =>
+                execModel &&
                 save.mutate({
                   patch: (s) => ({ ...s, agentModels: { ...s.agentModels, execModel } }),
                 })
@@ -135,11 +140,14 @@ export function AiCard({ settings }: { settings: GlobalConfigPublic }) {
             <option value="auto">Switch automatically</option>
           </Select>
           <span className="text-sm">Cursor</span>
-          <ModelInput
+          <ModelPicker
+            agent="cursor"
             label="Cursor model"
+            className="sm:col-span-2"
             value={settings.agentModels.cursorModel}
             disabled={save.isPending}
-            onCommit={(cursorModel) =>
+            onChange={(cursorModel) =>
+              cursorModel &&
               save.mutate({
                 patch: (s) => ({ ...s, agentModels: { ...s.agentModels, cursorModel } }),
               })
@@ -163,7 +171,7 @@ export function AiCard({ settings }: { settings: GlobalConfigPublic }) {
               save.mutate({
                 patch: (s) => {
                   const aiModels = { ...s.aiModels };
-                  if (next.engine || next.model) aiModels[key] = next;
+                  if (next.engine || next.model || next.effort) aiModels[key] = next;
                   else delete aiModels[key];
                   return { ...s, aiModels };
                 },
@@ -191,19 +199,31 @@ function ModelRow({
   const clean = (c: AiModelChoice): AiModelChoice => ({
     ...(c.engine ? { engine: c.engine } : {}),
     ...(c.model ? { model: c.model } : {}),
+    ...(c.effort && c.engine !== 'cursor_cli' ? { effort: c.effort } : {}),
   });
+  // With no agent chosen the model applies to the Claude engines (see AiService.run).
+  const agent = choice.engine === 'cursor_cli' ? 'cursor' : 'claude';
   return (
-    <div className="grid items-center gap-2 sm:grid-cols-[10rem_12rem_1fr]">
+    <div className="grid items-start gap-2 sm:grid-cols-[10rem_12rem_1fr]">
       <span className="text-sm">{name}</span>
       <Select
         aria-label={`${name} agent`}
         value={choice.engine ?? ''}
         disabled={disabled}
-        onChange={(e) =>
+        onChange={(e) => {
+          const engine = (e.target.value || undefined) as AiEngine | undefined;
+          // A model id belongs to one agent family: switching between Claude and Cursor drops it.
+          const family = (x: AiEngine | undefined) => (x === 'cursor_cli' ? 'cursor' : 'claude');
+          const keep = family(engine) === family(choice.engine);
           onChange(
-            clean({ ...choice, engine: (e.target.value || undefined) as AiEngine | undefined }),
-          )
-        }
+            clean({
+              ...choice,
+              engine,
+              model: keep ? choice.model : undefined,
+              effort: keep ? choice.effort : undefined,
+            }),
+          );
+        }}
       >
         <option value="">Automatic</option>
         {AI_ENGINES.map((e) => (
@@ -212,46 +232,74 @@ function ModelRow({
           </option>
         ))}
       </Select>
-      <Input
-        key={choice.model ?? ''}
-        aria-label={`${name} model`}
-        placeholder="Model id (built-in default)"
-        defaultValue={choice.model ?? ''}
-        disabled={disabled}
-        onBlur={(e) => {
-          const model = e.target.value.trim() || undefined;
-          if (model !== choice.model) onChange(clean({ ...choice, model }));
-        }}
-      />
+      <div className="flex flex-wrap items-start gap-2">
+        <ModelPicker
+          key={agent}
+          agent={agent}
+          label={`${name} model`}
+          defaultLabel="Built-in default"
+          value={choice.model}
+          disabled={disabled}
+          onChange={(model) => onChange(clean({ ...choice, model }))}
+        />
+        {agent === 'claude' && (
+          <Select
+            aria-label={`${name} effort`}
+            className="w-32"
+            value={choice.effort ?? ''}
+            disabled={disabled}
+            onChange={(e) =>
+              onChange(
+                clean({
+                  ...choice,
+                  effort: (e.target.value || undefined) as AgentEffort | undefined,
+                }),
+              )
+            }
+          >
+            <option value="">Effort: auto</option>
+            {AGENT_EFFORTS.map((x) => (
+              <option key={x} value={x}>
+                {x}
+              </option>
+            ))}
+          </Select>
+        )}
+      </div>
     </div>
   );
 }
 
-const MODEL_ID_RE = /^[a-z0-9.-]{1,64}$/i;
+const TIER_NAME: Record<string, string> = {
+  pro: 'Pro',
+  max: 'Max',
+  team: 'Team',
+  enterprise: 'Enterprise',
+  free: 'Free',
+};
+const tierName = (t: string) => TIER_NAME[t.toLowerCase()] ?? t;
 
-function ModelInput({
-  label,
-  value,
-  disabled,
-  onCommit,
-}: {
-  label: string;
-  value: string;
-  disabled: boolean;
-  onCommit: (v: string) => void;
-}) {
+/** The local logins' plans, which decide the models offered. */
+function PlanLine() {
+  const q = useAgentModels();
+  const c = q.data;
+  if (!c || q.isPlaceholderData) return null;
+  const parts = [
+    c.accounts.claude?.tier
+      ? `Claude ${tierName(c.accounts.claude.tier)}`
+      : c.accounts.claude?.authMethod
+        ? 'Claude (API key)'
+        : null,
+    c.accounts.cursor?.tier ? `Cursor ${tierName(c.accounts.cursor.tier)}` : null,
+  ].filter(Boolean);
   return (
-    <Input
-      key={value}
-      aria-label={label}
-      placeholder={label}
-      defaultValue={value}
-      disabled={disabled}
-      onBlur={(e) => {
-        const v = e.target.value.trim();
-        if (v !== value && MODEL_ID_RE.test(v)) onCommit(v);
-        else e.target.value = value;
-      }}
-    />
+    <p className="text-xs text-muted-foreground">
+      {parts.length > 0
+        ? `Models offered for your plans: ${parts.join(' · ')}.`
+        : 'Could not read your Claude or Cursor plan, so every known model is offered.'}{' '}
+      {c.source === 'live'
+        ? 'Cursor models come live from your Cursor CLI.'
+        : 'Cursor models are the built-in list.'}
+    </p>
   );
 }

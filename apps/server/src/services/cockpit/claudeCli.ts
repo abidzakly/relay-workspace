@@ -117,6 +117,7 @@ export function runJsonCli(
       env: process.env,
     });
     let out = '';
+    let err = '';
     let size = 0;
     const timer = setTimeout(() => {
       child.kill('SIGTERM');
@@ -131,7 +132,10 @@ export function runJsonCli(
       }
       out += d;
     });
-    child.stderr.resume();
+    child.stderr.setEncoding('utf8');
+    child.stderr.on('data', (d: string) => {
+      if (err.length < 2048) err += d;
+    });
     child.on('error', (e) => {
       clearTimeout(timer);
       reject(new CockpitHostError('ai_unavailable', `${name} could not start: ${e.message}`, 409));
@@ -139,7 +143,11 @@ export function runJsonCli(
     child.on('close', (code) => {
       clearTimeout(timer);
       if (code !== 0 && out.trim() === '') {
-        reject(new CockpitHostError('ai_failed', `${name} exited with ${code}`));
+        // The first line of stderr says why (e.g. Cursor's "Cannot use this model: x"); the rest is noise.
+        const why = err.trim().split('\n')[0]?.slice(0, 200);
+        reject(
+          new CockpitHostError('ai_failed', `${name} exited with ${code}${why ? `: ${why}` : ''}`),
+        );
         return;
       }
       try {
