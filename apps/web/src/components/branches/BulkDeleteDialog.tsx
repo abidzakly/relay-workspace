@@ -294,7 +294,11 @@ export function BulkDeleteDialog({
 
   return (
     <Dialog open onOpenChange={(v) => !v && !busy && onClose(deletedAny)}>
-      <DialogContent className="rb-dialog max-w-2xl gap-0 p-0 sm:p-0" data-tone="danger">
+      <DialogContent
+        // Hero and footer stay put; the list between them scrolls, so Delete is always reachable.
+        className="rb-dialog max-w-2xl grid-rows-[auto_minmax(0,1fr)_auto] gap-0 p-0 sm:p-0"
+        data-tone="danger"
+      >
         <div className="rb-hero">
           <div className="rb-hero-glow" aria-hidden />
           <div className="rb-hero-grid" aria-hidden />
@@ -326,7 +330,7 @@ export function BulkDeleteDialog({
           </div>
         </div>
 
-        <div className="grid gap-4 p-5 sm:px-8 sm:py-6">
+        <div className="grid min-h-0 content-start gap-4 overflow-y-auto overscroll-contain p-5 sm:px-8 sm:py-6">
           {!result && (
             <div className="grid gap-2 sm:grid-cols-2">
               <Toggle checked={o.local} onChange={(v) => setO({ ...o, local: v })}>
