@@ -692,9 +692,8 @@ export class ReviewDeskService {
       expiresAt: set ? (id?.expiresAt ?? null) : null,
       viaSignIn:
         set &&
-        (this.d.config.getGlobalStored().gitlab.authMode === 'connect' ||
-          (this.d.config.getGlobalStored().gitlab.authMode === undefined &&
-            !this.d.config.getPastedReviewerToken())),
+        // No mode saved yet means Connect (Advanced mode is opt-in).
+        this.d.config.getGlobalStored().gitlab.authMode !== 'token',
     };
   }
 

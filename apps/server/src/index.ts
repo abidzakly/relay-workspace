@@ -180,14 +180,8 @@ async function main(): Promise<void> {
     redirectUri: `http://127.0.0.1:${env.DASHBOARD_PORT}/api/calendar/oauth/callback`,
     oauth,
   });
-  // GitLab and Google: one way in at a time. A config from before that gets the mode that keeps it working.
-  resolveAuthModes({
-    store,
-    oauth,
-    calendarOwnSignedIn: () => calendar.ownSignedIn(),
-    baseDir: findRepoRoot(),
-    log,
-  });
+  // GitLab and Google: one way in at a time. A config with no mode yet starts in Connect (Advanced mode off).
+  resolveAuthModes({ store, log });
   onOAuthChange = (p) => {
     if (p === 'google') void calendar.refresh();
     if (p === 'gitlab') syncGitlabSignIn(store, oauth.connection('gitlab'));
