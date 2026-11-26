@@ -244,16 +244,20 @@ function MeetingRow({
       initial={{ opacity: 0, y: 8 }}
       animate={{ opacity: 1, y: 0, transition: { ...SPRING.settle, delay: Math.min(i, 8) * 0.03 } }}
       className={cn(
-        'group relative grid scroll-mt-24 items-center gap-x-4 gap-y-2 rounded-[14px] pr-2 pl-5 transition-colors',
+        'group relative grid scroll-mt-24 items-center gap-x-4 gap-y-2 rounded-[14px] pr-2 pl-5 transition-[background-color,box-shadow]',
         'grid-cols-[4.25rem_minmax(0,1fr)] sm:grid-cols-[4.75rem_minmax(0,1fr)_auto]',
         compact ? 'py-1.5' : 'py-3',
+        // Every row sits on its own paper with a hairline, so the day reads as a stack of meetings, not loose text.
         settled
           ? 'bg-success/[0.07] ring-1 ring-success/25'
           : live
             ? 'bg-emphasis/[0.07] ring-1 ring-emphasis/30'
             : key
-              ? 'bg-emphasis/[0.035] hover:bg-emphasis/[0.06]'
-              : 'hover:bg-foreground/[0.035]',
+              ? 'bg-[color-mix(in_oklch,var(--emphasis)_5%,var(--card))] ring-1 ring-emphasis/20 hover:ring-emphasis/35'
+              : compact
+                ? 'bg-card/45 ring-1 ring-hairline hover:bg-card'
+                : 'bg-card/80 ring-1 ring-hairline hover:bg-card hover:shadow-[0_10px_24px_-18px_rgb(var(--elevation)/0.5)]',
+        'duration-200',
         flash && 'ring-2 ring-emphasis',
         quiet && 'opacity-70',
         m.dismissed && !live && !settled && 'opacity-60',

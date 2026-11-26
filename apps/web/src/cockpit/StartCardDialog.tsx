@@ -1,6 +1,7 @@
 import { Loader2, Rocket, Sparkles } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import type { Workspace } from '@relay/shared';
+import { PickRow, PickTag } from '@/components/PickRow';
 import { Button } from '@/components/ui/button';
 import {
   Dialog,
@@ -15,7 +16,6 @@ import { ApiError, describeError } from '@/lib/api';
 import { useApplyWrite, usePreviewWrite } from '@/lib/cardApi';
 import { useSettings } from '@/lib/settingsApi';
 import { useStateSnapshot } from '@/lib/stateApi';
-import { cn } from '@/lib/utils';
 import { GeneratedBy } from '@/components/GeneratedBy';
 import { useBases, useBaseSuggest, useCardStart } from '@/lib/workflowApi';
 import {
@@ -234,22 +234,18 @@ export function StartCardDialog({
               onChange={(e) => setFilter(e.target.value)}
               placeholder="Search cards…"
             />
-            <ul className="grid max-h-48 gap-1 overflow-y-auto">
+            <ul className="grid max-h-56 gap-1.5 overflow-y-auto p-0.5">
               {cards.map((c) => (
                 <li key={c.id}>
-                  <button
-                    type="button"
-                    onClick={() => setPickedCardId(c.id)}
-                    className={cn(
-                      'w-full rounded-xl border px-3 py-2 text-left',
-                      c.id === pickedCardId ? 'border-primary bg-primary/10' : 'hover:bg-accent/50',
-                    )}
-                  >
-                    <span className="block truncate text-sm">{c.title}</span>
-                    <span className="block truncate font-mono text-2xs text-muted-foreground">
-                      {c.branchName} · {c.status ?? '—'}
-                    </span>
-                  </button>
+                  <PickRow
+                    size="sm"
+                    selected={c.id === pickedCardId}
+                    onSelect={() => setPickedCardId(c.id)}
+                    title={c.title}
+                    meta={<span className="font-mono">{c.branchName}</span>}
+                    trailing={<PickTag>{c.status ?? '—'}</PickTag>}
+                    pickedLabel=""
+                  />
                 </li>
               ))}
               {state.data && cards.length === 0 && (
@@ -303,30 +299,17 @@ export function StartCardDialog({
               Analyze with AI
             </Button>
           </div>
-          <div className="grid max-h-44 gap-1 overflow-y-auto">
+          <div className="grid max-h-52 gap-1.5 overflow-y-auto p-0.5">
             {(bases.data ?? []).map((b) => (
-              <label
+              <PickRow
                 key={b.name}
-                className={cn(
-                  'flex cursor-pointer items-center gap-2 rounded-xl border px-3 py-2 text-sm',
-                  base === b.name ? 'border-primary bg-primary/10' : 'hover:bg-accent/50',
-                )}
-              >
-                <input
-                  type="radio"
-                  name="card-base"
-                  checked={base === b.name}
-                  onChange={() => setBase(b.name)}
-                />
-                <span className="min-w-0 font-mono text-xs [overflow-wrap:anywhere]">
-                  {b.label}
-                </span>
-                {suggest.data?.base === b.name && (
-                  <span className="ml-auto shrink-0 text-2xs font-medium text-primary-ink">
-                    AI pick
-                  </span>
-                )}
-              </label>
+                size="sm"
+                selected={base === b.name}
+                onSelect={() => setBase(b.name)}
+                title={<span className="font-mono text-xs">{b.label}</span>}
+                trailing={suggest.data?.base === b.name ? <PickTag em>AI pick</PickTag> : null}
+                pickedLabel=""
+              />
             ))}
             {bases.isPending && <Loader2 className="size-4 motion-safe:animate-spin" />}
           </div>

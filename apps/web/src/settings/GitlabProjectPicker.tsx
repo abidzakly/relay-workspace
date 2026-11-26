@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import type { GitlabProjectOption } from '@relay/shared';
+import { PickRow } from '@/components/PickRow';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { useGitlabProjects } from '@/lib/oauthApi';
@@ -37,21 +38,24 @@ export function GitlabProjectPicker({ onPick }: { onPick: (p: GitlabProjectOptio
         list.data.length === 0 ? (
           <p className="text-xs text-muted-foreground">No project matches.</p>
         ) : (
-          <ul className="grid max-h-48 gap-1 overflow-y-auto">
-            {list.data.map((p) => (
-              <li key={p.id}>
-                <button
-                  type="button"
-                  className="w-full truncate rounded-control px-2 py-1 text-left text-sm hover:bg-muted"
-                  onClick={() => {
-                    onPick(p);
-                    setOpen(false);
-                  }}
-                >
-                  {p.pathWithNamespace}
-                </button>
-              </li>
-            ))}
+          <ul className="grid max-h-56 gap-1.5 overflow-y-auto p-0.5">
+            {list.data.map((p) => {
+              const slash = p.pathWithNamespace.lastIndexOf('/');
+              return (
+                <li key={p.id}>
+                  <PickRow
+                    size="sm"
+                    selected={false}
+                    onSelect={() => {
+                      onPick(p);
+                      setOpen(false);
+                    }}
+                    title={p.pathWithNamespace.slice(slash + 1)}
+                    meta={slash > 0 ? p.pathWithNamespace.slice(0, slash) : null}
+                  />
+                </li>
+              );
+            })}
           </ul>
         )
       ) : (

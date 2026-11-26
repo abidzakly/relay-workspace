@@ -15,6 +15,7 @@ import { agentModelLabel, type ConversationCommand, type ConversationMode } from
 import { Markdown } from '@/components/Markdown';
 import { MicButton } from '@/components/MicButton';
 import { useModelFallbackStore } from '@/components/ModelFallbackAlert';
+import { PickRow } from '@/components/PickRow';
 import { Button } from '@/components/ui/button';
 import { Select } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
@@ -249,21 +250,16 @@ function QuestionActions({
           {q.options.map((o) => {
             const on = picked[q.question]?.includes(o.label) ?? false;
             return (
-              <button
+              <PickRow
                 key={o.label}
-                type="button"
-                aria-pressed={on}
-                onClick={() => toggle(q.question, o.label, q.multiSelect)}
-                className={cn(
-                  'rounded-xl border px-3 py-2 text-left text-sm transition-colors',
-                  on ? 'border-primary bg-primary/10' : 'hover:bg-accent/50',
-                )}
-              >
-                <span className="block font-medium">{o.label}</span>
-                {o.description && (
-                  <span className="block text-xs text-muted-foreground">{o.description}</span>
-                )}
-              </button>
+                size="sm"
+                selected={on}
+                onSelect={() => toggle(q.question, o.label, q.multiSelect)}
+                title={o.label}
+                meta={o.description || null}
+                className={cn('pick-wrap', q.multiSelect && 'pick-multi')}
+                pickedLabel=""
+              />
             );
           })}
         </fieldset>
