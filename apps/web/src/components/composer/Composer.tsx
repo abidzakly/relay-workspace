@@ -31,6 +31,7 @@ import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
 import { Markdown } from '@/components/Markdown';
 import { Avatar } from '@/components/mr/Avatar';
+import { ImageSizer } from './ImageSizer';
 import { describeError } from '@/lib/api';
 import {
   codeBlock,
@@ -48,6 +49,7 @@ import {
   type Edit,
   type Sel,
 } from '@/lib/composerEdit';
+import { sizedImage } from '@/lib/imageSize';
 import { FADE_RISE } from '@/lib/motion/patterns';
 import { mrKeys, useUpload } from '@/lib/mrApi';
 import { IS_MAC } from '@/lib/shortcuts';
@@ -589,6 +591,27 @@ export function Composer({
                 </motion.ul>
               )}
             </AnimatePresence>
+            <ImageSizer
+              text={text}
+              repo={repo}
+              disabled={pending}
+              onResize={(img, width) => {
+                const el = ref.current;
+                if (!el) return;
+                const md = sizedImage(img, width);
+                applyEdit(
+                  el,
+                  {
+                    from: img.start,
+                    to: img.end,
+                    text: md,
+                    selStart: img.start + md.length,
+                    selEnd: img.start + md.length,
+                  },
+                  setText,
+                );
+              }}
+            />
           </div>
         ) : (
           <div className="min-h-24 px-3 py-2.5">

@@ -723,6 +723,12 @@
 .md p > img.md-img {
   margin: 0.25em 0;
 }
+/* Sized in the comment (`{width=…}`, GitLab's syntax): that width wins over the default cap, still never wider than
+   the column. Height follows the image's own aspect ratio. */
+.md img.md-img[width] {
+  max-height: none;
+  height: auto;
+}
 /* `!123`: another MR, opened in the drawer. Mono numerals, no underline until hover: it reads as a reference. */
 .md a.mr-ref {
   font-family: var(--font-mono);
