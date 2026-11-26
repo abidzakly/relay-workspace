@@ -26,6 +26,7 @@ interface Payload {
   extraPrompt?: string;
   figmaUrl?: string;
   attachments?: CardStartAttachment[];
+  figmaWrite?: boolean;
 }
 
 export interface EnqueueInput extends Payload {
@@ -277,6 +278,7 @@ export class CardStartQueueService {
         ...(p.existing ? { existing: p.existing } : {}),
         ...(p.extraPrompt ? { extraPrompt: p.extraPrompt } : {}),
         ...(p.figmaUrl ? { figmaUrl: p.figmaUrl } : {}),
+        ...(p.figmaWrite ? { figmaWrite: true } : {}),
         ...(p.attachments?.length ? { attachments: p.attachments } : {}),
       });
       // The files are with the agent now; they need not stay in the DB.

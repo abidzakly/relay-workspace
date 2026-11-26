@@ -258,6 +258,13 @@ export const SessionStartSchema = z
     execModel: AgentModelIdSchema.optional(),
     execEffort: AgentEffortSchema.optional(),
     execSwitch: z.enum(['ask', 'auto']).optional(),
+    /**
+     * `claude`: the Figma bridge tools. Omitted = read-only tools; `false` = none; `{ write: true }` also offers the
+     * tools that edit the Figma file (each call still asks the user).
+     */
+    figma: z
+      .union([z.literal(false), z.object({ write: z.boolean().default(false) }).strict()])
+      .optional(),
   })
   .strict();
 export type SessionStart = z.infer<typeof SessionStartSchema>;

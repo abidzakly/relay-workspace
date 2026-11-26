@@ -1,4 +1,10 @@
-import type { AgentEffort, FetchFailure, LocalBranchList, TestRunProfile } from '@relay/shared';
+import type {
+  AgentEffort,
+  FetchFailure,
+  FigmaToolsProfile,
+  LocalBranchList,
+  TestRunProfile,
+} from '@relay/shared';
 import type { CommitResult, SquashResult, WsCommit } from './branchOps';
 import type {
   CockpitSession,
@@ -71,6 +77,8 @@ export interface SessionStartOpts {
   cols: number;
   rows: number;
   testRun?: TestRunProfile | undefined;
+  /** `claude`: the Figma bridge tools (Relay's loopback address and this session's token). */
+  figma?: FigmaToolsProfile | undefined;
   /** `flutter`: `lib/main_<flavor>.dart`. Omitted lets the host pick the only entrypoint. */
   flavor?: string | undefined;
   mode?: FlutterRunMode | undefined;

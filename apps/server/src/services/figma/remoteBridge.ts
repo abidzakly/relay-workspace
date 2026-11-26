@@ -3,6 +3,7 @@ import {
   AgentUnreachableError,
   type HostAgentClient,
 } from '../../hostAgent/client';
+import type { CallToolResult, Tool } from '@modelcontextprotocol/sdk/types.js';
 import {
   BridgeToolError,
   BridgeUnavailableError,
@@ -35,6 +36,33 @@ export class RemoteFigmaBridge implements FigmaBridge {
   async call(tool: string, args: Record<string, unknown> = {}): Promise<unknown> {
     try {
       return await this.agent.json('POST', '/v1/figma/call', { tool, args }, CALL_TIMEOUT_MS);
+    } catch (e) {
+      throw this.map(e);
+    }
+  }
+
+  async callTool(tool: string, args: Record<string, unknown> = {}): Promise<CallToolResult> {
+    try {
+      return await this.agent.json<CallToolResult>(
+        'POST',
+        '/v1/figma/tool',
+        { tool, args },
+        CALL_TIMEOUT_MS,
+      );
+    } catch (e) {
+      throw this.map(e);
+    }
+  }
+
+  async listTools(): Promise<Tool[]> {
+    try {
+      const out = await this.agent.json<{ tools?: Tool[] }>(
+        'GET',
+        '/v1/figma/tools',
+        undefined,
+        CALL_TIMEOUT_MS,
+      );
+      return Array.isArray(out.tools) ? out.tools : [];
     } catch (e) {
       throw this.map(e);
     }

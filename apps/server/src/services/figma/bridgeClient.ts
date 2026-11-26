@@ -1,5 +1,6 @@
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
+import type { CallToolResult, Tool } from '@modelcontextprotocol/sdk/types.js';
 import type { Logger } from '../../util/logger';
 
 /**
@@ -19,6 +20,13 @@ export interface BridgeFile {
 export interface FigmaBridge {
   /** Calls a bridge tool and returns its JSON payload. Throws `BridgeToolError` when the tool refuses. */
   call(tool: string, args?: Record<string, unknown>): Promise<unknown>;
+  /**
+   * The bridge's raw tool result (text and images as the bridge sent them), for an agent session's proxy. A refusal
+   * comes back as `isError`, not thrown. Optional: the tests' fakes leave it out.
+   */
+  callTool?(tool: string, args?: Record<string, unknown>): Promise<CallToolResult>;
+  /** The bridge's tool definitions, for an agent session's proxy. */
+  listTools?(): Promise<Tool[]>;
   /** Files that have the plugin open right now. Starts the bridge when needed. */
   files(): Promise<BridgeFile[]>;
   /** The reason the last start failed (null when it is, or was never, down). */
@@ -116,6 +124,30 @@ export class McpFigmaBridge implements FigmaBridge {
       return JSON.parse(text);
     } catch {
       throw new BridgeToolError(`Figma bridge tool ${tool} returned something unreadable.`);
+    }
+  }
+
+  async callTool(tool: string, args: Record<string, unknown> = {}): Promise<CallToolResult> {
+    const client = await this.connect();
+    try {
+      return (await client.callTool({ name: tool, arguments: args }, undefined, {
+        timeout: CALL_TIMEOUT_MS,
+      })) as CallToolResult;
+    } catch (err) {
+      throw new BridgeUnavailableError(
+        `The Figma bridge did not answer: ${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
+  }
+
+  async listTools(): Promise<Tool[]> {
+    const client = await this.connect();
+    try {
+      return (await client.listTools(undefined, { timeout: CALL_TIMEOUT_MS })).tools;
+    } catch (err) {
+      throw new BridgeUnavailableError(
+        `The Figma bridge did not answer: ${err instanceof Error ? err.message : String(err)}`,
+      );
     }
   }
 

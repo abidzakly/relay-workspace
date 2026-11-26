@@ -23,6 +23,7 @@ import {
   CardBrief,
   EMPTY_BRIEF,
   figmaLinkProblem,
+  figmaWriteRequest,
   type Brief,
 } from './CardBrief';
 import { DirtyTreePanel } from './DirtyTreePanel';
@@ -124,6 +125,7 @@ export function StartCardDialog({
         ...(brief.extraPrompt.trim() ? { extraPrompt: brief.extraPrompt.trim() } : {}),
         ...(brief.figmaUrl.trim() ? { figmaUrl: brief.figmaUrl.trim() } : {}),
         ...(attachments.length > 0 ? { attachments } : {}),
+        ...figmaWriteRequest(brief, agent),
       };
     } catch (e) {
       setEncodeError(`Could not read a file: ${(e as Error).message}`);
@@ -322,7 +324,13 @@ export function StartCardDialog({
           )}
         </fieldset>
         {agent && (
-          <CardBrief cardId={card?.id ?? null} value={brief} onChange={setBrief} disabled={busy} />
+          <CardBrief
+            cardId={card?.id ?? null}
+            value={brief}
+            onChange={setBrief}
+            disabled={busy}
+            agent={agent}
+          />
         )}
         <Button
           disabled={

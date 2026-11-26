@@ -187,6 +187,7 @@ export class LocalCockpitHost implements CockpitHost {
       cols: opts.cols,
       rows: opts.rows,
       testRun: opts.testRun,
+      figma: opts.figma,
       flutter,
       model: opts.model,
       execModel: opts.execModel,

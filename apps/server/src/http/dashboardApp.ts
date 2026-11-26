@@ -1,5 +1,7 @@
 import type { ScriptConfigService } from '../services/scriptConfig';
 import { registerScriptRoutes } from './routes/scripts';
+import { registerFigmaAgentToolRoutes } from './routes/figmaAgentTools';
+import type { FigmaAgentTools } from '../services/figma/agentTools';
 import { registerSystemRoutes } from './routes/system';
 import { NO_PRESETS, type LoadedPresets } from '../config/presets';
 import type { ReviewDeskService } from '../services/reviewDesk';
@@ -131,6 +133,8 @@ export interface DashboardAppOptions {
   oauth?: OAuthHub;
   /** Release script settings (absent in tests = no routes). */
   scripts?: ScriptConfigService;
+  /** The agents' Figma bridge tools (absent in tests = no routes). */
+  figmaTools?: FigmaAgentTools;
   /** SSE tuning (tests / ops); defaults in `http/sse.ts`. */
   sse?: { heartbeatMs?: number; maxClients?: number };
 }
@@ -280,6 +284,7 @@ export async function buildDashboardApp(opts: DashboardAppOptions): Promise<Fast
       registerOAuthRoutes(app, { oauth: opts.oauth, store: opts.store, http, audit: opts.audit });
     registerGitlabPickerRoutes(app, { oauth: opts.oauth, store: opts.store, http });
     if (opts.scripts) registerScriptRoutes(app, { scripts: opts.scripts, audit: opts.audit });
+    if (opts.figmaTools) registerFigmaAgentToolRoutes(app, opts.figmaTools);
     registerSystemRoutes(app, opts.presets ?? NO_PRESETS);
     registerCardActionRoutes(app, { actions: cardActions });
     registerUndoRoutes(app, { undo, audit: opts.audit, cache: opts.cache });

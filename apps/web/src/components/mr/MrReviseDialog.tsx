@@ -16,6 +16,7 @@ import {
   BriefFields,
   EMPTY_BRIEF,
   figmaLinkProblem,
+  figmaWriteRequest,
   type Brief,
 } from '@/cockpit/CardBrief';
 import { DirtyTreePanel } from '@/cockpit/DirtyTreePanel';
@@ -89,6 +90,7 @@ export function MrReviseDialog({
       ...(brief.extraPrompt.trim() ? { extraPrompt: brief.extraPrompt.trim() } : {}),
       ...(brief.figmaUrl.trim() ? { figmaUrl: brief.figmaUrl.trim() } : {}),
       ...(attachments.length > 0 ? { attachments } : {}),
+      ...figmaWriteRequest(brief, agent),
     };
     const done = {
       onSuccess: (r: ReviseResult) => {
@@ -164,6 +166,7 @@ export function MrReviseDialog({
                 value={brief}
                 onChange={setBrief}
                 disabled={busy}
+                agent={agent}
                 instructionsPlaceholder={`What to change on this ${iid === null ? 'branch' : 'MR'}: fixes, additions, what to leave alone…`}
               />
             )}

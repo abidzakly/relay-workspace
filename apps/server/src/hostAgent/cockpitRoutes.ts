@@ -1,4 +1,9 @@
-import { FlavorSchema, FlutterRunModeSchema, TestRunProfileSchema } from '@relay/shared';
+import {
+  FigmaToolsProfileSchema,
+  FlavorSchema,
+  FlutterRunModeSchema,
+  TestRunProfileSchema,
+} from '@relay/shared';
 import type { FastifyInstance, FastifyReply } from 'fastify';
 import { z } from 'zod';
 import { CockpitHostError } from '../services/cockpit/host';
@@ -127,6 +132,7 @@ const WsSchemas = {
 
 const SessionStart = z.object({
   testRun: TestRunProfileSchema.optional(),
+  figma: FigmaToolsProfileSchema.optional(),
   ref: RefSchema,
   kind: z.enum(['claude', 'cursor', 'shell', 'flutter']),
   deviceId: z
