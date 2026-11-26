@@ -208,6 +208,14 @@ export function Settings() {
         <Input
           ref={searchRef}
           type="search"
+          // Settings is full of password fields, and this is the first text box above them: browsers and password
+          // managers took it for the username and filled in the saved login. It only ever holds what you type.
+          name="settings-search"
+          autoComplete="off"
+          data-1p-ignore
+          data-lpignore="true"
+          data-bwignore
+          data-form-type="other"
           aria-label="Search settings"
           placeholder="Search settings  /"
           value={query}
