@@ -68,6 +68,7 @@ export function ReviewerCard({ settings }: { settings: GlobalConfigPublic }) {
   return (
     <SectionCard
       id="reviewer"
+      brand="gitlab"
       title="Reviewer access"
       description={
         advanced

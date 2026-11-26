@@ -26,6 +26,7 @@ export function AiPromptsCard({ settings }: { settings: GlobalConfigPublic }) {
   return (
     <SectionCard
       id="ai-prompts"
+      brand="ai"
       title="AI prompts"
       description={
         <>

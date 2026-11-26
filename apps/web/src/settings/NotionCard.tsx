@@ -166,6 +166,7 @@ export function NotionCard({ settings }: { settings: GlobalConfigPublic }) {
   return (
     <SectionCard
       id="notion"
+      brand="notion"
       title="Notion"
       description={
         advanced

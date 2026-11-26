@@ -5,6 +5,7 @@ import { Alert, AlertDescription } from '@/components/ui/alert';
 import { describeError } from '@/lib/api';
 import { cn } from '@/lib/utils';
 import { useUiStore } from '@/store/ui';
+import { BrandDecor, BrandLogo, type BrandId } from './brandMarks';
 
 /**
  * What the Settings page tells its cards: which ones a search hides, and whether a search holds them all open.
@@ -20,12 +21,15 @@ export function SectionCard({
   title,
   description,
   action,
+  brand,
   children,
 }: {
   id: string;
   title: string;
   description?: ReactNode;
   action?: ReactNode;
+  /** The service this section sets up: its mark beside the title and its colour on the card's edge. */
+  brand?: BrandId;
   children: ReactNode;
 }) {
   const view = useContext(SectionView);
@@ -35,7 +39,13 @@ export function SectionCard({
   const open = view.forceOpen || !collapsed;
 
   return (
-    <Card id={id} hidden={!view.shown(id)}>
+    <Card
+      id={id}
+      hidden={!view.shown(id)}
+      data-brand={brand}
+      className={cn(brand && 'section-brand')}
+    >
+      {brand ? <BrandDecor brand={brand} /> : null}
       <div className="flex flex-col gap-3 px-6 py-5 sm:flex-row sm:items-start sm:justify-between">
         <button
           type="button"
@@ -43,7 +53,12 @@ export function SectionCard({
           aria-controls={bodyId}
           disabled={view.forceOpen}
           onClick={() => setCollapsed([id], !collapsed)}
-          className="group -m-2 grid min-w-0 flex-1 grid-cols-[auto_minmax(0,1fr)] items-start gap-x-2 gap-y-1.5 rounded-control p-2 text-left focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none enabled:cursor-pointer"
+          className={cn(
+            'group -m-2 grid min-w-0 flex-1 items-start gap-x-2 gap-y-1.5 rounded-control p-2 text-left focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none enabled:cursor-pointer',
+            brand
+              ? 'grid-cols-[auto_auto_minmax(0,1fr)] gap-x-3'
+              : 'grid-cols-[auto_minmax(0,1fr)]',
+          )}
         >
           <ChevronDown
             aria-hidden
@@ -52,9 +67,12 @@ export function SectionCard({
               !open && '-rotate-90',
             )}
           />
+          {brand ? <BrandLogo brand={brand} className="row-span-2 -mt-1.5" /> : null}
           <CardTitle>{title}</CardTitle>
           {description ? (
-            <CardDescription className="col-start-2">{description}</CardDescription>
+            <CardDescription className={brand ? 'col-start-3' : 'col-start-2'}>
+              {description}
+            </CardDescription>
           ) : null}
         </button>
         {action ? <div className="shrink-0 pl-5.5 sm:pl-0">{action}</div> : null}

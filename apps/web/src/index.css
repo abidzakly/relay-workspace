@@ -549,6 +549,83 @@
   }
 }
 
+/*
+ * Settings sections that set up a service wear its colour (settings/brandMarks.tsx): a 2px edge, a tinted chip for the
+ * mark, and the mark again as a large faded silhouette in the corner. The fields stay Paper & Ink. `--brand` is a
+ * fill, never text, so it does not have to meet AA; the chip's mark sits on a 12% tint of it.
+ */
+[data-brand] {
+  --brand-edge: var(--brand);
+}
+[data-brand='notion'] {
+  --brand: #191919;
+}
+[data-brand='gitlab'] {
+  --brand: #e24329;
+}
+[data-brand='google'] {
+  --brand: #4285f4;
+  --brand-edge: linear-gradient(#ea4335, #fbbc04, #34a853, #4285f4);
+}
+[data-brand='ai'] {
+  --brand: var(--terracotta);
+}
+.dark [data-brand='notion'] {
+  --brand: #ecebe6;
+}
+.dark [data-brand='gitlab'] {
+  --brand: #fc6d26;
+}
+.dark [data-brand='google'] {
+  --brand: #8ab4f8;
+}
+.dark [data-brand='ai'] {
+  --brand: #b9b4ff;
+}
+.section-brand {
+  position: relative;
+  isolation: isolate;
+}
+.brand-decor {
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  overflow: hidden;
+  border-radius: inherit;
+  pointer-events: none;
+}
+.brand-decor::before {
+  content: '';
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 2px;
+  background: var(--brand-edge);
+}
+.brand-watermark {
+  position: absolute;
+  top: -2.25rem;
+  right: -1.75rem;
+  width: 10rem;
+  height: 10rem;
+  color: var(--brand);
+  opacity: 0.07;
+  rotate: -8deg;
+  mask-image: radial-gradient(circle at 70% 30%, #000 30%, transparent 75%);
+}
+.dark .brand-watermark {
+  opacity: 0.1;
+}
+.brand-chip {
+  display: grid;
+  place-items: center;
+  width: 2.25rem;
+  height: 2.25rem;
+  border-radius: var(--radius-control, 0.375rem);
+  color: var(--brand);
+  background: color-mix(in oklch, var(--brand) 12%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in oklch, var(--brand) 22%, transparent);
+}
+
 /* Sanitized GitLab markdown (components/Markdown.tsx). Only the tags DOMPurify lets through are styled. */
 /*
  * Reader: long-form reading. A measure of about 68 characters, a larger body and looser leading than comments, and
