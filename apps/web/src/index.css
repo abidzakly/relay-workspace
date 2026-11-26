@@ -551,48 +551,176 @@
 
 /* Sanitized GitLab markdown (components/Markdown.tsx). Only the tags DOMPurify lets through are styled. */
 /*
- * Reader: long-form reading. A measure of about 68 characters, a larger body and looser leading than comments, and
- * headings that leave room above them when the contents link jumps there.
+ * Reader: long-form reading, set like an editorial page. A measure of about 66 characters, sans body at a size the
+ * reader picks (`--reader-size`, reader/ReaderControls.tsx), Instrument Serif for the big headings, and room above
+ * every heading for the contents link that jumps there. Dream eases the body off pure ink to cut glare.
  */
 .md.md-reader {
-  max-width: 68ch;
-  font-size: 1.0625rem;
-  line-height: 1.75;
+  --reader-ink: var(--foreground);
+  max-width: 66ch;
+  font-size: var(--reader-size, 1.125rem);
+  line-height: 1.72;
+  color: var(--reader-ink);
   overflow-wrap: break-word;
+  text-wrap: pretty;
+  font-feature-settings: 'ss01', 'cv11';
+}
+.dark .md.md-reader {
+  --reader-ink: color-mix(in oklch, var(--foreground) 88%, var(--background));
 }
 .md.md-reader > * + * {
-  margin-top: 1.1em;
+  margin-top: 1.15em;
 }
 .md.md-reader :is(h1, h2, h3, h4) {
   scroll-margin-top: 1.5rem;
-  line-height: 1.25;
+  color: var(--foreground);
+  text-wrap: balance;
+}
+.md.md-reader :is(h1, h2) {
+  font-family: var(--font-accent);
+  font-weight: 400;
+  line-height: 1.08;
   letter-spacing: -0.01em;
 }
 .md.md-reader h1 {
-  font-size: 2rem;
+  font-size: 2.6em;
   margin-top: 0;
 }
 .md.md-reader h2 {
-  font-size: 1.5rem;
-  margin-top: 2em;
+  font-size: 1.85em;
+  margin-top: 2.1em;
+  padding-top: 0.9em;
+  border-top: 1px solid var(--hairline);
+}
+.md.md-reader :is(h1, hr) + h2 {
+  border-top: 0;
+  padding-top: 0;
+  margin-top: 1.2em;
 }
 .md.md-reader h3 {
-  font-size: 1.2rem;
-  margin-top: 1.6em;
+  font-size: 1.12em;
+  font-weight: 600;
+  line-height: 1.35;
+  margin-top: 1.9em;
+}
+.md.md-reader h4 {
+  font-size: 0.78em;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted-foreground);
+  margin-top: 1.8em;
+}
+.md.md-reader :is(h2, h3, h4) + * {
+  margin-top: 0.6em;
+}
+/* The opening paragraph reads as a lead. */
+.md.md-reader > p:first-child,
+.md.md-reader > h1:first-child + p {
+  font-size: 1.14em;
+  line-height: 1.6;
+  color: var(--foreground);
+}
+.md.md-reader a {
+  text-decoration-color: color-mix(in oklch, currentColor 40%, transparent);
+  text-underline-offset: 0.22em;
+  transition: text-decoration-color 150ms ease-out;
+}
+.md.md-reader a:hover {
+  text-decoration-color: currentColor;
+}
+.md.md-reader :is(strong, b) {
+  font-weight: 600;
+  color: var(--foreground);
+}
+.md.md-reader :is(ul, ol) {
+  padding-left: 1.5em;
+}
+.md.md-reader li + li {
+  margin-top: 0.4em;
+}
+.md.md-reader li::marker {
+  color: var(--muted-foreground);
+}
+.md.md-reader ol > li::marker {
+  font-family: var(--font-mono);
+  font-size: 0.85em;
+}
+.md.md-reader blockquote {
+  border-left: 2px solid var(--foreground);
+  padding: 0.15em 0 0.15em 1.1em;
+  font-family: var(--font-accent);
+  font-size: 1.3em;
+  line-height: 1.45;
+  color: var(--foreground);
+}
+.md.md-reader blockquote :is(p, li) {
+  margin: 0;
+}
+.md.md-reader :not(pre) > code {
+  font-family: var(--font-mono);
+  font-size: 0.84em;
+  padding: 0.12em 0.35em;
+  border-radius: var(--radius-control, 0.25rem);
+  background: var(--muted);
+  box-shadow: inset 0 0 0 1px var(--hairline);
 }
 .md.md-reader :is(pre, .shiki) {
-  font-size: 0.875rem;
-  line-height: 1.6;
-  padding: 0.9rem 1rem;
+  font-size: 0.82em;
+  line-height: 1.65;
+  padding: 1rem 1.15rem;
+  border: 1px solid var(--hairline);
   border-radius: var(--radius-surface, 0.5rem);
   overflow-x: auto;
   white-space: pre;
 }
-.md.md-reader li + li {
-  margin-top: 0.35em;
+.md.md-reader pre:not(.shiki) {
+  background: var(--card);
 }
-.md.md-reader blockquote {
-  font-style: italic;
+.md.md-reader :is(pre, .shiki, table, img, figure) {
+  margin-block: 1.6em;
+}
+.md.md-reader table {
+  font-size: 0.88em;
+  line-height: 1.5;
+}
+.md.md-reader :is(th, td) {
+  border: 0;
+  border-bottom: 1px solid var(--hairline);
+  padding: 0.55em 0.9em 0.55em 0;
+  text-align: left;
+  vertical-align: top;
+}
+.md.md-reader th {
+  font-size: 0.82em;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted-foreground);
+  border-bottom-color: var(--border);
+}
+.md.md-reader img {
+  display: block;
+  max-width: 100%;
+  height: auto;
+  margin-inline: auto;
+  border-radius: var(--radius-surface, 0.5rem);
+}
+/* A section break: three spaced dots instead of a rule. */
+.md.md-reader hr {
+  border: 0;
+  height: auto;
+  margin-block: 2.6em;
+  text-align: center;
+}
+.md.md-reader hr::after {
+  content: '·  ·  ·';
+  white-space: pre;
+  letter-spacing: 0.4em;
+  color: var(--muted-foreground);
+}
+.md.md-reader ::selection {
+  background: color-mix(in oklch, var(--terracotta) 32%, transparent);
 }
 
 /*

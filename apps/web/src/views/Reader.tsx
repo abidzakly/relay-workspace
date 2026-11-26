@@ -1,5 +1,12 @@
 import { ArrowLeft, BookOpen, FileUp, List, Pencil, Plus, Trash2 } from 'lucide-react';
-import { useCallback, useEffect, useRef, useState, type ChangeEvent } from 'react';
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  type ChangeEvent,
+  type CSSProperties,
+} from 'react';
 import { useSearchParams } from 'react-router';
 import { readerTitleOf, READER_BODY_MAX, type ReaderDoc, type ReaderFormat } from '@relay/shared';
 import { PageTitle } from '@/components/PageTitle';
@@ -20,6 +27,10 @@ import {
 } from '@/lib/readerApi';
 import { cn } from '@/lib/utils';
 import { ReaderBody, type Heading } from '@/reader/ReaderBody';
+import { ReaderSizeSwitch, useReaderSize } from '@/reader/ReaderControls';
+import { useActiveHeading } from '@/reader/useActiveHeading';
+
+const NO_HEADINGS: Heading[] = [];
 
 /** About 230 words a minute, 6 characters a word. */
 const minutesOf = (chars: number) => Math.max(1, Math.round(chars / 6 / 230));
@@ -80,21 +91,30 @@ function Library({ onOpen }: { onOpen: (id: string) => void }) {
         {list.data?.map((d) => (
           <li
             key={d.id}
-            className="group flex items-center gap-3 rounded-surface border bg-card px-4 py-3"
+            className="group relative flex items-center gap-3 overflow-hidden rounded-surface border border-hairline bg-card px-5 py-4 transition-colors hover:border-border"
           >
             <button
               type="button"
               onClick={() => onOpen(d.id)}
-              className="grid min-w-0 flex-1 gap-1 text-left"
+              className="grid min-w-0 flex-1 gap-1.5 text-left focus-visible:outline-none"
             >
-              <span className="truncate text-base font-medium">{d.title}</span>
-              <span className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
+              <span className="truncate font-accent text-2xl leading-tight tracking-[-0.01em]">
+                {d.title}
+              </span>
+              <span className="flex flex-wrap items-center gap-x-3 gap-y-1 font-mono text-micro text-muted-foreground uppercase">
                 <Badge variant="outline">{d.format === 'md' ? 'Markdown' : 'Text'}</Badge>
                 <span>{minutesOf(d.size)} min read</span>
                 {d.lastPos > 0.02 && <span>{Math.round(d.lastPos * 100)}% read</span>}
                 <TimeAgo at={d.updatedAt} />
               </span>
             </button>
+            {d.lastPos > 0.02 && (
+              <span
+                aria-hidden
+                className="absolute inset-x-0 bottom-0 h-0.5 origin-left bg-foreground/70"
+                style={{ transform: `scaleX(${Math.min(1, d.lastPos)})` }}
+              />
+            )}
             <Button
               size="icon"
               variant="ghost"
@@ -216,6 +236,8 @@ function ReadView({ id, onBack }: { id: string; onBack: () => void }) {
   const [editing, setEditing] = useState(false);
   const [headings, setHeadings] = useState<Heading[]>([]);
   const onHeadings = useCallback((h: Heading[]) => setHeadings(h), []);
+  const active = useActiveHeading(editing ? NO_HEADINGS : headings);
+  const textSize = useReaderSize();
 
   if (doc.isError) {
     return (
@@ -235,7 +257,8 @@ function ReadView({ id, onBack }: { id: string; onBack: () => void }) {
       <div className="mb-6 flex flex-wrap items-center gap-2">
         <BackLink onBack={onBack} />
         <span className="ml-auto" />
-        {!editing && headings.length > 1 && <MobileToc headings={headings} />}
+        {!editing && <ReaderSizeSwitch size={textSize.size} onChange={textSize.choose} />}
+        {!editing && headings.length > 1 && <MobileToc headings={headings} active={active} />}
         <Button size="sm" variant="outline" onClick={() => setEditing((e) => !e)}>
           <Pencil className="size-4" /> {editing ? 'Stop editing' : 'Edit'}
         </Button>
@@ -243,23 +266,29 @@ function ReadView({ id, onBack }: { id: string; onBack: () => void }) {
       {editing ? (
         <EditDoc doc={d} onDone={() => setEditing(false)} />
       ) : (
-        <div className="grid gap-10 lg:grid-cols-[minmax(0,1fr)_14rem]">
-          <article className="min-w-0">
-            <p className="mb-2 text-xs text-muted-foreground">
+        <div className="grid gap-12 lg:grid-cols-[minmax(0,1fr)_14rem]">
+          <article
+            className="min-w-0 pb-24"
+            style={{ '--reader-size': textSize.value } as CSSProperties}
+          >
+            <p className="mb-5 flex items-center gap-3 font-mono text-micro tracking-[0.06em] text-muted-foreground uppercase">
+              <span aria-hidden className="h-px w-8 bg-border" />
               {minutesOf(d.size)} min read · <TimeAgo at={d.updatedAt} />
             </p>
             {!/^\s{0,3}#\s/m.test(d.body.slice(0, 400)) && (
-              <h1 className="mb-6 text-3xl font-semibold tracking-tight">{d.title}</h1>
+              <h1 className="mb-8 max-w-[66ch] font-accent text-[2.6rem] leading-[1.05] tracking-[-0.01em] text-balance sm:text-5xl">
+                {d.title}
+              </h1>
             )}
             <ReaderBody body={d.body} format={d.format} onHeadings={onHeadings} />
           </article>
           {headings.length > 1 && (
             <nav aria-label="Contents" className="hidden lg:block">
-              <div className="sticky top-8 grid max-h-[80vh] gap-1 overflow-y-auto text-sm">
-                <p className="mb-1 text-xs font-medium tracking-wide text-muted-foreground uppercase">
+              <div className="sticky top-8 grid max-h-[80vh] gap-0.5 overflow-y-auto border-l border-hairline text-sm">
+                <p className="mb-2 pl-3 font-mono text-micro tracking-[0.06em] text-muted-foreground uppercase">
                   Contents
                 </p>
-                <TocLinks headings={headings} />
+                <TocLinks headings={headings} active={active} />
               </div>
             </nav>
           )}
@@ -277,7 +306,15 @@ function BackLink({ onBack }: { onBack: () => void }) {
   );
 }
 
-function TocLinks({ headings, onPick }: { headings: Heading[]; onPick?: () => void }) {
+function TocLinks({
+  headings,
+  active,
+  onPick,
+}: {
+  headings: Heading[];
+  active: string | null;
+  onPick?: () => void;
+}) {
   const top = Math.min(...headings.map((h) => h.level));
   return (
     <>
@@ -290,10 +327,12 @@ function TocLinks({ headings, onPick }: { headings: Heading[]; onPick?: () => vo
             document.getElementById(h.id)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
             onPick?.();
           }}
+          aria-current={h.id === active ? 'location' : undefined}
           className={cn(
-            'block truncate rounded-control px-2 py-1 text-muted-foreground hover:bg-muted hover:text-foreground',
-            h.level - top === 1 && 'pl-5',
-            h.level - top >= 2 && 'pl-8 text-xs',
+            '-ml-px block truncate border-l-2 border-transparent py-1 pr-2 pl-3 text-muted-foreground transition-colors hover:text-foreground',
+            h.level - top === 1 && 'pl-6',
+            h.level - top >= 2 && 'pl-9 text-xs',
+            h.id === active && 'border-foreground font-medium text-foreground',
           )}
         >
           {h.text}
@@ -304,7 +343,7 @@ function TocLinks({ headings, onPick }: { headings: Heading[]; onPick?: () => vo
 }
 
 /** Phones and narrow windows: the contents as a dropdown. */
-function MobileToc({ headings }: { headings: Heading[] }) {
+function MobileToc({ headings, active }: { headings: Heading[]; active: string | null }) {
   const ref = useRef<HTMLDetailsElement>(null);
   return (
     <details ref={ref} className="relative lg:hidden">
@@ -314,6 +353,7 @@ function MobileToc({ headings }: { headings: Heading[] }) {
       <div className="absolute right-0 z-20 mt-1 grid max-h-[60vh] w-72 max-w-[calc(100vw-2rem)] gap-1 overflow-y-auto rounded-surface border bg-card p-2 text-sm shadow-float">
         <TocLinks
           headings={headings}
+          active={active}
           onPick={() => {
             if (ref.current) ref.current.open = false;
           }}
