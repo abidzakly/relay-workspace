@@ -13,7 +13,8 @@ import { PaperGrid } from '@/components/PaperGrid';
 import { RewardLayer } from '@/components/RewardLayer';
 import { SoundToggle } from '@/components/SoundToggle';
 import { ThemeSync } from '@/components/ThemeSync';
-import { ThemeToggle, WakeDreamSwitch } from '@/components/ThemeToggle';
+import { FloatingThemeSwitch } from '@/components/FloatingThemeSwitch';
+import { ThemeToggle } from '@/components/ThemeToggle';
 import { XpChip } from '@/components/XpChip';
 import { useServiceWorkerNavigation } from '@/lib/push';
 import { useEnabledNav } from '@/lib/features';
@@ -135,7 +136,7 @@ export function Layout() {
           <Outlet />
         </main>
       </PageSwap>
-      <WakeDreamSwitch className="fixed bottom-5 left-1/2 z-40 -translate-x-1/2" />
+      <FloatingThemeSwitch />
     </div>
   );
 }

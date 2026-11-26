@@ -1,3 +1,4 @@
+import { BOTTOM_BAR } from '@/components/FloatingThemeSwitch';
 import { BranchSwitcher } from '@/components/branches/BranchSwitcher';
 import { QuickRunBanner } from '@/components/branches/QuickRunBanner';
 import { branchesPath } from '@/lib/branchesApi';
@@ -522,7 +523,10 @@ export function TestBench() {
       </div>
 
       {!quick && (
-        <div className="sticky bottom-0 z-30 rounded-surface border bg-background px-4 py-3 shadow-lift">
+        <div
+          {...BOTTOM_BAR}
+          className="sticky bottom-0 z-30 rounded-surface border bg-background px-4 py-3 shadow-lift"
+        >
           <div className="flex flex-wrap items-center gap-2">
             <p className="hidden min-w-0 flex-1 text-sm text-muted-foreground sm:block">
               {st.readiness.ready

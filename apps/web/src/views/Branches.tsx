@@ -1,3 +1,4 @@
+import { BOTTOM_BAR } from '@/components/FloatingThemeSwitch';
 import {
   ArrowDown,
   ArrowUp,
@@ -387,7 +388,7 @@ export function Branches() {
       )}
 
       {selecting && selected.size > 0 && (
-        <div className="br-bulkbar" role="region" aria-label="Selected branches">
+        <div className="br-bulkbar" {...BOTTOM_BAR} role="region" aria-label="Selected branches">
           <span className="text-sm">
             <span className="font-mono font-medium">{selected.size}</span> selected
           </span>
