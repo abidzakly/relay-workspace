@@ -251,7 +251,7 @@ function CalendarForm({
           label="Calendars"
           htmlFor="gc-ids"
           error={bad ? `“${bad}” is not a calendar id.` : undefined}
-          hint="“primary” is your own calendar. Add others by their id (Calendar settings > Integrate calendar), separated by commas."
+          hint="“primary” is your own calendar. Add others by their id (Calendar settings > Integrate calendar), separated by commas. Public holidays: en.indonesian#holiday@group.v.calendar.google.com."
         >
           <Input id="gc-ids" value={idsRaw} onChange={(e) => setIdsRaw(e.target.value)} />
         </Field>

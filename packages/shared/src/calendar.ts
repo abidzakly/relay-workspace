@@ -10,13 +10,34 @@ import { EpochMsSchema } from './common';
 /** Up to a month ahead. */
 export const CALENDAR_MAX_LOOK_AHEAD_DAYS = 31;
 
-/** Calendar ids are e-mail-like (`primary`, `you@company.com`, `…@group.calendar.google.com`). */
+/**
+ * Calendar ids are e-mail-like (`primary`, `you@company.com`, `…@group.calendar.google.com`). Google's public holiday
+ * calendars carry a `#` (`en.indonesian#holiday@group.v.calendar.google.com`): it is allowed, and the id is encoded
+ * before it goes into a URL.
+ */
 export const CalendarIdSchema = z
   .string()
   .trim()
   .min(1)
   .max(255)
-  .regex(/^[^\s/?#]+$/, 'not a calendar id');
+  .regex(/^[^\s/?]+$/, 'not a calendar id');
+
+/** Google's public holiday calendars (`<locale>.<region>#holiday@group.v.calendar.google.com`). */
+export const isHolidayCalendar = (calendarId: string) =>
+  calendarId.endsWith('#holiday@group.v.calendar.google.com');
+
+/**
+ * One day of a public holiday, from a holiday calendar. All-day, so never a meeting: it is shown on the Meetings page
+ * and never alerts. `date` is the calendar date (`YYYY-MM-DD`), with no time zone.
+ */
+export const HolidaySchema = z.object({
+  /** `<calendarId>|<eventId>|<date>`. */
+  id: z.string().min(1).max(700),
+  date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+  title: z.string(),
+  calendarId: z.string(),
+});
+export type Holiday = z.infer<typeof HolidaySchema>;
 
 /**
  * How much a meeting asks for attention. `key`: never fades, gets a beam on the Horizon, an earlier alert and a
@@ -144,6 +165,8 @@ export const MeetingListSchema = z.object({
   /** The range read ahead, in days (`CalendarConfig.lookAheadDays`). */
   lookAheadDays: z.int().positive(),
   keyLeadSeconds: z.int().nonnegative(),
+  /** Public holidays from today to the end of the range (holiday calendars only), by date. */
+  holidays: z.array(HolidaySchema).default([]),
   /** Server clock when the list was made: the browser corrects its own clock drift with it. */
   now: EpochMsSchema,
 });

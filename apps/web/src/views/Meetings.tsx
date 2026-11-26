@@ -11,6 +11,7 @@ import { describeError } from '@/lib/api';
 import { useCalendarStatus, useMeetings, useNow, useRefreshMeetings } from '@/lib/calendarApi';
 import { SPRING } from '@/lib/motion/presets';
 import { cn } from '@/lib/utils';
+import { HolidayStrip } from '@/meetings/HolidayStrip';
 import { Horizon } from '@/meetings/Horizon';
 import { MeetingList } from '@/meetings/MeetingList';
 import { NextUp } from '@/meetings/NextUp';
@@ -112,6 +113,7 @@ export function Meetings() {
             )}
           </p>
           {connected ? <TodayTally t={summary.today} /> : null}
+          {connected && list ? <HolidayStrip holidays={list.holidays} now={now} /> : null}
         </div>
         {connected ? (
           <div className="flex flex-wrap items-center gap-3">
