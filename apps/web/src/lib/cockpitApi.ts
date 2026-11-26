@@ -7,6 +7,7 @@ import {
   type CommitMessageResult,
   type ConnectionTestResult,
   type DiffFile,
+  type FolderPickResult,
   type Workspace,
   type WorkspaceCreate,
   type WsFile,
@@ -76,6 +77,13 @@ export function useAddWorkspace() {
   >({
     mutationFn: (b) => post('/api/cockpit/workspaces', b),
     onSuccess: () => void qc.invalidateQueries({ queryKey: cockpitKeys.workspaces }),
+  });
+}
+
+/** Opens the computer's folder dialog (on the host); resolves when the person picks or cancels. */
+export function usePickFolder() {
+  return useMutation<FolderPickResult, Error, void>({
+    mutationFn: () => post('/api/cockpit/pick-folder'),
   });
 }
 

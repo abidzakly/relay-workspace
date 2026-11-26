@@ -48,6 +48,16 @@ export const WorkspaceCreateSchema = z
   .strict();
 export type WorkspaceCreate = z.infer<typeof WorkspaceCreateSchema>;
 
+/**
+ * "Choose folder…" in Settings > Workspaces: the computer's own folder dialog, opened on the host. `picked` carries
+ * what git says about the folder so the form can fill in the repo and base branch. `unsupported` = no dialog here
+ * (no desktop session, an OS without one, an older host agent): type the path instead.
+ */
+export type FolderPickResult =
+  | { status: 'picked'; path: string; branch: string | null; origin: string | null }
+  | { status: 'cancelled' }
+  | { status: 'unsupported'; reason: string };
+
 export const WsStatusSchema = z.object({
   branch: z.string().nullable(),
   upstream: z.string().nullable(),

@@ -2,6 +2,7 @@ import type {
   AgentEffort,
   FetchFailure,
   FigmaToolsProfile,
+  FolderPickResult,
   LocalBranchList,
   TestRunProfile,
 } from '@relay/shared';
@@ -117,6 +118,8 @@ export interface CockpitHost {
   agentModels?(refresh?: boolean): Promise<HostAgentModels>;
 
   // ── workspaces
+  /** Opens the computer's folder dialog. Optional: an older host agent lacks it (the form then takes a typed path). */
+  pickFolder?(): Promise<FolderPickResult>;
   wsValidate(ref: WsRef): Promise<WsValidation>;
   /** Writes the standing agent rules into the workspace, excluded from git (`agentRules.ts`). */
   wsEnsureAgentRules(ref: WsRef): Promise<void>;
