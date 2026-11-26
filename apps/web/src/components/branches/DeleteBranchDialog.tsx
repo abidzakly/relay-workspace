@@ -208,7 +208,11 @@ export function DeleteBranchDialog({
 
   return (
     <Dialog open onOpenChange={(o) => !o && !busy && onClose()}>
-      <DialogContent className="rb-dialog max-w-xl gap-0 p-0 sm:p-0" data-tone="danger">
+      <DialogContent
+        // Hero and footer stay put; the body scrolls on a short window, so Delete is always reachable.
+        className="rb-dialog max-w-xl grid-rows-[auto_minmax(0,1fr)_auto] gap-0 p-0 sm:p-0"
+        data-tone="danger"
+      >
         <div className="rb-hero">
           <div className="rb-hero-glow" aria-hidden />
           <div className="rb-hero-grid" aria-hidden />
@@ -236,7 +240,7 @@ export function DeleteBranchDialog({
         </div>
 
         {result ? (
-          <div className="grid gap-3 p-5 sm:px-8 sm:py-6">
+          <div className="grid min-h-0 content-start gap-3 overflow-y-auto overscroll-contain p-5 sm:px-8 sm:py-6">
             <DialogDescription className="sr-only">What was deleted</DialogDescription>
             {(['local', 'remote'] as const).map((k) => {
               const part = result[k];
@@ -272,7 +276,7 @@ export function DeleteBranchDialog({
             )}
           </div>
         ) : (
-          <div className="grid gap-4 p-5 sm:px-8 sm:py-6">
+          <div className="grid min-h-0 content-start gap-4 overflow-y-auto overscroll-contain p-5 sm:px-8 sm:py-6">
             <DialogDescription className="text-sm text-foreground/85">
               Last commit{row.subject ? <> “{row.subject}”</> : null}
               {row.author ? <> by {row.author}</> : null}, <TimeAgo at={row.committedAt} />.
