@@ -29,9 +29,21 @@ export interface Brief {
   /** Figma node links (space or newline separated), on top of the card's own. */
   figmaUrl: string;
   files: BriefFile[];
+  /** "Agent may edit Figma": Claude also gets the Figma bridge edit tools. */
+  figmaWrite: boolean;
 }
 
-export const EMPTY_BRIEF: Brief = { extraPrompt: '', figmaUrl: '', files: [] };
+export const EMPTY_BRIEF: Brief = { extraPrompt: '', figmaUrl: '', files: [], figmaWrite: false };
+
+type AgentKind = 'claude' | 'cursor' | null | undefined | '';
+
+/** The Figma edit flag as the API takes it: Claude only. */
+export function figmaWriteRequest(
+  b: Brief,
+  agent: AgentKind,
+): { figmaWrite: true } | Record<string, never> {
+  return agent === 'claude' && b.figmaWrite ? { figmaWrite: true } : {};
+}
 
 /** Why the typed Figma links cannot be used, or null. A link must point at a node: a whole file is too big. */
 export function figmaLinkProblem(text: string): string | null {
@@ -58,11 +70,14 @@ export function CardBrief({
   value,
   onChange,
   disabled,
+  agent,
 }: {
   cardId: string | null;
   value: Brief;
   onChange: (b: Brief) => void;
   disabled?: boolean;
+  /** The agent the card starts with: "Agent may edit Figma" is Claude only. */
+  agent?: AgentKind;
 }) {
   const content = useCardContent(cardId);
   const [open, setOpen] = useState(false);
@@ -71,6 +86,7 @@ export function CardBrief({
     <BriefFields
       value={value}
       onChange={onChange}
+      agent={agent}
       {...(disabled !== undefined ? { disabled } : {})}
     >
       <section className="rounded-surface border border-hairline">
@@ -167,12 +183,15 @@ export function BriefFields({
   disabled,
   instructionsPlaceholder = 'Context the card does not say: scope limits, where to look, what to avoid…',
   children,
+  agent,
 }: {
   value: Brief;
   onChange: (b: Brief) => void;
   disabled?: boolean;
   instructionsPlaceholder?: string;
   children?: ReactNode;
+  /** The session's agent; the Figma edit checkbox is Claude only. Unset = the checkbox is hidden. */
+  agent?: AgentKind;
 }) {
   const [dragging, setDragging] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -236,6 +255,26 @@ export function BriefFields({
           </span>
         )}
       </label>
+
+      {agent !== undefined && (
+        <label className="flex items-start gap-2 text-xs">
+          <input
+            type="checkbox"
+            className="mt-0.5"
+            checked={value.figmaWrite && agent === 'claude'}
+            disabled={disabled || agent !== 'claude'}
+            onChange={(e) => onChange({ ...value, figmaWrite: e.target.checked })}
+          />
+          <span className="grid gap-0.5">
+            <span className="font-medium text-foreground">Agent may edit Figma</span>
+            <span className="text-muted-foreground">
+              {agent === 'claude'
+                ? 'Through the Figma plugin bridge, as the account signed in to Figma desktop (it needs edit access, and the plugin open outside Dev Mode). Each change asks you first. Off: it only reads Figma, and lists design changes in its report.'
+                : 'Claude only: Cursor gets the Figma files, not the Figma tools.'}
+            </span>
+          </span>
+        </label>
+      )}
 
       <div
         onDragOver={(e) => {

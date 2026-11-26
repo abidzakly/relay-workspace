@@ -1,4 +1,4 @@
-import type { TestRunProfile } from '@relay/shared';
+import type { FigmaToolsProfile, TestRunProfile } from '@relay/shared';
 import {
   aiGeneratedByLabel,
   AgentModelsSchema,
@@ -54,6 +54,15 @@ export interface SessionServiceDeps {
   preferredAgent?: () => 'claude' | 'cursor';
   /** Settings' plan / execution models. Default: Opus 5.5 plans, Sonnet 5.5 (medium) executes. */
   agentModels?: () => AgentModels;
+  /**
+   * The Figma bridge tools for a new Claude session: a per-session token. `bind` ties the token to the session once
+   * it exists, `revoke` drops it when the start fails.
+   */
+  figma?: {
+    profileFor(want: { write: boolean }): FigmaToolsProfile | null;
+    bind(token: string, sessionId: string): void;
+    revoke(token: string): void;
+  };
   /** Which session works on which MR. */
   mrLinks?: MrSessionLinks;
   /** Called after chat files were saved, so cleanup knows what the attachment folder belongs to. */
@@ -127,20 +136,32 @@ export class CockpitSessionService {
         parsed.execSwitch ??= cfg.execSwitch;
       }
     }
-    const s = await this.d.host.sessionStart(this.d.workspaces.ref(parsed.workspaceId), {
-      kind: parsed.kind,
-      deviceId: parsed.deviceId,
-      cols: parsed.cols,
-      rows: parsed.rows,
-      flavor: parsed.flavor,
-      mode: parsed.mode,
-      ios: parsed.ios,
-      model: parsed.model,
-      execModel: parsed.execModel,
-      execEffort: parsed.execEffort,
-      execSwitch: parsed.execSwitch,
-      ...(card ? { title: card.title, cardId: card.id } : {}),
-    });
+    const figma =
+      parsed.kind === 'claude' && parsed.figma !== false
+        ? (this.d.figma?.profileFor({ write: parsed.figma?.write ?? false }) ?? undefined)
+        : undefined;
+    let s: CockpitSession;
+    try {
+      s = await this.d.host.sessionStart(this.d.workspaces.ref(parsed.workspaceId), {
+        kind: parsed.kind,
+        deviceId: parsed.deviceId,
+        cols: parsed.cols,
+        rows: parsed.rows,
+        flavor: parsed.flavor,
+        mode: parsed.mode,
+        ios: parsed.ios,
+        model: parsed.model,
+        execModel: parsed.execModel,
+        execEffort: parsed.execEffort,
+        execSwitch: parsed.execSwitch,
+        figma,
+        ...(card ? { title: card.title, cardId: card.id } : {}),
+      });
+    } catch (e) {
+      if (figma) this.d.figma?.revoke(figma.token);
+      throw e;
+    }
+    if (figma) this.d.figma?.bind(figma.token, s.id);
     this.changed(s.id);
     this.ensurePolling();
     return s;
@@ -244,7 +265,7 @@ export class CockpitSessionService {
   /** A new agent session of the configured preference (Settings → AI). */
   async startPreferred(
     workspaceId: string,
-    pick: { kind?: 'claude' | 'cursor'; model?: string } = {},
+    pick: { kind?: 'claude' | 'cursor'; model?: string; figma?: { write: boolean } } = {},
   ): Promise<CockpitSession> {
     const kind = pick.kind ?? this.preferredKind();
     const s = await this.start({
@@ -253,6 +274,7 @@ export class CockpitSessionService {
       cols: 100,
       rows: 30,
       ...(pick.model ? { model: pick.model } : {}),
+      ...(pick.figma ? { figma: pick.figma } : {}),
     });
     return s;
   }

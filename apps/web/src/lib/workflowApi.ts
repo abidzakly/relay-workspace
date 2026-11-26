@@ -140,6 +140,7 @@ export interface ReviseBrief {
   model?: string;
   extraPrompt?: string;
   figmaUrl?: string;
+  figmaWrite?: boolean;
   attachments?: CardStartAttachment[];
 }
 
@@ -178,6 +179,7 @@ export function useCardStart() {
       worktree?: 'auto';
       extraPrompt?: string;
       figmaUrl?: string;
+      figmaWrite?: boolean;
       attachments?: CardStartAttachment[];
     }
   >({
@@ -213,6 +215,7 @@ export function useEnqueueCardStart() {
       agent: 'claude' | 'cursor';
       extraPrompt?: string;
       figmaUrl?: string;
+      figmaWrite?: boolean;
       attachments?: CardStartAttachment[];
     }
   >({

@@ -24,6 +24,17 @@ const FIGMA_SPEC_NOTE = `The Figma spec files (figma-*.json) hold the exact desi
 - \`node\`: the design node and all its visible layers. Each has \`bounds\` (x, y, width, height) and \`styles\`: fills, strokes, strokeWeight, effects (shadows, blurs), cornerRadius / cornerRadii, opacity, autoLayout (direction, gap, alignment, sizing), padding, constraints, clipsContent. Text layers add \`characters\` and fontFamily, fontStyle, fontWeight, fontSize, lineHeight, letterSpacing, textAlignHorizontal / textAlignVertical, textDecoration. Colours are hex with a separate 0..1 \`opacity\`.
 - \`styles\` and \`variables\`: the file's named styles and design tokens. Map a value to the matching token or theme constant in this repository instead of hard-coding it when one exists.`;
 
+/** What the agent is told about the Figma bridge tools. Null when the session has none. */
+export function figmaToolsSection(tools: { write: boolean } | null): string | null {
+  if (!tools) return null;
+  return [
+    `You have the Figma bridge tools (mcp__figma_bridge__*): live access to the Figma files open with the bridge plugin in Figma desktop. Use them when the saved Figma files do not answer a design question (list_files, then get_node / get_design_context / get_screenshot). If no file is listed, the plugin is not open: say so instead of guessing.`,
+    tools.write
+      ? `You may also edit Figma (set_text_content, set_node_properties, create_frame…); every change asks me first. Edit only what I asked for, read the node before you change it, and check the result with get_screenshot. Name each Figma change in the plan.`
+      : `This session may only read Figma. When the design needs a change, do not try to make it: list it in your final report (file, node id, what to change).`,
+  ].join('\n');
+}
+
 export interface CardStartBody {
   markdown: string;
   truncated: boolean;
@@ -49,6 +60,8 @@ export function cardStartPrompt(card: {
   attachments?: readonly { path: string; source: 'card' | 'mine' | 'figma'; label: string }[];
   /** Attachments that could not be saved or downloaded. */
   failedAttachments?: readonly string[];
+  /** The session has the Figma bridge tools; `write` = it may also edit Figma. */
+  figma?: { write: boolean } | null;
   /** Stacked start: the branch was made from another card's branch, after that card's agent pushed its work. */
   stackedOn?: { title: string; branch: string } | null;
 }): string {
@@ -78,6 +91,8 @@ ${files.map((f) => `- ${f.path}  (${f.source === 'card' ? 'from the card' : f.so
   if (files.some((f) => f.source === 'figma')) {
     sections.push(FIGMA_SPEC_NOTE);
   }
+  const figmaTools = figmaToolsSection(card.figma ?? null);
+  if (figmaTools) sections.push(figmaTools);
   if (failed.length > 0) {
     sections.push(`Attachments I could not get to you. Tell me in the plan that you have not seen them:
 ${failed.map((f) => `- ${f}`).join('\n')}`);
@@ -388,6 +403,8 @@ export function mrRevisePrompt(i: {
     label: string;
   }[];
   failedAttachments: readonly string[];
+  /** The session has the Figma bridge tools; `write` = it may also edit Figma. */
+  figma?: { write: boolean } | null;
 }): string {
   const b = i.branch;
   const extra = i.extraPrompt?.trim() ?? '';
@@ -411,6 +428,8 @@ ${extra}
 ${i.attachments.map((f) => `- ${f.path}  (${SOURCE_LABEL[f.source]}: ${f.label})`).join('\n')}`);
   }
   if (i.attachments.some((f) => f.source === 'figma')) sections.push(FIGMA_SPEC_NOTE);
+  const figmaTools = figmaToolsSection(i.figma ?? null);
+  if (figmaTools) sections.push(figmaTools);
   if (i.failedAttachments.length > 0) {
     sections.push(`Attachments I could not get to you. Tell me in the plan that you have not seen them:
 ${i.failedAttachments.map((f) => `- ${f}`).join('\n')}`);

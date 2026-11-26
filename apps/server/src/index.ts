@@ -48,6 +48,7 @@ import { LocalDeviceHost, RemoteDeviceHost } from './services/device/deviceHost'
 import { McpFigmaBridge } from './services/figma/bridgeClient';
 import { RemoteFigmaBridge } from './services/figma/remoteBridge';
 import { FigmaService } from './services/figma/figmaService';
+import { FigmaAgentTools } from './services/figma/agentTools';
 import { FigmaSnapshotStore } from './services/figma/snapshotStore';
 import { ReadyForMrService } from './services/readyForMr';
 import { createCommitReader, createDiffReader } from './services/deck/diffSources';
@@ -334,6 +335,19 @@ async function main(): Promise<void> {
     prompts: () => store.getGlobalStored().aiPrompts,
   });
   const workspaces = new WorkspaceService({ store: app, config: store, host: cockpitHost, bus });
+  // In Docker the bridge runs on the Mac, inside `pnpm agent`; the dashboard asks the agent for it.
+  const figmaBridge = agent
+    ? new RemoteFigmaBridge(agent)
+    : new McpFigmaBridge({ command: env.FIGMA_BRIDGE_CMD, log });
+  // Each Claude session gets the bridge tools through a loopback proxy with its own token. In Docker the session runs
+  // on the Mac, where the dashboard is published on loopback.
+  let liveSessionIds: () => Promise<string[]> = () => Promise.resolve([]);
+  const figmaTools = new FigmaAgentTools({
+    bridge: figmaBridge,
+    audit,
+    relayUrl: `http://127.0.0.1:${env.DASHBOARD_PORT}`,
+    liveSessions: () => liveSessionIds(),
+  });
   const sessions = new CockpitSessionService({
     host: cockpitHost,
     workspaces,
@@ -348,11 +362,10 @@ async function main(): Promise<void> {
       load: () => store.getState(MR_SESSION_LINKS_STATE),
       save: (v) => store.setState(MR_SESSION_LINKS_STATE, v),
     }),
+    figma: figmaTools,
   });
-  // In Docker the bridge runs on the Mac, inside `pnpm agent`; the dashboard asks the agent for it.
-  const figmaBridge = agent
-    ? new RemoteFigmaBridge(agent)
-    : new McpFigmaBridge({ command: env.FIGMA_BRIDGE_CMD, log });
+  liveSessionIds = async () =>
+    (await sessions.list()).filter((x) => x.state !== 'exited').map((x) => x.id);
   const figmaSnapshots = new FigmaSnapshotStore(resolveDataDir(env));
   const figma = new FigmaService({
     bridge: figmaBridge,
@@ -527,6 +540,7 @@ async function main(): Promise<void> {
     calendar,
     oauth,
     scripts,
+    figmaTools,
     cockpit: {
       testBench,
       branches: new BranchesService({

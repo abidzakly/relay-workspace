@@ -24,6 +24,7 @@ import {
   CardBrief,
   EMPTY_BRIEF,
   figmaLinkProblem,
+  figmaWriteRequest,
   type Brief,
 } from './CardBrief';
 import { ExistingBranchPrompt, type ExistingBranchChoice } from './ExistingBranchPrompt';
@@ -240,6 +241,7 @@ function Body({ cards, onClose }: { cards: StateCard[]; onClose: () => void }) {
             ...(extraPrompt ? { extraPrompt } : {}),
             ...(figmaUrl ? { figmaUrl } : {}),
             ...(attachments.length > 0 ? { attachments } : {}),
+            ...figmaWriteRequest(r.brief, r.agent),
           });
           mark(r.card.id, { state: 'queued', parentTitle: parent.card.title });
           continue;
@@ -255,6 +257,7 @@ function Body({ cards, onClose }: { cards: StateCard[]; onClose: () => void }) {
             ...(extraPrompt ? { extraPrompt } : {}),
             ...(figmaUrl ? { figmaUrl } : {}),
             ...(attachments.length > 0 ? { attachments } : {}),
+            ...figmaWriteRequest(r.brief, r.agent),
           });
         let res: Awaited<ReturnType<typeof startRow>>;
         try {
@@ -527,6 +530,7 @@ function BulkRow({
                 value={row.brief}
                 onChange={(brief) => onChange({ brief })}
                 disabled={locked}
+                agent={row.agent}
               />
             </div>
           </details>

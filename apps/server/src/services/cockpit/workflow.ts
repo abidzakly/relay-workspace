@@ -78,6 +78,8 @@ interface ReviseBrief {
   extraPrompt?: string | undefined;
   figmaUrl?: string | undefined;
   attachments?: readonly CardStartAttachment[] | undefined;
+  /** "Agent may edit Figma". */
+  figmaWrite?: boolean | undefined;
 }
 
 interface ReviseResult {
@@ -827,6 +829,7 @@ export class CockpitWorkflowService {
     const s = await this.d.sessions.startPreferred(workspaceId, {
       kind: agent,
       ...(input.model ? { model: input.model } : {}),
+      ...(agent === 'claude' ? { figma: { write: input.figmaWrite === true } } : {}),
     });
     // Cursor runs in its TUI, which needs a moment to draw before the first prompt.
     if (agent === 'cursor') await new Promise((r) => setTimeout(r, 2_500));
@@ -841,6 +844,7 @@ export class CockpitWorkflowService {
         extraPrompt: input.extraPrompt ?? null,
         attachments,
         failedAttachments: failed,
+        figma: agent === 'claude' ? { write: input.figmaWrite === true } : null,
       }),
     );
     return {
@@ -988,6 +992,8 @@ export class CockpitWorkflowService {
     attachments?: readonly CardStartAttachment[];
     /** Figma node links typed in the Start dialog, on top of the card's own. */
     figmaUrl?: string;
+    /** "Agent may edit Figma": the Claude session also gets the Figma bridge edit tools. */
+    figmaWrite?: boolean;
     /**
      * 'auto' (bulk start): when the workspace is busy (an agent runs there, or it has uncommitted changes), the card
      * gets a git worktree of its own instead, so several agents can work at once.
@@ -1096,6 +1102,7 @@ export class CockpitWorkflowService {
         kind: input.agent,
         cols: 100,
         rows: 30,
+        ...(input.agent === 'claude' ? { figma: { write: input.figmaWrite === true } } : {}),
       },
       { id: card.id, title: card.title },
     );
@@ -1116,6 +1123,7 @@ export class CockpitWorkflowService {
         extraPrompt: input.extraPrompt ?? null,
         attachments,
         failedAttachments: failed,
+        figma: input.agent === 'claude' ? { write: input.figmaWrite === true } : null,
         stackedOn: input.stackedOn ?? null,
       }),
     );

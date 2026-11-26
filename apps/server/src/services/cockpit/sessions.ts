@@ -11,6 +11,10 @@ import {
   type AgentEffort,
   type FlutterDevice,
   type FlutterRunMode,
+  FIGMA_MCP_NAME,
+  FIGMA_READ_TOOLS,
+  FIGMA_WRITE_TOOLS,
+  type FigmaToolsProfile,
   type RunTargets,
   type SessionKind,
   type TestRunProfile,
@@ -124,6 +128,8 @@ export interface StartInput {
   rows: number;
   /** An AI device test; `claude` only. */
   testRun?: TestRunProfile | undefined;
+  /** `claude`, not a device test: the Figma bridge tools, proxied through Relay with this session's token. */
+  figma?: FigmaToolsProfile | undefined;
   /** Resolved `flutter` target. Required for that kind; the host fills it before `start`. */
   flutter?: { flavor: string | null; mode: FlutterRunMode; ios: boolean } | undefined;
   /** Model the session starts on (planning). Unset = `CLAUDE_SESSION_MODEL` / `CURSOR_MODEL`. */
@@ -262,6 +268,40 @@ function testRunMcpServers(t: TestRunProfile): Record<string, unknown> {
 }
 
 /** `apps/server`, found from this module whether it runs from `src/` (tsx) or the `dist/` bundle. */
+/**
+ * The MCP config of a plain Claude session with the Figma bridge tools (0600, in the OS temp dir): one stdio server,
+ * this repo's proxy, which calls Relay with the session's token. Passed without `--strict-mcp-config`, so the user's
+ * own MCP servers stay available.
+ */
+export function writeFigmaMcpConfig(p: FigmaToolsProfile): string {
+  const serverRoot = serverPackageRoot();
+  const file = join(tmpdir(), `cockpit-figma-${randomUUID()}.json`);
+  const servers = {
+    [FIGMA_MCP_NAME]: {
+      command: join(serverRoot, 'node_modules', '.bin', 'tsx'),
+      args: [join(serverRoot, 'src', 'agentTools', 'figmaMcp.ts')],
+      env: { FIGMA_RELAY_URL: p.url, FIGMA_SESSION_TOKEN: p.token },
+    },
+  };
+  writeFileSync(file, JSON.stringify({ mcpServers: servers }), { mode: 0o600 });
+  return file;
+}
+
+/**
+ * Flags for a Claude session with the Figma tools. Reads never ask (they change nothing). Edits are never
+ * pre-approved: without "Agent may edit Figma" they are blocked here and hidden by Relay; with it, each call asks.
+ */
+export function figmaArgs(config: string, write: boolean): string[] {
+  const tool = (n: string) => `mcp__${FIGMA_MCP_NAME}__${n}`;
+  return [
+    '--mcp-config',
+    config,
+    '--allowedTools',
+    ...FIGMA_READ_TOOLS.map(tool),
+    ...(write ? [] : ['--disallowedTools', ...FIGMA_WRITE_TOOLS.map(tool)]),
+  ];
+}
+
 function serverPackageRoot(): string {
   let dir = dirname(fileURLToPath(import.meta.url));
   for (let i = 0; i < 6; i++) {
@@ -306,6 +346,8 @@ export function commandFor(
   cursorTestModel?: CursorTestModel,
   /** The model a plain agent session starts on (planning). */
   agentModel?: string,
+  /** A plain Claude session with the Figma tools: its MCP config file and whether edits are allowed. */
+  figma?: { config: string; write: boolean },
 ): { file: string; args: string[]; title: string } {
   switch (kind) {
     case 'claude':
@@ -351,6 +393,7 @@ export function commandFor(
           'plan',
           '--permission-prompt-tool',
           'stdio',
+          ...(figma ? figmaArgs(figma.config, figma.write) : []),
         ],
         title: 'Claude',
       };
@@ -549,6 +592,9 @@ export class SessionManager {
     const cursorTest = i.testRun && i.kind === 'cursor' ? i.testRun : null;
     const mcpConfig =
       i.testRun && i.kind === 'claude' ? writeTestRunMcpConfig(i.testRun) : undefined;
+    // Figma is for coding sessions; a device test keeps its own strict tool set.
+    const figmaConfig =
+      i.figma && i.kind === 'claude' && !i.testRun ? writeFigmaMcpConfig(i.figma) : undefined;
     const cmd = commandFor(
       i.kind,
       i.cwd,
@@ -558,6 +604,7 @@ export class SessionManager {
       i.flutter,
       cursorTest?.cursorModel,
       i.model,
+      figmaConfig && i.figma ? { config: figmaConfig, write: i.figma.write } : undefined,
     );
     if (resume && i.kind === 'claude') {
       const at = cmd.args.indexOf('--permission-mode');
@@ -605,6 +652,7 @@ export class SessionManager {
     } catch (e) {
       if (cursorTest) rmSync(cwd, { recursive: true, force: true });
       if (mcpConfig) rmSync(mcpConfig, { force: true });
+      if (figmaConfig) rmSync(figmaConfig, { force: true });
       throw new CockpitHostError(
         'spawn_failed',
         `${cmd.file} could not start: ${(e as Error).message}`,
@@ -619,6 +667,7 @@ export class SessionManager {
         if (cursorTest) rmSync(cwd, { recursive: true, force: true });
         // So does the Claude one's MCP config.
         if (mcpConfig) rmSync(mcpConfig, { force: true });
+        if (figmaConfig) rmSync(figmaConfig, { force: true });
       },
     };
   }

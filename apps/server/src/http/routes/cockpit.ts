@@ -89,6 +89,8 @@ const QueueBody = z
     existing: z.enum(['replace', 'reuse']).optional(),
     extraPrompt: z.string().max(8_000).optional(),
     figmaUrl: z.string().max(4_000).optional(),
+    /** "Agent may edit Figma": the session also gets the Figma bridge edit tools (each call still asks the user). */
+    figmaWrite: z.boolean().optional(),
     attachments: z
       .array(
         z
@@ -120,6 +122,8 @@ const CardStartBody = z
     extraPrompt: z.string().max(8_000).optional(),
     /** Figma node links for the agent (space or newline separated), on top of the card's own. */
     figmaUrl: z.string().max(4_000).optional(),
+    /** "Agent may edit Figma": the session also gets the Figma bridge edit tools (each call still asks the user). */
+    figmaWrite: z.boolean().optional(),
     /** Files for the agent to open (images included): base64, 5 MB each once decoded. */
     attachments: z
       .array(
@@ -191,6 +195,8 @@ const MrReviseBody = z
       .optional(),
     extraPrompt: z.string().max(8_000).optional(),
     figmaUrl: z.string().max(4_000).optional(),
+    /** "Agent may edit Figma": the session also gets the Figma bridge edit tools (each call still asks the user). */
+    figmaWrite: z.boolean().optional(),
     attachments: CardStartBody.shape.attachments,
   })
   .strict();
