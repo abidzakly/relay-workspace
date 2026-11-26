@@ -1,17 +1,8 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import type { ConfigExportBody, ConfigExportFile, ConfigImportPreview } from '@relay/shared';
 import { post, postForBlob } from './api';
+import { saveBlob } from './saveFile';
 import { keys as settingsKeys } from './settingsApi';
-
-function saveBlob(blob: Blob, fileName: string): void {
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = fileName;
-  a.click();
-  // After the click has handed the blob to the browser's download.
-  setTimeout(() => URL.revokeObjectURL(url), 60_000);
-}
 
 const dateTag = () => new Date().toISOString().slice(0, 10);
 

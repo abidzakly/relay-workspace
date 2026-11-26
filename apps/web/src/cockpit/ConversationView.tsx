@@ -11,6 +11,7 @@ import {
   X,
 } from 'lucide-react';
 import {
+  Fragment,
   useEffect,
   useRef,
   useState,
@@ -43,6 +44,15 @@ import {
   useRevokeOnUnmount,
   type AttachFile,
 } from './attachments';
+import {
+  collectExport,
+  ExportCard,
+  ExportMenu,
+  exportDone,
+  exportModeOf,
+  exportPrompt,
+  ExportRequestChip,
+} from './ChatExport';
 import { MrBackLink } from './MrBackLink';
 import { useCoarsePointer } from '@/workspace/useMedia';
 
@@ -360,8 +370,10 @@ function Block({
   onCommand: (c: ConversationCommand) => void;
 }) {
   switch (item.kind) {
-    case 'user':
-      return <UserBlock text={item.text} />;
+    case 'user': {
+      const mode = exportModeOf(item.text);
+      return mode ? <ExportRequestChip mode={mode} /> : <UserBlock text={item.text} />;
+    }
     case 'text':
       return <Markdown source={item.text} className="text-base leading-7" />;
     case 'tools':
@@ -385,6 +397,19 @@ function Block({
         </p>
       );
   }
+}
+
+/** The copy/save card that closes an export reply, when `i` is that reply's last item and the reply is done. */
+function exportCardAfter(items: readonly DocItem[], i: number, working: boolean, title: string) {
+  if (items[i]?.kind === 'user') return null;
+  const next = items[i + 1];
+  if (next && next.kind !== 'user') return null;
+  let j = i;
+  while (j >= 0 && items[j]!.kind !== 'user') j--;
+  const request = items[j];
+  const mode = request?.kind === 'user' ? exportModeOf(request.text) : null;
+  if (!mode || !exportDone(items, j, working)) return null;
+  return <ExportCard mode={mode} markdown={collectExport(items, j)} title={title} />;
 }
 
 /** A refused model in the transcript: a calm callout, and the corner alert once. */
@@ -694,6 +719,10 @@ export function ConversationView({ s }: { s: SessionView }) {
             <CircleStop className="size-3.5" aria-hidden /> Stop
           </Button>
         )}
+        <ExportMenu
+          disabled={exited || empty || working || deciding}
+          onExport={(mode) => void onSend(exportPrompt(mode), [])}
+        />
         <Button
           size="sm"
           variant="ghost"
@@ -735,7 +764,10 @@ export function ConversationView({ s }: { s: SessionView }) {
               </div>
             )}
             {doc.items.map((item, i) => (
-              <Block key={i} item={item} onCommand={onCommand} />
+              <Fragment key={i}>
+                <Block item={item} onCommand={onCommand} />
+                {exportCardAfter(doc.items, i, working, s.title)}
+              </Fragment>
             ))}
             {working && doc.items.length > 0 && doc.items.at(-1)?.kind !== 'tools' && (
               <p className="flex items-center gap-1.5 text-sm text-muted-foreground">
