@@ -12,6 +12,7 @@ import type {
   BranchSourceState,
   LocalBranch,
 } from '@relay/shared';
+import { isReservedBranch, othersPhraseFor } from '@relay/shared';
 import type { AuditWriter } from '../../audit/auditLog';
 import type { ConfigStore } from '../../config/store';
 import type { AppDb } from '../../db';
@@ -310,6 +311,23 @@ export class BranchesService {
       throw new ActionError(404, 'branch_not_found', `${branch} is not a branch of this repo.`);
     if (row.isBase)
       throw new ActionError(422, 'base_branch', 'The base branch is never deleted from Relay.');
+    if (isReservedBranch(branch)) {
+      throw new ActionError(
+        422,
+        'reserved_branch',
+        `${branch} is a reserved branch and is never deleted from Relay.`,
+      );
+    }
+    // Someone else's branch (or one Relay cannot place) goes only with its name typed: on the Mac and on origin.
+    if (row.mine !== true && confirmName !== branch) {
+      throw new ActionError(
+        409,
+        'confirm_name_required',
+        row.mine === false
+          ? `${branch} is not yours (last commit by ${row.author ?? row.authorEmail ?? 'someone else'}): type its name to delete it.`
+          : 'Relay cannot tell whose branch this is: type its name to delete it.',
+      );
+    }
     if (local) {
       if (!list.workspaceId) {
         throw new ActionError(
@@ -398,13 +416,6 @@ export class BranchesService {
           'branch_has_mr',
           `!${row.mr.iid} is still open from ${branch}: merge or close it first.`,
           { iid: row.mr.iid },
-        );
-      }
-      if (row.mine !== true && confirmName !== branch) {
-        throw new ActionError(
-          409,
-          'confirm_name_required',
-          'This branch is not yours (or Relay cannot tell): type its name to delete it on origin.',
         );
       }
     }
@@ -527,7 +538,7 @@ export class BranchesService {
   /**
    * Deletes several branches, one after another (git is not safe to run concurrently on one repo). Each branch gets
    * the same checks as a single delete; a refusal skips that branch only. Remote deletes of branches that are not the
-   * user's need the typed phrase `delete <n> branches`.
+   * user's (on the Mac or origin) need the typed phrase `delete <n> branches by others`.
    */
   async deleteMany(body: BranchBulkDeleteBody): Promise<BranchBulkDeleteResult> {
     const {
@@ -539,8 +550,22 @@ export class BranchesService {
       removeWorktree = false,
       switchTo,
     } = body;
-    const phraseOk = body.confirmPhrase?.trim() === `delete ${branches.length} branches`;
     const list = await this.list(repoId);
+    // Branches someone else pushed go only when the user typed how many of them there are: the whole request is
+    // refused otherwise, before anything runs.
+    const others = branches.filter((b) => {
+      const r = list.rows.find((x) => x.name === b);
+      return !!r && ((local && r.local) || (remote && r.remote)) && r.mine !== true;
+    }).length;
+    const othersOk = others > 0 && body.othersPhrase?.trim() === othersPhraseFor(others);
+    if (others > 0 && !othersOk) {
+      throw new ActionError(
+        409,
+        'confirm_others_required',
+        `${others} of these branches are not yours: type "${othersPhraseFor(others)}" to delete them.`,
+        { others },
+      );
+    }
     const items: BranchBulkItem[] = [];
     for (const branch of branches) {
       const row = list.rows.find((r) => r.name === branch);
@@ -570,7 +595,7 @@ export class BranchesService {
             force,
             removeWorktree,
             ...(row?.current && switchTo ? { switchTo } : {}),
-            ...(phraseOk ? { confirmName: branch } : {}),
+            ...(othersOk ? { confirmName: branch } : {}),
           },
           list,
         );

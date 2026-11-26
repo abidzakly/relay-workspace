@@ -37,6 +37,34 @@ export const LocalBranchListSchema = z.object({
 });
 export type LocalBranchList = z.infer<typeof LocalBranchListSchema>;
 
+/**
+ * Branch names that are never selected or deleted from Relay, whatever the repo's base branch is: long-lived and
+ * environment branches. Compared without case.
+ */
+export const RESERVED_BRANCH_NAMES = [
+  'main',
+  'master',
+  'develop',
+  'development',
+  'dev',
+  'staging',
+  'stage',
+  'preprod',
+  'pre-prod',
+  'preproduction',
+  'pre-production',
+  'production',
+  'prod',
+  'release',
+  'uat',
+  'qa',
+] as const;
+const RESERVED = new Set<string>(RESERVED_BRANCH_NAMES);
+export const isReservedBranch = (name: string): boolean => RESERVED.has(name.toLowerCase());
+
+/** The phrase that confirms deleting branches someone else pushed (bulk delete). */
+export const othersPhraseFor = (n: number): string => `delete ${n} branches by others`;
+
 export const BranchSourceStateSchema = z.union([
   z.object({ ok: z.literal(true) }),
   z.object({ ok: z.literal(false), code: z.string(), message: z.string() }),
@@ -144,7 +172,7 @@ export const BranchDeleteResultSchema = z.object({
 });
 export type BranchDeleteResult = z.infer<typeof BranchDeleteResultSchema>;
 
-/** Several branches at once. Remote deletes of branches that are not yours need `confirmPhrase` = `delete <n> branches`. */
+/** Several branches at once. Branches that are not yours need `othersPhrase` (`confirmPhrase` is no longer read). */
 export const BranchBulkDeleteBodySchema = z.object({
   repo: RepoIdSchema,
   branches: z
@@ -159,6 +187,8 @@ export const BranchBulkDeleteBodySchema = z.object({
   /** Switch the repo workspace to the base when one of the branches is checked out there. */
   switchTo: BranchNameSchema.optional(),
   confirmPhrase: z.string().max(100).optional(),
+  /** Required when any branch is not the user's (on the Mac or origin): `othersPhraseFor(<that count>)`. */
+  othersPhrase: z.string().max(100).optional(),
 });
 export type BranchBulkDeleteBody = z.input<typeof BranchBulkDeleteBodySchema>;
 

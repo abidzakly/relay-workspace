@@ -15,11 +15,13 @@ import {
   Search,
   Trash2,
   TriangleAlert,
+  UserRound,
   X,
 } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useLocation, useNavigate, useParams, useSearchParams } from 'react-router';
 import type { BranchRow, BranchSourceState } from '@relay/shared';
+import { isReservedBranch } from '@relay/shared';
 import { CardLinkDialog } from '@/components/cardLink/CardLinkDialog';
 import { BulkDeleteDialog } from '@/components/branches/BulkDeleteDialog';
 import { DeleteBranchDialog } from '@/components/branches/DeleteBranchDialog';
@@ -47,6 +49,11 @@ const FILTERS: { id: Filter; label: string; test: (r: BranchRow) => boolean }[] 
   { id: 'remote', label: 'Only on origin', test: (r) => r.remote && !r.local },
 ];
 const PAGE = 120;
+/** Never ticked or trashed here: the base, GitLab-protected and long-lived environment branches. */
+const undeletable = (r: BranchRow) => r.isBase || r.protected || isReservedBranch(r.name);
+/** "Created by": the head commit's author (git does not record who made a branch). */
+const UNKNOWN = '\u0000unknown';
+const authorKey = (r: BranchRow) => r.authorEmail ?? r.author ?? UNKNOWN;
 const LAST_REPO = 'relay.branches.repo';
 
 const kindOf = (r: BranchRow) =>
@@ -89,6 +96,7 @@ export function Branches() {
     return FILTERS.some((x) => x.id === f) ? (f as Filter) : 'all';
   });
   const [query, setQuery] = useState('');
+  const [authors, setAuthors] = useState<string[]>([]);
   const [limit, setLimit] = useState(PAGE);
   const [linking, setLinking] = useState<BranchRow | null>(null);
   const [deleting, setDeleting] = useState<BranchRow | null>(null);
@@ -100,13 +108,38 @@ export function Branches() {
   useEffect(() => {
     setSelected(new Set());
     setSelecting(false);
+    setAuthors([]);
   }, [repo]);
-  useEffect(() => setLimit(PAGE), [repo, filter, query]);
+  useEffect(() => setLimit(PAGE), [repo, filter, query, authors]);
 
   const rows = q.data?.rows ?? [];
+  const me = q.data?.meEmail ?? null;
+  // Only the people who pushed a branch in this list.
+  const authorOptions = useMemo(() => {
+    const m = new Map<string, { label: string; n: number }>();
+    for (const r of q.data?.rows ?? []) {
+      const k = authorKey(r);
+      const cur = m.get(k);
+      if (cur) cur.n++;
+      else m.set(k, { label: k === UNKNOWN ? 'Unknown' : (r.author ?? r.authorEmail ?? k), n: 1 });
+    }
+    return [...m.entries()]
+      .sort(
+        ([a, x], [b, y]) =>
+          Number(b === me) - Number(a === me) ||
+          Number(a === UNKNOWN) - Number(b === UNKNOWN) ||
+          x.label.localeCompare(y.label),
+      )
+      .map(([value, { label, n }]) => ({
+        value,
+        label: value === me ? `${label} (you)` : label,
+        hint: String(n),
+      }));
+  }, [q.data?.rows, me]);
+  const byAuthor = authors.length ? rows.filter((r) => authors.includes(authorKey(r))) : rows;
   const needle = query.trim().toLowerCase();
   const searched = needle
-    ? rows.filter(
+    ? byAuthor.filter(
         (r) =>
           r.name.toLowerCase().includes(needle) ||
           (r.subject ?? '').toLowerCase().includes(needle) ||
@@ -114,7 +147,7 @@ export function Branches() {
           (r.card?.title ?? '').toLowerCase().includes(needle) ||
           (r.mr ? `!${r.mr.iid} ${r.mr.title}`.toLowerCase().includes(needle) : false),
       )
-    : rows;
+    : byAuthor;
   const test = FILTERS.find((f) => f.id === filter)!.test;
   const shown = searched.filter(test);
   useEffect(() => {
@@ -135,7 +168,7 @@ export function Branches() {
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   }, [selecting, bulkOpen, deleting]);
-  const selectable = shown.filter((r) => !r.isBase);
+  const selectable = shown.filter((r) => !undeletable(r));
   const toggle = (name: string, range: boolean) => {
     setSelected((cur) => {
       const next = new Set(cur);
@@ -158,6 +191,7 @@ export function Branches() {
     });
     lastPicked.current = name;
   };
+  const othersSelected = rows.filter((r) => selected.has(r.name) && r.mine !== true).length;
   const allShownSelected = selectable.length > 0 && selectable.every((r) => selected.has(r.name));
   const noWorkspace =
     q.data?.sources.local.ok === false && q.data.sources.local.code === 'no_workspace';
@@ -198,6 +232,21 @@ export function Branches() {
             className="h-11 pl-9"
           />
         </label>
+        <div className="w-full sm:w-56" title="The author of each branch's last commit">
+          <Dropdown
+            multiple
+            label="Created by"
+            allLabel="Everyone"
+            options={authorOptions}
+            value={authors}
+            onChange={setAuthors}
+            icon={UserRound}
+            width="full"
+            searchable={authorOptions.length > 6}
+            placeholder="Everyone"
+            disabled={!q.data}
+          />
+        </div>
         <Button
           variant="outline"
           className="h-11"
@@ -342,6 +391,12 @@ export function Branches() {
           <span className="text-sm">
             <span className="font-mono font-medium">{selected.size}</span> selected
           </span>
+          {othersSelected > 0 && (
+            <span className="br-bulkbar-warn">
+              <TriangleAlert aria-hidden className="size-3.5" />
+              {othersSelected} of these {othersSelected > 1 ? 'are' : 'is'} by someone else
+            </span>
+          )}
           <span className="flex-1" />
           <Button variant="ghost" size="sm" onClick={() => setSelected(new Set())}>
             <X className="size-4" /> Clear
@@ -443,6 +498,7 @@ function Row({
 }) {
   const compare = `/review/${encodeURIComponent(repo)}/compare?${new URLSearchParams({ from: base, to: r.name }).toString()}`;
   const where = r.local && r.remote ? null : r.local ? 'local only' : 'origin only';
+  const locked = undeletable(r);
   return (
     <li
       className={cn('br-row', selecting && 'br-row-selecting')}
@@ -455,11 +511,17 @@ function Row({
           type="button"
           role="checkbox"
           aria-checked={selected}
-          disabled={r.isBase}
+          disabled={locked}
           className="br-select"
-          aria-label={r.isBase ? 'The base branch cannot be selected' : `Select ${r.name}`}
+          aria-label={locked ? `${r.name} cannot be selected` : `Select ${r.name}`}
           title={
-            r.isBase ? 'The base branch is never deleted from Relay' : 'Shift-click selects a range'
+            r.isBase
+              ? 'The base branch is never deleted from Relay'
+              : r.protected
+                ? 'Protected on GitLab: never deleted from Relay'
+                : locked
+                  ? 'Reserved branch: never deleted from Relay'
+                  : 'Shift-click selects a range'
           }
           onClick={(e) => onToggle(e.shiftKey)}
         >
@@ -470,6 +532,25 @@ function Row({
         <div className="flex min-w-0 flex-wrap items-center gap-1.5">
           <span className="br-name">{r.name}</span>
           {r.isBase && <span className="br-tag">base</span>}
+          {!r.isBase && locked && (
+            <span className="br-tag" title="Never deleted from Relay">
+              {r.protected ? 'protected' : 'reserved'}
+            </span>
+          )}
+          {!locked && r.mine === false && (
+            <span className="br-tag" data-tone="warn" title={r.authorEmail ?? undefined}>
+              by {r.author ?? r.authorEmail ?? 'someone else'}
+            </span>
+          )}
+          {!locked && r.mine === null && (
+            <span
+              className="br-tag"
+              data-tone="muted"
+              title="Relay cannot tell whose branch this is"
+            >
+              owner unknown
+            </span>
+          )}
           {r.current && (
             <span className="br-tag" data-tone="current" title="Checked out in the repo workspace">
               checked out
@@ -606,7 +687,7 @@ function Row({
             <GitCompare className="size-4" />
           </Link>
         )}
-        {!r.isBase && (
+        {!locked && (
           <button
             type="button"
             className="rv-icon-btn br-trash"
