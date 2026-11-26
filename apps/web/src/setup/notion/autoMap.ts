@@ -1,4 +1,4 @@
-import type { NotionSchemaProp } from '@relay/shared';
+import type { NotionSchemaProp, NotionSchemaView } from '@relay/shared';
 
 /** What Relay reads from a card, in the user's words, and the Notion column types that can hold it. */
 export interface Role {
@@ -167,49 +167,129 @@ export function autoMap(
  * Relay's status groups. `hint` is the short form (a column header's tooltip); `means` says in full what putting a
  * status in the group does, shown under it in the wizard and in Advanced mode.
  */
-export const GROUPS = [
-  {
-    key: 'complete',
-    label: 'Complete',
-    hint: 'How your board says “coding finished”.',
-    means:
-      'The status your board uses for “coding finished, merge request in review”, however your workspace spells it (e.g. Completed). Relay moves a card here when its merge request is opened.',
-  },
-  {
-    key: 'done',
-    label: 'Ready to Test and later',
-    hint: 'Counts as finished for the completion rate.',
-    means:
-      'Ready to Test and every status after it. A card in one of these counts as finished in the completion rate, and its SLA timer stops.',
-  },
-  {
-    key: 'inactive',
-    label: 'Not actionable',
-    hint: 'Nothing to do now: never in Today’s focus.',
-    means:
-      'Statuses where there is nothing for you to do now: parked (Backlog, Draft) or closed (Done, Archived). These cards never appear in Today’s focus or “Needs your action”. They still count in the KPI.',
-  },
-  {
-    key: 'uncommitted',
-    label: 'Not committed',
-    hint: 'Left out of the completion rate.',
-    means:
-      'Statuses of work nobody has committed to yet (Backlog, Draft, Assign to PM). These cards are left out of the completion rate, so they never count as unfinished. Usually the parked part of “Not actionable”, without Done or Archived.',
-  },
-] as const;
-export type GroupKey = (typeof GROUPS)[number]['key'];
+/** Relay's four status lists, as stored in `notion.statusGroups`. */
+export type GroupKey = 'complete' | 'done' | 'inactive' | 'uncommitted';
 
-/** A sensible first sorting of the board's statuses into Relay's groups. */
-export function autoGroups(statuses: readonly string[]): Record<GroupKey, string[]> {
-  const has = (s: string, ...words: string[]) => words.some((w) => s.toLowerCase().includes(w));
-  return {
-    complete: statuses.filter((s) => has(s, 'complete')),
-    done: statuses.filter((s) =>
-      has(s, 'ready to test', 'test', 'done', 'archiv', 'qa', 'release'),
-    ),
-    inactive: statuses.filter((s) =>
-      has(s, 'archiv', 'done', 'backlog', 'draft', 'cancel', 'hold', 'assign to pm'),
-    ),
-    uncommitted: statuses.filter((s) => has(s, 'backlog', 'draft', 'assign to pm')),
-  };
+/**
+ * Where a status sits in the flow. Each status gets exactly one stage; the stored status lists are derived from it,
+ * so a status can never land in two lists that contradict each other.
+ */
+export const STAGES = [
+  {
+    key: 'parked',
+    label: 'Parked or dropped',
+    hint: 'Nobody has committed to it yet, or it was dropped. Backlog, Draft, Assign to PM, Cancelled.',
+    focus: false,
+    rate: 'left out',
+    groups: ['inactive', 'uncommitted'],
+  },
+  {
+    key: 'hold',
+    label: 'On hold',
+    hint: 'Committed, but nothing to do right now. On Hold, Blocked.',
+    focus: false,
+    rate: 'unfinished',
+    groups: ['inactive'],
+  },
+  {
+    key: 'working',
+    label: 'Working',
+    hint: 'Yours to do. To Do, In Progress.',
+    focus: true,
+    rate: 'unfinished',
+    groups: [],
+  },
+  {
+    key: 'review',
+    label: 'In review',
+    hint: 'Coding finished, merge request open. Relay moves a card here when its merge request opens.',
+    focus: true,
+    rate: 'finished',
+    groups: ['complete'],
+  },
+  {
+    key: 'qa',
+    label: 'With QA or finished',
+    hint: 'Handed to QA, or closed. Ready to Test, QA, Done, Released, Archived. The SLA timer stops.',
+    focus: false,
+    rate: 'finished',
+    groups: ['done'],
+  },
+] as const satisfies readonly {
+  key: string;
+  label: string;
+  hint: string;
+  focus: boolean;
+  rate: 'left out' | 'unfinished' | 'finished';
+  groups: readonly GroupKey[];
+}[];
+export type StageKey = (typeof STAGES)[number]['key'];
+
+const has = (s: string, ...words: string[]) => words.some((w) => s.toLowerCase().includes(w));
+
+/** A first guess for each status, from its name. */
+export function autoStages(statuses: readonly string[]): Record<string, StageKey> {
+  return Object.fromEntries(
+    statuses.map((s): [string, StageKey] => [
+      s,
+      has(s, 'complete')
+        ? 'review'
+        : has(s, 'ready to test', 'test', 'qa', 'done', 'archiv', 'release')
+          ? 'qa'
+          : has(s, 'backlog', 'draft', 'assign to pm', 'cancel')
+            ? 'parked'
+            : has(s, 'hold', 'block')
+              ? 'hold'
+              : 'working',
+    ]),
+  );
+}
+
+/** Stages from stored status lists. Statuses in none of the lists fall back to the name guess. */
+export function stagesFromGroups(
+  statuses: readonly string[],
+  groups: Record<GroupKey, readonly string[]>,
+): Record<string, StageKey> {
+  const guess = autoStages(statuses);
+  const known = new Set(Object.values(groups).flat());
+  const inG = (k: GroupKey, s: string) => groups[k].includes(s);
+  return Object.fromEntries(
+    statuses.map((s): [string, StageKey] => [
+      s,
+      inG('done', s)
+        ? 'qa'
+        : inG('complete', s)
+          ? 'review'
+          : inG('uncommitted', s)
+            ? 'parked'
+            : inG('inactive', s)
+              ? 'hold'
+              : known.size > 0
+                ? 'working'
+                : guess[s]!,
+    ]),
+  );
+}
+
+/** The stored status lists for a set of stages. */
+export function groupsFromStages(
+  statuses: readonly string[],
+  stages: Record<string, StageKey>,
+): Record<GroupKey, string[]> {
+  const out: Record<GroupKey, string[]> = { complete: [], done: [], inactive: [], uncommitted: [] };
+  for (const s of statuses) {
+    const stage = STAGES.find((x) => x.key === (stages[s] ?? 'working'))!;
+    for (const g of stage.groups) out[g].push(s);
+  }
+  return out;
+}
+
+/** Text of one sample card's column, as Notion shows it. */
+export function sampleOf(view: NotionSchemaView | undefined, column: string | undefined): string {
+  if (!view || !column) return '';
+  for (const s of view.samples) {
+    const v = s[column];
+    if (v) return v;
+  }
+  return '';
 }

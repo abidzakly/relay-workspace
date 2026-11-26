@@ -5,6 +5,7 @@ import type {
   GoogleFeature,
   NotionDataSourceOption,
   NotionMe,
+  NotionPerson,
   NotionSchemaView,
   OAuthProvider,
   OAuthStatus,
@@ -17,6 +18,7 @@ export const oauthKeys = {
   notionSources: ['oauth', 'notion', 'data-sources'] as const,
   notionSchema: (id: string) => ['oauth', 'notion', 'schema', id] as const,
   notionMe: ['oauth', 'notion', 'me'] as const,
+  notionPeople: (id: string, prop: string) => ['oauth', 'notion', 'people', id, prop] as const,
   gitlabProjects: (search: string) => ['oauth', 'gitlab', 'projects', search] as const,
 };
 
@@ -95,6 +97,21 @@ export function useNotionSchema(id: string | undefined) {
       get<NotionSchemaView>(`/api/oauth/notion/schema/${encodeURIComponent(id ?? '')}`, { signal }),
     enabled: !!id,
     staleTime: 60_000,
+    retry: false,
+  });
+}
+
+/** The people tagged in a board's people column (newest cards first), to pick "which one is you". */
+export function useNotionPeople(id: string | undefined, prop: string | undefined) {
+  return useQuery({
+    queryKey: oauthKeys.notionPeople(id ?? '', prop ?? ''),
+    queryFn: ({ signal }) =>
+      get<NotionPerson[]>(
+        `/api/oauth/notion/people/${encodeURIComponent(id ?? '')}?prop=${encodeURIComponent(prop ?? '')}`,
+        { signal },
+      ),
+    enabled: !!id && !!prop,
+    staleTime: 5 * 60_000,
     retry: false,
   });
 }

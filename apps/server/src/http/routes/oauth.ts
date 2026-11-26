@@ -6,6 +6,7 @@ import {
   type GitlabProjectOption,
   type NotionDataSourceOption,
   type NotionMe,
+  type NotionPerson,
   type NotionSchemaView,
   type OAuthProvider,
 } from '@relay/shared';
@@ -25,6 +26,7 @@ const CallbackQuery = z.object({
 });
 const ProjectQuery = z.object({ search: z.string().max(100).optional() });
 const SchemaParams = z.object({ id: z.string().regex(/^[0-9a-f-]{32,36}$/i) });
+const PeopleQuery = z.object({ prop: z.string().min(1).max(200) });
 
 const escapeHtml = (s: string) => s.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
 
@@ -164,11 +166,19 @@ export function registerOAuthRoutes(
   };
 
   app.get('/api/oauth/notion/data-sources', async (): Promise<NotionDataSourceOption[]> => {
-    const json = await notion('POST', '/v1/search', {
-      filter: { property: 'object', value: 'data_source' },
-      page_size: 100,
-    });
-    const results = Array.isArray(json.results) ? (json.results as unknown[]) : [];
+    // Every page of results (Notion answers 100 at a time), up to 1000 data sources.
+    const results: unknown[] = [];
+    let cursor: string | undefined;
+    for (let i = 0; i < 10; i++) {
+      const json = await notion('POST', '/v1/search', {
+        filter: { property: 'object', value: 'data_source' },
+        page_size: 100,
+        ...(cursor ? { start_cursor: cursor } : {}),
+      });
+      if (Array.isArray(json.results)) results.push(...(json.results as unknown[]));
+      cursor = json.has_more === true ? str(json.next_cursor) : undefined;
+      if (!cursor) break;
+    }
     return results.flatMap((r) => {
       const o = rec(r);
       const id = str(o.id);
@@ -176,7 +186,20 @@ export function registerOAuthRoutes(
       const title = Array.isArray(o.title)
         ? o.title.map((t) => str(rec(t).plain_text) ?? '').join('')
         : '';
-      return [{ id, title: title || '(Untitled)', url: str(o.url) ?? null }];
+      const icon = rec(o.icon);
+      const types = Object.values(rec(o.properties)).map((p) => str(rec(p).type));
+      return [
+        {
+          id,
+          title: title || '(Untitled)',
+          url: str(o.url) ?? null,
+          emoji: icon.type === 'emoji' ? (str(icon.emoji) ?? null) : null,
+          columns: types.length,
+          editedAt: str(o.last_edited_time) ?? null,
+          boardLike:
+            (types.includes('status') || types.includes('select')) && types.includes('people'),
+        },
+      ];
     });
   });
 
@@ -211,6 +234,41 @@ export function registerOAuthRoutes(
       props,
       samples,
     };
+  });
+
+  /** The people tagged in one people column of a board, newest cards first. Reads at most 300 cards. */
+  app.get('/api/oauth/notion/people/:id', async (req): Promise<NotionPerson[]> => {
+    const { id } = parseWith(SchemaParams, req.params);
+    const { prop } = parseWith(PeopleQuery, req.query);
+    const seen = new Map<string, NotionPerson>();
+    let cursor: string | undefined;
+    for (let i = 0; i < 3; i++) {
+      const page = await notion('POST', `/v1/data_sources/${id}/query`, {
+        page_size: 100,
+        sorts: [{ timestamp: 'last_edited_time', direction: 'descending' }],
+        ...(cursor ? { start_cursor: cursor } : {}),
+      });
+      for (const r of Array.isArray(page.results) ? (page.results as unknown[]) : []) {
+        const col = rec(rec(rec(r).properties)[prop]);
+        const people = Array.isArray(col.people) ? (col.people as unknown[]) : [];
+        for (const p of people) {
+          const u = rec(p);
+          const uid = str(u.id);
+          if (!uid || seen.has(uid) || u.object === 'group') continue;
+          seen.set(uid, {
+            id: uid,
+            name: str(u.name) ?? null,
+            email: str(rec(u.person).email) ?? null,
+            avatarUrl: str(u.avatar_url) ?? null,
+          });
+        }
+      }
+      cursor = page.has_more === true ? str(page.next_cursor) : undefined;
+      if (!cursor) break;
+    }
+    return [...seen.values()].sort((a, b) =>
+      (a.name ?? a.email ?? a.id).localeCompare(b.name ?? b.email ?? b.id),
+    );
   });
 
   app.get('/api/oauth/notion/me', async (): Promise<NotionMe> => {
