@@ -1,6 +1,8 @@
 import { SCRIPT_FIELDS, type ScriptFieldState, type ScriptSource } from '@relay/shared';
 import { Field } from '@/components/Field';
 import { Input } from '@/components/ui/input';
+import { ScriptFieldPicker } from './ScriptFieldPicker';
+import { useScriptFieldOptions } from './useScriptFieldOptions';
 
 /** Where a derived value lives in Settings, in words. */
 export const SOURCE_LABEL: Record<ScriptSource, string> = {
@@ -20,8 +22,10 @@ export const SOURCE_LABEL: Record<ScriptSource, string> = {
 };
 
 /**
- * Inputs for some release-script fields. Typed values live in `draft`; an empty input means "use Settings" (shown as
- * the placeholder). Secrets are never shown: a saved one reads "Saved" until replaced.
+ * Inputs for some release-script fields. Each value is picked from what Relay already knows ("Use Settings", a repo's
+ * value, the GitLab or Notion sign-in) or typed under "Custom…". Picks live in `draft`: a missing key is untouched,
+ * null forgets a typed value. Secrets stay password inputs and are never shown: a saved one reads "Saved" until
+ * replaced.
  */
 export function ScriptFieldInputs({
   keys,
@@ -32,10 +36,12 @@ export function ScriptFieldInputs({
 }: {
   keys: readonly string[];
   states: readonly ScriptFieldState[];
-  draft: Record<string, string>;
-  onChange: (key: string, value: string) => void;
+  draft: Record<string, string | null>;
+  /** undefined = drop the key from the draft. */
+  onChange: (key: string, value: string | null | undefined) => void;
   idPrefix: string;
 }) {
+  const options = useScriptFieldOptions();
   return (
     <div className="grid gap-4 sm:grid-cols-2">
       {keys.map((key) => {
@@ -65,15 +71,34 @@ export function ScriptFieldInputs({
               </>
             }
           >
-            <Input
-              id={`${idPrefix}-${key}`}
-              type={f.secret ? 'password' : 'text'}
-              autoComplete="off"
-              spellCheck={false}
-              value={draft[key] ?? ''}
-              placeholder={placeholder}
-              onChange={(e) => onChange(key, e.target.value)}
-            />
+            {f.secret || !options[key] ? (
+              <Input
+                id={`${idPrefix}-${key}`}
+                type={f.secret ? 'password' : 'text'}
+                autoComplete="off"
+                spellCheck={false}
+                value={draft[key] ?? ''}
+                placeholder={placeholder}
+                onChange={(e) => onChange(key, e.target.value)}
+              />
+            ) : (
+              <ScriptFieldPicker
+                id={`${idPrefix}-${key}`}
+                field={f}
+                state={st}
+                value={key in draft ? draft[key] : undefined}
+                options={options[key] ?? []}
+                sourceLabel={
+                  // A typed value hides where Settings would take it from; name the field's first source then.
+                  (st?.derivedFrom ?? f.from[0])
+                    ? (SOURCE_LABEL[(st?.derivedFrom ?? f.from[0]) as ScriptSource] ??
+                      st?.derivedFrom ??
+                      null)
+                    : null
+                }
+                onChange={(v) => onChange(key, v)}
+              />
+            )}
           </Field>
         );
       })}
