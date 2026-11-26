@@ -1,4 +1,5 @@
 import type { FastifyInstance } from 'fastify';
+import { z } from 'zod';
 import {
   GitlabPickerBodySchema,
   type Branch,
@@ -17,6 +18,8 @@ export interface GitlabPickerDeps {
   store: ConfigStore;
   oauth?: OAuthHub;
   http: HttpClient;
+  /** The webhook listener's port, to tell which tunnel points at it. */
+  webhookPort?: number | undefined;
 }
 
 const rec = (v: unknown): Record<string, unknown> =>
@@ -27,6 +30,26 @@ const str = (v: unknown): string | undefined => (typeof v === 'string' && v ? v 
 const FLAVOR_FILE = /^main_([a-z0-9_]+)\.dart$/i;
 /** `name: my_app` on its own line in pubspec.yaml. */
 const PUBSPEC_NAME = /^name:\s*["']?([A-Za-z0-9_]+)["']?\s*$/m;
+/** ngrok's local agent API: it only ever listens on this machine. */
+const NGROK_API = 'http://127.0.0.1:4040/api/tunnels';
+
+const HostBody = z.object({ host: z.url({ protocol: /^https?$/ }).max(300) });
+
+export interface HostCheck {
+  ok: boolean;
+  /** Normalised host to save (no trailing slash, no path). */
+  host: string;
+  version: string | null;
+  message: string;
+}
+
+export interface TunnelOption {
+  publicUrl: string;
+  /** Where the tunnel forwards to, e.g. `http://localhost:3001`. */
+  addr: string;
+  /** Forwards to Relay's webhook port. */
+  webhook: boolean;
+}
 
 /**
  * Reads GitLab for the Add repository wizard, so a person picks instead of typing ids (all POST, CSRF applies, no
@@ -36,6 +59,8 @@ const PUBSPEC_NAME = /^name:\s*["']?([A-Za-z0-9_]+)["']?\s*$/m;
  *  POST /api/gitlab/pick/branches   { projectId, search? } branches, default first
  *  POST /api/gitlab/pick/members    { projectId, search? } members with Developer access or more
  *  POST /api/gitlab/pick/flutter    { projectId } flavors from lib/main_*.dart and the pubspec name
+ *  POST /api/gitlab/pick/host       { host } is this a GitLab (its /api/v4/version answers), no token sent
+ *  GET  /api/gitlab/pick/tunnels    public https URLs of a local ngrok agent (its API on 127.0.0.1:4040)
  *
  * The host is always the one in Settings: nothing in a request chooses where a token is sent. A pasted `token` is
  * used for this one read only; it is never stored or logged here.
@@ -228,5 +253,52 @@ export function registerGitlabPickerRoutes(app: FastifyInstance, deps: GitlabPic
     const isFlutter = pub.status === 200;
     const appName = isFlutter ? (PUBSPEC_NAME.exec(pub.text)?.[1] ?? null) : null;
     return { flavors: [...new Set(flavors)].sort(), appName, isFlutter };
+  });
+
+  app.post('/api/gitlab/pick/host', async (req): Promise<HostCheck> => {
+    const { host: raw } = parseWith(HostBody, req.body);
+    const u = new URL(raw);
+    const host = `${u.protocol}//${u.host}`;
+    try {
+      // Unauthenticated: GitLab answers 401 to a stranger, which still proves it is a GitLab.
+      const res = await deps.http.send({
+        url: `${host}/api/v4/version`,
+        timeoutMs: 8_000,
+        maxRetries: 0,
+      });
+      const version = str(rec(res.json).version) ?? null;
+      if (res.status === 200 || res.status === 401 || res.status === 403) {
+        return { ok: true, host, version, message: 'GitLab answers here.' };
+      }
+      return {
+        ok: false,
+        host,
+        version: null,
+        message: `No GitLab API here (HTTP ${res.status}).`,
+      };
+    } catch {
+      return { ok: false, host, version: null, message: 'Nothing answered at this address.' };
+    }
+  });
+
+  app.get('/api/gitlab/pick/tunnels', async (): Promise<TunnelOption[]> => {
+    const port = deps.webhookPort ?? (Number(process.env.WEBHOOK_PORT) || 3001);
+    try {
+      const res = await deps.http.send({ url: NGROK_API, timeoutMs: 2_000, maxRetries: 0 });
+      const list = Array.isArray(rec(res.json).tunnels) ? (rec(res.json).tunnels as unknown[]) : [];
+      return list
+        .flatMap((t): TunnelOption[] => {
+          const o = rec(t);
+          const publicUrl = str(o.public_url);
+          const addr = str(rec(o.config).addr) ?? '';
+          if (!publicUrl?.startsWith('https://')) return [];
+          const webhook = new RegExp(`:${port}/?$`).test(addr);
+          return [{ publicUrl, addr, webhook }];
+        })
+        .sort((a, b) => Number(b.webhook) - Number(a.webhook));
+    } catch {
+      // No ngrok agent running here: nothing to offer.
+      return [];
+    }
   });
 }

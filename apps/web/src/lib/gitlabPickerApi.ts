@@ -1,4 +1,4 @@
-import { useQuery } from '@tanstack/react-query';
+import { useMutation, useQuery } from '@tanstack/react-query';
 import type {
   BranchList,
   GitlabFlutterHints,
@@ -7,7 +7,7 @@ import type {
   GitlabPickerBody,
   GitlabProjectOption,
 } from '@relay/shared';
-import { post } from './api';
+import { get, post } from './api';
 
 /**
  * GitLab reads for the Add repository wizard (`/api/gitlab/pick/*`). `who` says which token reads: a pasted project
@@ -103,6 +103,35 @@ export function usePickFlutter(who: PickWho, projectId: number | undefined, ref:
       ),
     enabled: !!projectId,
     staleTime: 5 * 60_000,
+    retry: false,
+  });
+}
+
+/** Is there a GitLab at this address (no token is sent). */
+export function useCheckGitlabHost() {
+  return useMutation({
+    mutationFn: (host: string) =>
+      post<{ ok: boolean; host: string; version: string | null; message: string }>(
+        '/api/gitlab/pick/host',
+        { host },
+      ),
+  });
+}
+
+export interface TunnelOption {
+  publicUrl: string;
+  addr: string;
+  /** Forwards to Relay's webhook port. */
+  webhook: boolean;
+}
+
+/** Public URLs of an ngrok agent running on this machine; empty when there is none. */
+export function useTunnels(enabled: boolean) {
+  return useQuery({
+    queryKey: ['gitlab-pick', 'tunnels'],
+    queryFn: ({ signal }) => get<TunnelOption[]>('/api/gitlab/pick/tunnels', { signal }),
+    enabled,
+    staleTime: 10_000,
     retry: false,
   });
 }
