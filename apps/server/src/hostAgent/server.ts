@@ -282,6 +282,7 @@ function readFlutterVersion(): string | null {
     encoding: 'utf8',
     timeout: 60_000,
     windowsVerbatimArguments: l.windowsVerbatimArguments,
+    windowsHide: true,
   });
   if (r.status !== 0) return null;
   return r.stdout.split('\n')[0]?.trim() || null;
@@ -294,7 +295,8 @@ function makeGlabShim(proxy: string, log: Logger): string | null {
     log.warn('glab is not on PATH: vu will not be able to open or merge MRs');
     return null;
   }
-  // The shim is a sh script: on Windows glab reaches GitLab directly (the release scripts need WSL there anyway).
+  // The shim is a sh script, and only vu (the custom release engine, bash) uses it. That engine does not run on
+  // Windows, and the native engine talks to GitLab over HTTP, so no shim is needed there.
   if (IS_WINDOWS) return null;
   const dir = mkdtempSync(join(tmpdir(), 'relay-agent-'));
   const shim = join(dir, 'glab');

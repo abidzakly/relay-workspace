@@ -3,7 +3,7 @@ import { mkdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { AI_CONCISE_STYLE } from '@relay/shared';
-import { launchSpec } from '../../util/platform';
+import { killChild, launchSpec } from '../../util/platform';
 import { CockpitHostError, type AiRunRequest } from './host';
 
 /**
@@ -121,14 +121,14 @@ export function runJsonCli(
     let err = '';
     let size = 0;
     const timer = setTimeout(() => {
-      child.kill('SIGTERM');
+      killChild(child);
       reject(new CockpitHostError('ai_timeout', `${name} took too long`));
     }, req.timeoutMs);
     child.stdout.setEncoding('utf8');
     child.stdout.on('data', (d: string) => {
       size += d.length;
       if (size > MAX_OUTPUT) {
-        child.kill('SIGTERM');
+        killChild(child);
         return;
       }
       out += d;

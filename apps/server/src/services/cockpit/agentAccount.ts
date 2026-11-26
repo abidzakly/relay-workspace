@@ -1,7 +1,7 @@
 import { spawn, type ChildProcessByStdio } from 'node:child_process';
 import type { Readable } from 'node:stream';
 import { parseCursorModelList, type AgentAccounts, type CursorModelEntry } from '@relay/shared';
-import { launchSpec } from '../../util/platform';
+import { killChild, launchSpec } from '../../util/platform';
 import { aiWorkDir, CLAUDE_BIN } from './claudeCli';
 import { CURSOR_BIN } from './cursorCli';
 
@@ -38,7 +38,7 @@ function run(bin: string, args: string[], timeoutMs = 20_000): Promise<string | 
       return;
     }
     const timer = setTimeout(() => {
-      child.kill('SIGTERM');
+      killChild(child);
       resolve(null);
     }, timeoutMs);
     child.stdout.setEncoding('utf8');

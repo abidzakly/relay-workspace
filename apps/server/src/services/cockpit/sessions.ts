@@ -1,6 +1,7 @@
 import { execFile, spawn } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { createRequire } from 'node:module';
 import { homedir, tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -30,7 +31,15 @@ import { CursorConversation } from './cursorConversation';
 import { CURSOR_BIN, CURSOR_MODEL } from './cursorCli';
 import { CockpitHostError } from './host';
 import type { PersistedSpec, SessionStore } from './sessionStore';
-import { defaultShell, launchSpec, signalTree, which } from '../../util/platform';
+import {
+  defaultShell,
+  IS_WINDOWS,
+  launchSpec,
+  ptyKill,
+  ptySpec,
+  signalTree,
+  which,
+} from '../../util/platform';
 
 /**
  * Persistent PTY sessions. A session survives the phone going away:
@@ -253,17 +262,20 @@ export function writeCursorTestRunDir(t: TestRunProfile): string {
 
 function testRunMcpServers(t: TestRunProfile): Record<string, unknown> {
   const serverRoot = serverPackageRoot();
-  const tsx = join(serverRoot, 'node_modules', '.bin', 'tsx');
   const script = join(serverRoot, 'src', 'agentTools', 'benchMcp.ts');
   const servers: Record<string, unknown> = {
     bench: {
-      command: tsx,
-      args: [script],
+      ...tsxServer(serverRoot, script),
       env: { BENCH_URL: t.benchUrl, BENCH_TOKEN: t.token, BENCH_RUN: t.runId },
     },
   };
   const marionette = whichSync('marionette_mcp');
-  if (marionette) servers.marionette = { command: marionette, args: [] };
+  // On Windows the pub launcher is a `.bat`, which an MCP client cannot start without cmd.exe.
+  if (marionette) {
+    servers.marionette = /\.(cmd|bat)$/i.test(marionette)
+      ? { command: process.env.ComSpec || 'cmd.exe', args: ['/d', '/s', '/c', marionette] }
+      : { command: marionette, args: [] };
+  }
   return servers;
 }
 
@@ -278,8 +290,7 @@ export function writeFigmaMcpConfig(p: FigmaToolsProfile): string {
   const file = join(tmpdir(), `cockpit-figma-${randomUUID()}.json`);
   const servers = {
     [FIGMA_MCP_NAME]: {
-      command: join(serverRoot, 'node_modules', '.bin', 'tsx'),
-      args: [join(serverRoot, 'src', 'agentTools', 'figmaMcp.ts')],
+      ...tsxServer(serverRoot, join(serverRoot, 'src', 'agentTools', 'figmaMcp.ts')),
       env: { FIGMA_RELAY_URL: p.url, FIGMA_SESSION_TOKEN: p.token },
     },
   };
@@ -300,6 +311,21 @@ export function figmaArgs(config: string, write: boolean): string[] {
     ...FIGMA_READ_TOOLS.map(tool),
     ...(write ? [] : ['--disallowedTools', ...FIGMA_WRITE_TOOLS.map(tool)]),
   ];
+}
+
+/**
+ * An MCP server that runs one of this repo's TypeScript files: this Node with tsx's CLI file. Not
+ * `node_modules/.bin/tsx`: on Windows that is a sh shim next to `tsx.CMD`, and an MCP client starts neither without a
+ * shell.
+ */
+function tsxServer(serverRoot: string, script: string): { command: string; args: string[] } {
+  const req = createRequire(join(serverRoot, 'package.json'));
+  const pkgFile = req.resolve('tsx/package.json');
+  const bin = (
+    JSON.parse(readFileSync(pkgFile, 'utf8')) as { bin: string | Record<string, string> }
+  ).bin;
+  const cli = typeof bin === 'string' ? bin : (bin.tsx ?? './dist/cli.mjs');
+  return { command: process.execPath, args: [join(dirname(pkgFile), cli), script] };
 }
 
 function serverPackageRoot(): string {
@@ -326,8 +352,12 @@ function serverPackageRoot(): string {
 function whichSync(bin: string): string | null {
   const found = which(bin);
   if (found) return found;
-  const pub = join(homedir(), '.pub-cache', 'bin', bin);
-  return existsSync(pub) ? pub : null;
+  // `dart pub global activate` puts its launchers in ~/.pub-cache/bin, or %LOCALAPPDATA%\Pub\Cache\bin on Windows.
+  const pubBin =
+    IS_WINDOWS && process.env.LOCALAPPDATA
+      ? join(process.env.LOCALAPPDATA, 'Pub', 'Cache', 'bin')
+      : join(homedir(), '.pub-cache', 'bin');
+  return which(bin, pubBin);
 }
 
 /**
@@ -340,7 +370,8 @@ export function commandFor(
   kind: SessionKind,
   cwd: string,
   deviceId: string | undefined,
-  shell = process.env.SHELL || defaultShell().file,
+  // Windows ignores $SHELL: under Git Bash it is an MSYS path (`/usr/bin/bash`) that ConPTY cannot start.
+  shell = (IS_WINDOWS ? undefined : process.env.SHELL) || defaultShell().file,
   testRunMcpConfig?: string,
   flutter?: { flavor: string | null; mode: FlutterRunMode; ios: boolean },
   cursorTestModel?: CursorTestModel,
@@ -439,7 +470,7 @@ function stopProcess(proc: NodePtyProcess): void {
     proc.kill();
     return;
   }
-  signalTree(proc.pid, 'SIGTERM', () => proc.kill('SIGTERM'));
+  signalTree(proc.pid, 'SIGTERM', () => ptyKill(proc, 'SIGTERM'));
 }
 
 export class SessionManager {
@@ -612,6 +643,8 @@ export class SessionManager {
       if (resume.id) cmd.args.push('--resume', resume.id);
     }
     const cwd = cursorTest ? writeCursorTestRunDir(cursorTest) : i.cwd;
+    // flutter and fvm are `.bat` launchers on Windows, which ConPTY cannot start directly.
+    const ptyCmd = ptySpec(cmd.file, cmd.args);
     let proc: NodePtyProcess;
     try {
       proc =
@@ -642,7 +675,7 @@ export class SessionManager {
                 ...(i.execSwitch ? { execSwitch: i.execSwitch } : {}),
                 ...(resume?.mode ? { startMode: resume.mode } : {}),
               })
-            : this.pty!.spawn(cmd.file, cmd.args, {
+            : this.pty!.spawn(ptyCmd.file, ptyCmd.args, {
                 name: 'xterm-256color',
                 cols: i.cols,
                 rows: i.rows,
@@ -838,10 +871,18 @@ const flutterCmd = (cwd: string): { file: string; pre: string[] } =>
 
 function run(cwd: string, file: string, args: string[], timeoutMs = 90_000): Promise<string> {
   return new Promise((resolve, reject) => {
+    const l = launchSpec(file, args);
     execFile(
-      file,
-      args,
-      { cwd, timeout: timeoutMs, maxBuffer: 8 * 1024 * 1024, env: sessionEnv() },
+      l.file,
+      l.args,
+      {
+        cwd,
+        timeout: timeoutMs,
+        maxBuffer: 8 * 1024 * 1024,
+        env: sessionEnv(),
+        windowsVerbatimArguments: l.windowsVerbatimArguments,
+        windowsHide: true,
+      },
       (err, out) =>
         err
           ? reject(new CockpitHostError('flutter_failed', `${file} ${args.join(' ')} failed`))
@@ -913,6 +954,7 @@ export function launchEmulator(cwd: string, emulatorId: string): void {
     cwd,
     env: sessionEnv(),
     detached: true,
+    windowsHide: true,
     stdio: 'ignore',
   });
   child.on('error', () => undefined);

@@ -1,7 +1,7 @@
 import { spawnSync } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import { homedir } from 'node:os';
-import { delimiter, join } from 'node:path';
+import { delimiter, extname, join } from 'node:path';
 
 /**
  * The few places that differ between macOS/Linux and Windows. Everything that looks up a program, expands `~`, stops
@@ -10,10 +10,33 @@ import { delimiter, join } from 'node:path';
 
 export const IS_WINDOWS = process.platform === 'win32';
 
-/** Full path of a program on PATH (with PATHEXT on Windows), or null. Never runs a shell. */
-export function which(bin: string, path = process.env.PATH ?? ''): string | null {
+/**
+ * The PATH of this process. Windows spells the variable `Path` and its keys are case-insensitive, but a plain object
+ * copy of `process.env` is not: read it whatever its case.
+ */
+export function envPath(env: NodeJS.ProcessEnv = process.env): string {
+  return env[pathKey(env)] ?? '';
+}
+
+/** The key that holds PATH in `env`: `PATH`, or on Windows whatever case it has there (`Path`). */
+export function pathKey(env: NodeJS.ProcessEnv = process.env): string {
+  if (!IS_WINDOWS) return 'PATH';
+  return Object.keys(env).find((k) => k.toUpperCase() === 'PATH') ?? 'PATH';
+}
+
+/**
+ * Full path of a program on PATH (with PATHEXT on Windows), or null. Never runs a shell.
+ *
+ * On Windows the PATHEXT forms come first: Flutter and npm put an extensionless sh script (`flutter`, `claude`) next to
+ * the real launcher (`flutter.bat`, `claude.cmd`), and only the launcher runs there. The bare name is tried only when it
+ * already has an extension (`git.exe`).
+ */
+export function which(bin: string, path = envPath()): string | null {
   const exts = IS_WINDOWS
-    ? ['', ...(process.env.PATHEXT ?? '.EXE;.CMD;.BAT;.COM').split(';').filter(Boolean)]
+    ? [
+        ...(process.env.PATHEXT ?? '.EXE;.CMD;.BAT;.COM').split(';').filter(Boolean),
+        ...(extname(bin) ? [''] : []),
+      ]
     : [''];
   for (const dir of path.split(delimiter)) {
     if (!dir) continue;
@@ -100,4 +123,35 @@ export function launchSpec(file: string, args: readonly string[]): LaunchSpec {
     args: ['/d', '/s', '/c', `"${line}"`],
     windowsVerbatimArguments: true,
   };
+}
+
+/**
+ * What node-pty should spawn. ConPTY starts only real executables, so on Windows a `.cmd`/`.bat` launcher runs through
+ * `cmd.exe /d /s /c` with the same quoting as `launchSpec`. node-pty on Windows takes such pre-quoted arguments as one
+ * string (it has no `windowsVerbatimArguments`).
+ */
+export function ptySpec(
+  file: string,
+  args: readonly string[],
+): { file: string; args: string[] | string } {
+  const l = launchSpec(file, args);
+  return l.windowsVerbatimArguments ? { file: l.file, args: l.args[3]! } : l;
+}
+
+/** Ends a node-pty process. On Windows node-pty throws for any signal ("Signals not supported"), so none is passed. */
+export function ptyKill(proc: { kill(signal?: string): void }, signal?: string): void {
+  if (IS_WINDOWS) proc.kill();
+  else proc.kill(signal);
+}
+
+/**
+ * Ends a child that was not spawned detached. On Windows a `.cmd` launcher runs inside `cmd.exe` (see `launchSpec`),
+ * and killing that wrapper would leave the real program running, so the whole tree is ended there.
+ */
+export function killChild(
+  child: { pid?: number | undefined; kill(signal?: NodeJS.Signals): boolean },
+  sig: NodeJS.Signals = 'SIGTERM',
+): void {
+  if (IS_WINDOWS && child.pid !== undefined) signalTree(child.pid, sig, () => child.kill());
+  else child.kill(sig);
 }

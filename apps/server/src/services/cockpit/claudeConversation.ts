@@ -213,6 +213,7 @@ export class ClaudeConversation implements NodePtyProcess {
           ...opts,
           windowsVerbatimArguments: l.windowsVerbatimArguments,
           detached: true,
+          windowsHide: true,
           stdio: ['pipe', 'pipe', 'pipe'],
         });
       });

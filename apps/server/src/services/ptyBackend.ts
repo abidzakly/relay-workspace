@@ -5,7 +5,7 @@ import { PTY_COLS, PTY_ROWS, type ReleaseEngines } from '@relay/shared';
 import type { Logger } from '../util/logger';
 import { childEnv } from './gitExec';
 import { resolveVuBinDir } from './scriptConfig';
-import { expandHome, IS_WINDOWS, signalTree } from '../util/platform';
+import { expandHome, IS_WINDOWS, pathKey, ptyKill, signalTree } from '../util/platform';
 
 /**
  * Where `vu` runs in a pseudo-terminal. `LocalPtyBackend` spawns it on this machine through node-pty. The host agent
@@ -56,7 +56,8 @@ export interface NodePtyProcess {
 export interface NodePtyModule {
   spawn(
     file: string,
-    args: string[],
+    /** A string only on Windows: arguments already quoted for `cmd.exe` (see `ptySpec`). */
+    args: string[] | string,
     options: { name: string; cols: number; rows: number; cwd: string; env: Record<string, string> },
   ): NodePtyProcess;
 }
@@ -161,8 +162,8 @@ export class LocalPtyBackend implements PtyBackend {
       onData: (l) => proc.onData(l),
       onExit: (l) => proc.onExit(l),
       write: (d) => proc.write(d),
-      kill: (s) => proc.kill(s),
-      killGroup: (sig) => signalTree(proc.pid, sig, () => proc.kill(sig)),
+      kill: (s) => ptyKill(proc, s),
+      killGroup: (sig) => signalTree(proc.pid, sig, () => ptyKill(proc, sig)),
     });
   }
 
@@ -172,7 +173,8 @@ export class LocalPtyBackend implements PtyBackend {
       if (v !== undefined) env[k] = v;
     }
     // vu finds mrc and flutter-run-menu next to itself, but they and glab are looked up on PATH as well.
-    env.PATH = [...(this.o.pathPrefix ?? []), this.binDir, env.PATH ?? ''].join(delimiter);
+    const pathVar = pathKey(env);
+    env[pathVar] = [...(this.o.pathPrefix ?? []), this.binDir, env[pathVar] ?? ''].join(delimiter);
     env.TERM = 'xterm-256color';
     env = { ...env, ...input.env };
     return this.o.decorateEnv ? this.o.decorateEnv(env) : env;
