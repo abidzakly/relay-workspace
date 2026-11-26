@@ -417,11 +417,15 @@ export class GitExec {
     const display = redactSecrets([command, ...args].join(' '), secrets);
     const started = Date.now();
 
+    // flutter and fvm are `.bat` launchers on Windows: launchSpec runs them through cmd.exe (git.exe runs as is).
+    const l = launchSpec(command, args);
     const result = await new Promise<GitExecResult>((resolve, reject) => {
       execFile(
-        command,
-        [...args],
+        l.file,
+        l.args,
         {
+          windowsVerbatimArguments: l.windowsVerbatimArguments,
+          windowsHide: true,
           cwd,
           env: { ...childEnv(cwd), ...opts.env, ...auth.env },
           shell: false,
@@ -501,6 +505,7 @@ export class GitExec {
         env: { ...childEnv(cwd), ...opts.env, ...auth.env },
         shell: false,
         detached: true,
+        windowsHide: true,
         stdio: ['ignore', 'pipe', 'pipe'],
       });
 

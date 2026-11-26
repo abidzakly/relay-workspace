@@ -4,6 +4,7 @@ import { cp, mkdir } from 'node:fs/promises';
 import { basename, dirname, join, sep } from 'node:path';
 import { type FetchFailure, isSafeBranchName } from '@relay/shared';
 import { fetchOriginReport } from './fetchFailure';
+import { launchSpec } from '../../util/platform';
 import { CockpitHostError } from './host';
 import { sessionEnv } from './sessions';
 import { git } from './workspaceFs';
@@ -25,11 +26,20 @@ const tail = (s: string, n = 40) => s.split('\n').slice(-n).join('\n').trim();
 
 function run(cwd: string, file: string, args: string[], timeoutMs: number): Promise<IntegrityStep> {
   const started = Date.now();
+  // flutter, fvm and dart are `.bat` launchers on Windows: launchSpec runs them through cmd.exe.
+  const l = launchSpec(file, args);
   return new Promise((resolve) => {
     execFile(
-      file,
-      args,
-      { cwd, env: sessionEnv(), timeout: timeoutMs, maxBuffer: 16 * 1024 * 1024 },
+      l.file,
+      l.args,
+      {
+        cwd,
+        env: sessionEnv(),
+        timeout: timeoutMs,
+        maxBuffer: 16 * 1024 * 1024,
+        windowsVerbatimArguments: l.windowsVerbatimArguments,
+        windowsHide: true,
+      },
       (err, out, errOut) =>
         resolve({
           name: [file, ...args].join(' '),
