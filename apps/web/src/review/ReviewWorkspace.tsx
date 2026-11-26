@@ -1,3 +1,4 @@
+import { BOTTOM_BAR } from '@/components/FloatingThemeSwitch';
 import * as DialogPrimitive from '@radix-ui/react-dialog';
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { flushSync } from 'react-dom';
@@ -894,7 +895,7 @@ export function ReviewWorkspace(props: ReviewWorkspaceProps) {
       </div>
 
       {p.files.length > 0 && (
-        <nav aria-label="Review navigation" className="rv-navbar">
+        <nav aria-label="Review navigation" className="rv-navbar" {...BOTTOM_BAR}>
           <div className="rv-navbar-group" role="group" aria-label="Files">
             <button
               type="button"
