@@ -562,6 +562,8 @@ function BeadView({
 }
 
 const LENS_W = 320;
+/** Breathing room between the lens and the stage edges. */
+const LENS_INSET = 8;
 
 function Lens({
   b,
@@ -580,8 +582,22 @@ function Lens({
   const { tag, text } = splitTitle(m.title);
   const x = Math.min(stageW - LENS_W - 12, Math.max(12, b.center - LENS_W / 2));
   const live = m.phase === 'live';
+  // The stage scrolls sideways, so it clips anything taller than itself. Sit above the thread when the card fits,
+  // otherwise pin it to the stage top (over the thread) rather than letting the top get cut off.
+  const ref = useRef<HTMLDivElement>(null);
+  const [h, setH] = useState(0);
+  useLayoutEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    setH(el.offsetHeight);
+    const ro = new ResizeObserver(() => setH(el.offsetHeight));
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+  const top = Math.max(LENS_INSET, THREAD_Y - 22 - h);
   return (
     <motion.div
+      ref={ref}
       role="dialog"
       aria-label={text}
       initial={{ opacity: 0, y: 10, scale: 0.96, filter: 'blur(6px)' }}
@@ -589,13 +605,14 @@ function Lens({
       exit={{ opacity: 0, y: 6, scale: 0.97, filter: 'blur(4px)' }}
       transition={SPRING.settle}
       className={cn(
-        'glass absolute z-30 grid gap-3 rounded-[18px] bg-popover/95 p-4',
+        'glass absolute z-30 grid gap-3 overflow-y-auto rounded-[18px] bg-popover p-4',
         m.priority === 'key' && 'shadow-[0_18px_48px_-18px_var(--emphasis)]',
       )}
       style={{
         left: x,
-        bottom: STAGE_H - THREAD_Y + 22,
+        top,
         width: LENS_W,
+        maxHeight: STAGE_H - LENS_INSET * 2,
         backdropFilter: 'var(--glass-blur-strong)',
         WebkitBackdropFilter: 'var(--glass-blur-strong)',
       }}
