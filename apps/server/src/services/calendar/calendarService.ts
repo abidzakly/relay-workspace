@@ -14,7 +14,9 @@ import {
   type CalendarConfigUpdate,
   type CalendarStatus,
   type MeetingList,
+  type CalendarListResult,
 } from '@relay/shared';
+import { listCalendars } from './calendarList';
 import type { ConfigStore } from '../../config/store';
 import type { EventBus } from '../../sync/eventBus';
 import type { Logger } from '../../util/logger';
@@ -320,6 +322,12 @@ export class CalendarService {
       }
       throw e;
     }
+  }
+
+  /** The account's calendars, for the Calendars checklist. Empty when not connected. */
+  async calendars(): Promise<CalendarListResult> {
+    if (!this.connected()) return { calendars: [], needsConsent: false };
+    return listCalendars(this.d.http, await this.accessToken());
   }
 
   // ───────────────────────────── meetings ─────────────────────────────

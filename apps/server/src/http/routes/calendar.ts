@@ -64,6 +64,16 @@ export function registerCalendarRoutes(
 
   app.get('/api/calendar/status', async () => calendar.status());
 
+  // The account's calendars (ids and names), so they are ticked instead of typed. Read-only.
+  app.get('/api/calendar/calendars', async () => {
+    try {
+      return await calendar.calendars();
+    } catch (e) {
+      if (e instanceof GoogleError) throw new HttpError(502, 'calendar_list_failed', e.message);
+      throw e;
+    }
+  });
+
   app.put('/api/calendar/config', async (req) => {
     const body = parseWith(CalendarConfigUpdateSchema, req.body);
     const status = await calendar.saveConfig(body);

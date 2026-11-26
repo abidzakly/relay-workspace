@@ -12,6 +12,7 @@ import type { Logger } from '../../util/logger';
 import type { HttpClient } from '../httpClient';
 import {
   authorizeUrl,
+  CALENDAR_LIST_SCOPE,
   exchangeCode,
   gitlabUsername,
   GOOGLE_FEATURE_SCOPES,
@@ -201,6 +202,8 @@ export class OAuthHub {
       const had = this.read('google');
       for (const g of had ? this.googleFeatures(had) : []) scopes.push(GOOGLE_FEATURE_SCOPES[g]);
       if (f) scopes.push(GOOGLE_FEATURE_SCOPES[f]);
+      // Calendar also lists the calendars, for the picker. Not part of "has Calendar": older grants keep working.
+      if (scopes.includes(GOOGLE_FEATURE_SCOPES.calendar)) scopes.push(CALENDAR_LIST_SCOPE);
     }
     return authorizeUrl(p, this.context(p), { state, challenge, scopes: [...new Set(scopes)] });
   }

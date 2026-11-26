@@ -18,6 +18,7 @@ import { useSaveGlobal } from '@/lib/settingsApi';
 import { PriorityRulesEditor } from '@/meetings/PriorityRulesEditor';
 import { OAuthConnect } from './OAuthConnect';
 import { ErrorAlert } from './SectionCard';
+import { CalendarChecklist, ClientJsonLoader } from './googleParts';
 import { Advanced, CopyLine, ExtLink } from './SetupGuide';
 
 const LEAD_CHOICES = [
@@ -197,6 +198,12 @@ function CalendarForm({
             <CopyLine value={status.redirectUri} label="redirect URI" />
           </div>
           <div className="grid gap-4">
+            <ClientJsonLoader
+              onClient={(c) => {
+                setClientId(c.clientId);
+                setSecret(c.clientSecret);
+              }}
+            />
             <Field label="OAuth client ID" htmlFor="gc-client">
               <Input
                 id="gc-client"
@@ -228,14 +235,27 @@ function CalendarForm({
         </Advanced>
       ) : null}
 
-      <Field
-        label="Calendars"
-        htmlFor="gc-ids"
-        error={bad ? `“${bad}” is not a calendar id.` : undefined}
-        hint="“primary” is your own calendar. Add others by their id (Calendar settings > Integrate calendar), separated by commas."
-      >
-        <Input id="gc-ids" value={idsRaw} onChange={(e) => setIdsRaw(e.target.value)} />
-      </Field>
+      {status.connected ? (
+        <div className="grid gap-2">
+          <Label>Calendars to read</Label>
+          <CalendarChecklist
+            enabled={status.connected}
+            advanced={advanced}
+            value={ids}
+            onChange={(next) => setIdsRaw(next.join(', '))}
+          />
+        </div>
+      ) : null}
+      <Advanced summary="Calendar ids by hand" open={!status.connected || !!bad}>
+        <Field
+          label="Calendars"
+          htmlFor="gc-ids"
+          error={bad ? `“${bad}” is not a calendar id.` : undefined}
+          hint="“primary” is your own calendar. Add others by their id (Calendar settings > Integrate calendar), separated by commas."
+        >
+          <Input id="gc-ids" value={idsRaw} onChange={(e) => setIdsRaw(e.target.value)} />
+        </Field>
+      </Advanced>
       <div className="grid gap-2">
         <Label>Show the alert</Label>
         <div className="flex flex-wrap gap-2">

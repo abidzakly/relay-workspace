@@ -250,3 +250,18 @@ export const MeetingPresenceBodySchema = z.object({
   status: MeetingPresenceSchema.nullable(),
 });
 export type MeetingPresenceBody = z.infer<typeof MeetingPresenceBodySchema>;
+
+/** One calendar of the signed-in Google account, for the Calendars checklist. */
+export const CalendarOptionSchema = z.object({
+  id: z.string(),
+  summary: z.string(),
+  primary: z.boolean(),
+  /** Google's background colour for it (`#rrggbb`), when it has one. */
+  color: z.string().nullable(),
+  /** `owner`, `writer`, `reader` or `freeBusyReader`. */
+  accessRole: z.string(),
+});
+export type CalendarOption = z.infer<typeof CalendarOptionSchema>;
+
+/** `needsConsent`: the sign-in predates the calendar-list permission; connect Calendar once more to add it. */
+export type CalendarListResult = { calendars: CalendarOption[]; needsConsent: boolean };
