@@ -19,6 +19,7 @@ export const AI_TEMPLATES = [
   'turn-summary',
   'base-suggest',
   'explain-thread',
+  'explain-thread-chat',
   'commit-message',
   'explain-change-chat',
   'propose-change',
@@ -219,6 +220,14 @@ export const ExplainThreadResultSchema = ExplainThreadOutputSchema.extend({
 });
 export type ExplainThreadResult = z.infer<typeof ExplainThreadResultSchema>;
 
+/** A follow-up question on a reviewer's thread, after "Explain": a plain answer that continues the conversation. */
+export const ExplainThreadChatOutputSchema = z.object({ answer: z.string() });
+export type ExplainThreadChatOutput = z.infer<typeof ExplainThreadChatOutputSchema>;
+export const ExplainThreadChatResultSchema = ExplainThreadChatOutputSchema.extend({
+  generatedBy: AiGeneratedBySchema,
+});
+export type ExplainThreadChatResult = z.infer<typeof ExplainThreadChatResultSchema>;
+
 /** A commit message for the uncommitted changes in a workspace ("smart commit" on Create MR). */
 export const CommitMessageOutputSchema = z.object({ message: z.string() });
 export type CommitMessageOutput = z.infer<typeof CommitMessageOutputSchema>;
@@ -239,6 +248,7 @@ export const AI_OUTPUT_SCHEMAS = {
   'turn-summary': TurnSummaryOutputSchema,
   'base-suggest': BaseSuggestOutputSchema,
   'explain-thread': ExplainThreadOutputSchema,
+  'explain-thread-chat': ExplainThreadChatOutputSchema,
   'commit-message': CommitMessageOutputSchema,
   'explain-change-chat': ExplainChangeOutputSchema,
   'propose-change': RequestChangeOutputSchema,
@@ -252,6 +262,9 @@ export function aiOutputProblem(template: AiTemplate, out: unknown): string | nu
     if (s < 0 || s > 3) return 'score must be 0–3';
   }
   if (template === 'mr-chat' && !(out as MrChatOutput).answer.trim()) return 'the answer is empty';
+  if (template === 'explain-thread-chat' && !(out as ExplainThreadChatOutput).answer.trim()) {
+    return 'the answer is empty';
+  }
   if (template === 'explain-change-chat') {
     const o = out as ExplainChangeOutput;
     if (!o.answer.trim() && !o.tldr.trim()) return 'the explanation is empty';

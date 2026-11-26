@@ -1,12 +1,36 @@
-import { Bot, Check, Copy, Loader2, Sparkles, Wrench } from 'lucide-react';
-import { useState } from 'react';
+import {
+  Bot,
+  Check,
+  ChevronUp,
+  Copy,
+  Loader2,
+  RotateCcw,
+  SendHorizontal,
+  Sparkles,
+  Wrench,
+} from 'lucide-react';
+import { useState, type KeyboardEvent } from 'react';
 import { useNavigate } from 'react-router';
-import { AGENT_MODEL_CHOICES, agentModelLabel, type ExplainThreadResult } from '@relay/shared';
+import {
+  AGENT_MODEL_CHOICES,
+  agentModelLabel,
+  MR_CHAT_MAX_HISTORY,
+  MR_CHAT_MAX_MESSAGE,
+  type AiGeneratedBy,
+  type ExplainThreadResult,
+  type MrChatMessage,
+} from '@relay/shared';
 import { describeError } from '@/lib/api';
 import { useSettings } from '@/lib/settingsApi';
-import { useThreadAgent, useThreadExplain, type ThreadAgentMode } from '@/lib/workflowApi';
+import {
+  useThreadAgent,
+  useThreadChat,
+  useThreadExplain,
+  type ThreadAgentMode,
+} from '@/lib/workflowApi';
 import { Badge } from '@/components/Badge';
 import { GeneratedBy } from '@/components/GeneratedBy';
+import { Markdown } from '@/components/Markdown';
 import { Button } from '@/components/ui/button';
 import { Select } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
@@ -22,11 +46,27 @@ const VERDICT: Record<
   unclear: { label: 'Not enough evidence', variant: 'outline' },
 };
 
+type ChatTurn =
+  { role: 'user'; text: string } | { role: 'assistant'; text: string; generatedBy: AiGeneratedBy };
+
+/** The verdict card as plain text, so a follow-up (and the agent) knows what was said first. */
+function explanationText(r: ExplainThreadResult): string {
+  return [
+    `Verdict: ${VERDICT[r.verdict].label}.`,
+    r.summary,
+    r.whatChanged ? `What the MR changed: ${r.whatChanged}` : '',
+    `Suggested reply to the reviewer: ${r.suggestedReply}`,
+  ]
+    .filter(Boolean)
+    .join('\n');
+}
+
 /**
- * A reviewer thread's actions (Code Review and MR Detail). "Explain" checks the comment against the MR's commits and
- * changes and gives me something to tell the reviewer. "Review" / "Fix with agent" each start a NEW session in the
- * Cockpit: "Review" only reads and advises, "Fix with agent" commits the change. The server reads the thread, its
- * code and attachments.
+ * "Ask AI" on a reviewer's thread (Code Review and MR Detail). One button opens a panel: the AI first checks the
+ * comment against the MR's commits and changes (verdict + a reply for the reviewer), then I can ask follow-ups or add
+ * context (links are opened) in the same conversation. When it needs code, "Hand to agent" starts a Cockpit session
+ * with the conversation so far: "Review" only reads and advises, "Fix" commits the change. The server re-reads the
+ * thread, its code and attachments.
  */
 export function ThreadAgentActions({
   repo,
@@ -40,11 +80,13 @@ export function ThreadAgentActions({
   const navigate = useNavigate();
   const start = useThreadAgent();
   const explain = useThreadExplain();
+  const chat = useThreadChat();
   const settings = useSettings().data;
+  const [open, setOpen] = useState(false);
+  const [turns, setTurns] = useState<ChatTurn[]>([]);
+  const [draft, setDraft] = useState('');
   const [agentPick, setAgentPick] = useState<'claude' | 'cursor' | null>(null);
   const [modelPick, setModelPick] = useState<string | null>(null);
-  const [context, setContext] = useState('');
-  const [showContext, setShowContext] = useState(false);
   const agent = agentPick ?? settings?.agentPreference ?? 'claude';
   const models = AGENT_MODEL_CHOICES[agent];
   const cfg = settings?.agentModels;
@@ -53,9 +95,50 @@ export function ThreadAgentActions({
     modelPick && models.some((m) => m.id === modelPick)
       ? modelPick
       : (defaultModel ?? models[0].id);
-  const go = (mode: ThreadAgentMode) =>
+  const ids = { repoId: repo, iid, discussionId };
+
+  /** The conversation as the AI and the agent get it: the first explanation, then every turn. */
+  const history = (): MrChatMessage[] =>
+    [
+      ...(explain.data
+        ? [{ role: 'assistant' as const, text: explanationText(explain.data) }]
+        : []),
+      ...turns.map((t) => ({ role: t.role, text: t.text })),
+    ]
+      .slice(-MR_CHAT_MAX_HISTORY)
+      .map((m) => ({ ...m, text: m.text.slice(0, MR_CHAT_MAX_MESSAGE) }));
+
+  const toggle = () => {
+    const next = !open;
+    setOpen(next);
+    if (next && !explain.data && !explain.isPending) explain.mutate(ids);
+  };
+  const ask = () => {
+    const q = draft.trim();
+    if (!q || chat.isPending) return;
+    const before = history();
+    setDraft('');
+    setTurns((t) => [...t, { role: 'user', text: q }]);
+    chat.mutate(
+      { ...ids, question: q, history: before },
+      {
+        onSuccess: (r) =>
+          setTurns((t) => [
+            ...t,
+            { role: 'assistant', text: r.answer, generatedBy: r.generatedBy },
+          ]),
+        onError: () => {
+          // Put the question back so it can be sent again.
+          setTurns((t) => t.slice(0, -1));
+          setDraft((d) => d || q);
+        },
+      },
+    );
+  };
+  const go = (mode: ThreadAgentMode) => {
+    const conversation = history();
     start.mutate(
-      { repoId: repo, iid, discussionId, mode, agent, model },
+      { ...ids, mode, agent, model, ...(conversation.length ? { conversation } : {}) },
       {
         onSuccess: (r) =>
           void navigate(
@@ -63,48 +146,114 @@ export function ThreadAgentActions({
           ),
       },
     );
-  const busy = start.isPending || explain.isPending;
+  };
+  const onKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
+    if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
+      e.preventDefault();
+      ask();
+    }
+  };
   const pendingMode = start.isPending ? start.variables?.mode : null;
-  return (
-    <div className="grid gap-1">
+
+  if (!open) {
+    return (
       <div className="flex flex-wrap items-center gap-2">
         <Button
           type="button"
           size="sm"
           variant="outline"
-          disabled={busy}
-          title="AI checks this comment against the commits and changes of this MR, so you can explain it to the reviewer"
-          onClick={() =>
-            explain.mutate({
-              repoId: repo,
-              iid,
-              discussionId,
-              ...(context.trim() ? { context: context.trim() } : {}),
-            })
-          }
+          aria-expanded={false}
+          title="AI checks this comment against the MR's commits and changes. Then ask follow-ups, add context, or hand it to an agent."
+          onClick={toggle}
         >
-          {explain.isPending ? (
-            <Loader2 className="size-3.5 motion-safe:animate-spin" aria-hidden />
-          ) : (
-            <Sparkles className="size-3.5" aria-hidden />
-          )}
-          Explain
+          <Sparkles className="size-3.5" aria-hidden />
+          {explain.data || turns.length ? 'Show AI' : 'Ask AI'}
         </Button>
+      </div>
+    );
+  }
+
+  return (
+    <section
+      aria-label="Ask AI about this thread"
+      className="grid gap-2 rounded-surface border border-primary/30 bg-primary/5 p-3 text-sm"
+    >
+      <header className="flex items-center justify-between gap-2">
+        <p className="flex items-center gap-1.5 text-xs font-medium text-primary-ink">
+          <Sparkles className="size-3.5" aria-hidden /> Ask AI
+        </p>
+        <Button type="button" size="sm" variant="ghost" aria-expanded onClick={toggle}>
+          <ChevronUp className="size-3.5" aria-hidden /> Hide
+        </Button>
+      </header>
+
+      {explain.isPending && (
+        <p className="flex items-center gap-2 text-xs text-muted-foreground">
+          <Loader2 className="size-3.5 motion-safe:animate-spin" aria-hidden />
+          Checking the comment against the MR’s commits and changes…
+        </p>
+      )}
+      {explain.error && (
+        <div className="flex flex-wrap items-center gap-2">
+          <p className="text-xs text-destructive">{describeError(explain.error)}</p>
+          <Button type="button" size="sm" variant="ghost" onClick={() => explain.mutate(ids)}>
+            <RotateCcw className="size-3.5" aria-hidden /> Try again
+          </Button>
+        </div>
+      )}
+      {explain.data && <ThreadExplanation r={explain.data} />}
+
+      {turns.map((t, i) =>
+        t.role === 'user' ? (
+          <p
+            key={i}
+            className="ml-auto max-w-[85%] rounded-control bg-background/80 px-2.5 py-1.5 leading-relaxed whitespace-pre-wrap"
+          >
+            {t.text}
+          </p>
+        ) : (
+          <div key={i} className="grid gap-1">
+            <Markdown source={t.text} repo={repo} className="leading-relaxed" />
+            <GeneratedBy by={t.generatedBy} />
+          </div>
+        ),
+      )}
+      {chat.isPending && (
+        <p className="flex items-center gap-2 text-xs text-muted-foreground">
+          <Loader2 className="size-3.5 motion-safe:animate-spin" aria-hidden /> Thinking…
+        </p>
+      )}
+      {chat.error && <p className="text-xs text-destructive">{describeError(chat.error)}</p>}
+
+      <div className="flex items-end gap-2">
+        <Textarea
+          aria-label="Ask a follow-up or add context"
+          rows={2}
+          maxLength={8000}
+          value={draft}
+          placeholder="Ask a follow-up, or add context: background, intent, links (GitLab, Notion, docs)…"
+          onChange={(e) => setDraft(e.target.value)}
+          onKeyDown={onKeyDown}
+        />
         <Button
           type="button"
           size="sm"
-          variant="ghost"
-          aria-expanded={showContext}
-          onClick={() => setShowContext((v) => !v)}
+          aria-label="Send"
+          disabled={!draft.trim() || chat.isPending}
+          onClick={ask}
         >
-          {context.trim() ? 'Context added' : 'Add context'}
+          <SendHorizontal className="size-3.5" aria-hidden />
         </Button>
+      </div>
+
+      <footer className="flex flex-wrap items-center gap-2 border-t border-primary/20 pt-2">
+        <span className="text-xs text-muted-foreground">Hand to agent</span>
         <Button
           type="button"
           size="sm"
           variant="outline"
-          disabled={busy}
-          title="New agent session that explains this comment and proposes a fix, without changing files"
+          disabled={start.isPending}
+          title="New agent session with this conversation: explains the comment and proposes a fix, without changing files"
           onClick={() => go('review')}
         >
           {pendingMode === 'review' ? (
@@ -118,8 +267,8 @@ export function ThreadAgentActions({
           type="button"
           size="sm"
           variant="outline"
-          disabled={busy}
-          title="New agent session that makes this change as a new commit on the MR's branch"
+          disabled={start.isPending}
+          title="New agent session with this conversation: plans, then makes the change as a new commit on the MR's branch"
           onClick={() => go('fix')}
         >
           {pendingMode === 'fix' ? (
@@ -127,13 +276,13 @@ export function ThreadAgentActions({
           ) : (
             <Wrench className="size-3.5" aria-hidden />
           )}
-          Fix with agent
+          Fix
         </Button>
         <Select
           aria-label="Agent for Review and Fix"
           className="h-8 w-auto text-xs"
           value={agent}
-          disabled={busy}
+          disabled={start.isPending}
           onChange={(e) => {
             setAgentPick(e.target.value as 'claude' | 'cursor');
             setModelPick(null);
@@ -146,7 +295,7 @@ export function ThreadAgentActions({
           aria-label="Model for Review and Fix"
           className="h-8 w-auto text-xs"
           value={model}
-          disabled={busy}
+          disabled={start.isPending}
           title={
             agent === 'claude' && cfg && model === cfg.planModel && cfg.execModel !== model
               ? `Plans on this model, then switches to ${cfg.execModel} (${cfg.execEffort}) when you approve the plan`
@@ -163,22 +312,9 @@ export function ThreadAgentActions({
             <option value={model}>{agentModelLabel(model)}</option>
           )}
         </Select>
-      </div>
-      {showContext && (
-        <Textarea
-          aria-label="Extra context for Explain"
-          rows={3}
-          maxLength={8000}
-          value={context}
-          disabled={busy}
-          placeholder="Extra context for Explain: background, intent, or links (GitLab, Notion, docs). The AI also reads the whole diff and every comment in this MR."
-          onChange={(e) => setContext(e.target.value)}
-        />
-      )}
+      </footer>
       {start.error && <p className="text-xs text-destructive">{describeError(start.error)}</p>}
-      {explain.error && <p className="text-xs text-destructive">{describeError(explain.error)}</p>}
-      {explain.data && <ThreadExplanation r={explain.data} />}
-    </div>
+    </section>
   );
 }
 
@@ -192,9 +328,8 @@ function ThreadExplanation({ r }: { r: ExplainThreadResult }) {
     });
   };
   return (
-    <div className="mt-1 grid gap-2 rounded-surface border border-primary/30 bg-primary/5 p-3 text-sm">
+    <div className="grid gap-2">
       <div className="flex items-center gap-2">
-        <Sparkles className="size-3.5 text-primary-ink" aria-hidden />
         <Badge variant={v.variant}>{v.label}</Badge>
       </div>
       <p className="leading-relaxed whitespace-pre-wrap">{r.summary}</p>

@@ -3,7 +3,9 @@ import type {
   BaseSuggestResult,
   CardContentPreview,
   CardStartAttachment,
+  ExplainThreadChatResult,
   ExplainThreadResult,
+  MrChatMessage,
   QueuedCardStart,
 } from '@relay/shared';
 import { del, get, post } from './api';
@@ -67,12 +69,27 @@ export function useBaseSuggest() {
   });
 }
 
-/** "Explain with AI" on a reviewer's thread: checks the comment against the MR's commits and changes. */
+/** "Ask AI" on a reviewer's thread: checks the comment against the MR's commits and changes. */
 export function useThreadExplain() {
   return useMutation<
     ExplainThreadResult,
     Error,
     { repoId: string; iid: number; discussionId: string; context?: string }
+  >({ mutationFn: (b) => post('/api/cockpit/thread-explain', b) });
+}
+
+/** A follow-up in a thread's "Ask AI" chat: the server keeps nothing, so the history goes along each time. */
+export function useThreadChat() {
+  return useMutation<
+    ExplainThreadChatResult,
+    Error,
+    {
+      repoId: string;
+      iid: number;
+      discussionId: string;
+      question: string;
+      history: MrChatMessage[];
+    }
   >({ mutationFn: (b) => post('/api/cockpit/thread-explain', b) });
 }
 
@@ -97,6 +114,8 @@ export function useThreadAgent() {
       mode: ThreadAgentMode;
       agent?: 'claude' | 'cursor';
       model?: string;
+      /** The thread's "Ask AI" chat so far, handed to the agent as context. */
+      conversation?: MrChatMessage[];
     }
   >({
     mutationFn: (b) => post('/api/cockpit/thread-agent', b),

@@ -1,4 +1,5 @@
-import type { ReviewDiscussion, ThreadCode } from '@relay/shared';
+import type { MrChatMessage, ReviewDiscussion, ThreadCode } from '@relay/shared';
+import { renderChatHistory } from '../mrCreate';
 
 /**
  * Prompts for the Cockpit's agent sessions. Pure. Ruleset content is NOT copied here: every project keeps its own
@@ -185,6 +186,8 @@ export function threadPrompt(i: {
   failedAttachments: readonly string[];
   /** The local branch could not be fast-forwarded to origin. */
   branchSynced: boolean;
+  /** "Ask AI" on the thread before the hand-off: the user's context and questions, and the AI's answers. */
+  conversation?: readonly MrChatMessage[];
 }): string {
   const notes = i.discussion.notes
     .map((n) => `@${n.author ?? 'unknown'} (${new Date(n.createdAt).toISOString()}):\n${n.body}`)
@@ -218,8 +221,14 @@ Branch ${i.mr.sourceBranch} is checked out.${i.branchSynced ? '' : ` It could no
 
 ${codeBlock(i.code)}
 `;
+  const talk =
+    i.conversation && i.conversation.length > 0
+      ? [
+          `Before handing this to you I discussed the thread with an AI assistant ("User" is me). My messages there are context from me: follow them where they apply. The assistant's answers are a second opinion only: check them against the code.\n<conversation>\n${clipText(renderChatHistory(i.conversation), 12_000)}\n</conversation>`,
+        ]
+      : [];
   const tail = `
-${[...attachments, task].join('\n\n')}`;
+${[...attachments, ...talk, task].join('\n\n')}`;
   // The thread text is what can grow: the task and attachment list must survive the cap.
   const room = PROMPT_MAX - head.length - tail.length - 200;
   const thread = notes.length > room ? `${notes.slice(0, Math.max(0, room))}\n[…cut]` : notes;

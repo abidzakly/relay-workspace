@@ -68,6 +68,7 @@ const DEFAULT_TIER: Record<AiTemplate, AiTier> = {
   'mr-chat': 'fast',
   'base-suggest': 'fast',
   'explain-thread': 'default',
+  'explain-thread-chat': 'fast',
   'commit-message': 'fast',
   'explain-change-chat': 'fast',
   'propose-change': 'default',
