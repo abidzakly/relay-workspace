@@ -14,6 +14,7 @@ import {
 import { useState, type ReactNode } from 'react';
 import { Link } from 'react-router';
 import type { BranchDeleteResult, BranchRow } from '@relay/shared';
+import { isReservedBranch } from '@relay/shared';
 import { DirtyTreePanel } from '@/cockpit/DirtyTreePanel';
 import { TimeAgo } from '@/components/TimeAgo';
 import { Button } from '@/components/ui/button';
@@ -33,6 +34,7 @@ import './branches.css';
 
 /** Why origin cannot be picked, or null when it can. */
 function remoteBlock(row: BranchRow, gitlabOk: boolean, repo: string): ReactNode {
+  if (isReservedBranch(row.name)) return 'Reserved branch: never deleted from Relay.';
   if (!row.remote) return 'Not on origin.';
   if (!gitlabOk) return 'GitLab cannot be reached right now.';
   if (row.protected) return 'Protected on GitLab.';
@@ -72,6 +74,7 @@ function CopyCommand({ command }: { command: string }) {
 }
 
 function localBlock(row: BranchRow, hasWorkspace: boolean): ReactNode {
+  if (isReservedBranch(row.name)) return 'Reserved branch: never deleted from Relay.';
   if (!hasWorkspace) return 'No workspace on this Mac holds this repo.';
   if (!row.local) return 'Not on this Mac.';
   if (row.holder && !row.holder.managed) {
@@ -169,7 +172,8 @@ export function DeleteBranchDialog({
   const held = row.current || !!row.holder?.managed;
   const doLocal = local && lBlock === null && (!held || freeIt);
   const doRemote = remote && rBlock === null;
-  const needName = doRemote && row.mine !== true;
+  // Someone else's branch (or one Relay cannot place) needs its name typed, on the Mac as on origin.
+  const needName = (doLocal || doRemote) && row.mine !== true;
   const nameOk = !needName || typed.trim() === row.name;
   const unmerged =
     del.error instanceof ApiError && del.error.code === 'branch_unmerged'
@@ -345,13 +349,22 @@ export function DeleteBranchDialog({
             </div>
 
             {needName && (
-              <label className="grid gap-1.5">
-                <span className="text-xs text-muted-foreground">
-                  {row.mine === false
-                    ? `The last commit is by ${row.author ?? 'someone else'}.`
-                    : 'Relay cannot tell whose branch this is.'}{' '}
-                  Type <span className="font-mono text-foreground">{row.name}</span> to delete it on
-                  origin.
+              <label className="db-unmerged flex-col gap-2" role="alert">
+                <span className="flex gap-2">
+                  <TriangleAlert aria-hidden className="mt-0.5 size-4 shrink-0" />
+                  <span>
+                    {row.mine === false ? (
+                      <>
+                        <b>This isn&rsquo;t your branch.</b> Its last commit is by{' '}
+                        {row.author ?? 'someone else'}
+                        {row.authorEmail ? ` (${row.authorEmail})` : ''}.
+                      </>
+                    ) : (
+                      <b>Relay cannot tell whose branch this is.</b>
+                    )}{' '}
+                    Type <span className="font-mono">{row.name}</span> to delete it
+                    {doRemote ? ' on origin too, for everyone' : ' on this Mac'}.
+                  </span>
                 </span>
                 <Input
                   value={typed}
