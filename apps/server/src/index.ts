@@ -341,6 +341,7 @@ async function main(): Promise<void> {
     bus,
     notifier,
     ai,
+    onAttachments: (a) => recordAttachments(app, a),
     preferredAgent: () => store.getGlobalStored().agentPreference,
     agentModels: () => store.getGlobalStored().agentModels,
     mrLinks: new MrSessionLinks({

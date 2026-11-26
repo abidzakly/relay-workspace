@@ -264,6 +264,8 @@ function attachmentDoneReason(
     if (db.resolvedThreads.has(row.refId)) return 'Its review thread is resolved';
     return null;
   }
+  // Files pasted into a Cockpit chat are read on the turn they were sent.
+  if (row.kind === 'session') return 'Sent in a Cockpit chat over a week ago';
   if (row.kind === 'mr') {
     const state = db.mrState.get(row.refId);
     if (state === 'merged' || state === 'closed') return `Its MR is ${state}`;

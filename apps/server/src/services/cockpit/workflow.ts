@@ -23,6 +23,7 @@ import type { FigmaNodeSpec, FigmaService } from '../figma/figmaService';
 import type { FigmaSnapshotStore } from '../figma/snapshotStore';
 import type { Logger } from '../../util/logger';
 import { ActionError } from '../actionError';
+import { decodeAttachment } from './attachmentFiles';
 import type { AiService } from '../ai/aiService';
 import { AiError } from '../ai/provider';
 import { extractLinks, openLinks } from './linkContext';
@@ -1126,21 +1127,6 @@ const PREVIEW_CHARS = 1_500;
 const FIGMA_NODES_MAX = 6;
 // The host agent takes 8 MB per request and the file travels as base64.
 const FIGMA_SPEC_MAX_BYTES = 5 * 1024 * 1024;
-const ATTACHMENT_MAX_BYTES = 5 * 1024 * 1024;
-
-/** A user file from the Start dialog: real base64, at most 5 MB, a name safe to show and store. */
-function decodeAttachment(a: CardStartAttachment): CardStartAttachment {
-  const bytes = Buffer.from(a.dataBase64, 'base64');
-  if (bytes.length === 0 || bytes.toString('base64') !== a.dataBase64.replace(/\s/g, '')) {
-    throw new ActionError(422, 'invalid_attachment', `${a.name} is not valid base64.`);
-  }
-  if (bytes.length > ATTACHMENT_MAX_BYTES) {
-    throw new ActionError(413, 'attachment_too_large', `${a.name} is larger than 5 MB.`);
-  }
-  const name = a.name.replace(/[^\w.\- ]+/g, '_').slice(-100) || 'file';
-  return { name, dataBase64: bytes.toString('base64') };
-}
-
 export function deckRoute(s: DeckSource): string {
   const e = encodeURIComponent;
   if (s.kind === 'mr') return `/review/mr/${e(`${s.repoId}!${s.iid}`)}/deck`;

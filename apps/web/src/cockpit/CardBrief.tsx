@@ -1,31 +1,28 @@
-import { ChevronDown, FileText, Loader2, Paperclip, RefreshCw, X } from 'lucide-react';
-import {
-  useEffect,
-  useRef,
-  useState,
-  type ClipboardEvent,
-  type DragEvent,
-  type ReactNode,
-} from 'react';
-import { parseFigmaUrl, type CardStartAttachment } from '@relay/shared';
+import { ChevronDown, FileText, Loader2, Paperclip, RefreshCw } from 'lucide-react';
+import { useRef, useState, type ClipboardEvent, type DragEvent, type ReactNode } from 'react';
+import { parseFigmaUrl } from '@relay/shared';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { describeError } from '@/lib/api';
-import { toBase64 } from '@/lib/base64';
 import { cn } from '@/lib/utils';
 import { useCardContent } from '@/lib/workflowApi';
+import {
+  addFiles,
+  ATTACH_FILE_MAX_BYTES,
+  ATTACH_FILES_MAX,
+  AttachmentList,
+  removeFile,
+  toAttachments,
+  useRevokeOnUnmount,
+  type AttachFile,
+} from './attachments';
 
-export const BRIEF_FILES_MAX = 10;
-export const BRIEF_FILE_MAX_BYTES = 5 * 1024 * 1024;
+export const BRIEF_FILES_MAX = ATTACH_FILES_MAX;
+export const BRIEF_FILE_MAX_BYTES = ATTACH_FILE_MAX_BYTES;
 export const BRIEF_PROMPT_MAX = 8_000;
 
-export interface BriefFile {
-  id: string;
-  file: File;
-  /** Object URL for an image thumbnail. */
-  preview: string | null;
-}
+export type BriefFile = AttachFile;
 
 export interface Brief {
   extraPrompt: string;
@@ -49,22 +46,8 @@ export function figmaLinkProblem(text: string): string | null {
   return null;
 }
 
-/** The files as the API takes them. Pasted screenshots come without a useful name. */
-export async function briefAttachments(
-  files: readonly BriefFile[],
-): Promise<CardStartAttachment[]> {
-  return Promise.all(
-    files.map(async (f, n) => ({
-      name: f.file.name && f.file.name !== 'image.png' ? f.file.name : `pasted-${n + 1}.png`,
-      dataBase64: await toBase64(f.file),
-    })),
-  );
-}
-
-const sizeLabel = (b: number) =>
-  b >= 1024 * 1024
-    ? `${(b / 1024 / 1024).toFixed(1)} MB`
-    : `${Math.max(1, Math.round(b / 1024))} KB`;
+/** The files as the API takes them. */
+export const briefAttachments = toAttachments;
 
 /**
  * What the agent gets on top of the card title: a preview of the card body it will read (whole body, parent card as
@@ -194,45 +177,15 @@ export function BriefFields({
   const [dragging, setDragging] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const input = useRef<HTMLInputElement>(null);
-  const latest = useRef(value);
-  latest.current = value;
-
-  // Thumbnails are object URLs: released when the dialog unmounts.
-  useEffect(
-    () => () => {
-      for (const f of latest.current.files) if (f.preview) URL.revokeObjectURL(f.preview);
-    },
-    [],
-  );
+  useRevokeOnUnmount(value.files);
 
   const add = (list: Iterable<File>) => {
-    const files = [...value.files];
-    const problems: string[] = [];
-    for (const file of list) {
-      if (files.length >= BRIEF_FILES_MAX) {
-        problems.push(`At most ${BRIEF_FILES_MAX} files.`);
-        break;
-      }
-      if (file.size > BRIEF_FILE_MAX_BYTES) {
-        problems.push(`${file.name || 'The pasted file'} is over 5 MB.`);
-        continue;
-      }
-      if (file.size === 0) continue;
-      files.push({
-        id: `${file.name}-${file.size}-${file.lastModified}-${Math.random()}`,
-        file,
-        preview: file.type.startsWith('image/') ? URL.createObjectURL(file) : null,
-      });
-    }
-    setError(problems.length > 0 ? problems.join(' ') : null);
-    onChange({ ...value, files });
+    const r = addFiles(value.files, list);
+    setError(r.error);
+    onChange({ ...value, files: r.files });
   };
 
-  const remove = (id: string) => {
-    const f = value.files.find((x) => x.id === id);
-    if (f?.preview) URL.revokeObjectURL(f.preview);
-    onChange({ ...value, files: value.files.filter((x) => x.id !== id) });
-  };
+  const remove = (id: string) => onChange({ ...value, files: removeFile(value.files, id) });
 
   const onPaste = (e: ClipboardEvent) => {
     const files = [...e.clipboardData.files];
@@ -322,41 +275,11 @@ export function BriefFields({
             }}
           />
         </div>
-        {value.files.length > 0 && (
-          <ul className="grid gap-1">
-            {value.files.map((f) => (
-              <li
-                key={f.id}
-                className="flex items-center gap-2 border-t border-hairline pt-1 first:border-t-0 first:pt-0"
-              >
-                {f.preview ? (
-                  <img
-                    src={f.preview}
-                    alt=""
-                    className="size-8 shrink-0 rounded-control border border-hairline object-cover"
-                  />
-                ) : (
-                  <FileText className="size-4 shrink-0 text-muted-foreground" aria-hidden />
-                )}
-                <span className="min-w-0 flex-1 truncate text-xs">
-                  {f.file.name || 'Pasted image'}
-                </span>
-                <span className="shrink-0 font-mono text-2xs text-muted-foreground">
-                  {sizeLabel(f.file.size)}
-                </span>
-                <button
-                  type="button"
-                  aria-label={`Remove ${f.file.name || 'pasted image'}`}
-                  className="rounded-control p-1 text-muted-foreground hover:bg-accent/50 hover:text-foreground"
-                  disabled={disabled}
-                  onClick={() => remove(f.id)}
-                >
-                  <X className="size-3.5" aria-hidden />
-                </button>
-              </li>
-            ))}
-          </ul>
-        )}
+        <AttachmentList
+          files={value.files}
+          onRemove={remove}
+          {...(disabled !== undefined ? { disabled } : {})}
+        />
         {error && <p className="text-xs text-destructive">{error}</p>}
       </div>
     </div>

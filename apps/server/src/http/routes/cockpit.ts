@@ -136,6 +136,20 @@ const CardStartBody = z
   .strict();
 
 const CardParams = z.object({ cardId: z.string().min(1).max(64) });
+/** A chat message, plus files for the agent to open (images included): base64, 5 MB each once decoded. */
+const SessionPromptBody = SessionInputSchema.extend({
+  attachments: z
+    .array(
+      z
+        .object({
+          name: z.string().min(1).max(255),
+          dataBase64: z.string().min(1).max(7_000_000),
+        })
+        .strict(),
+    )
+    .max(10)
+    .optional(),
+}).strict();
 const CleanupApplyBody = z
   .object({ ids: z.array(z.string().min(1).max(600)).min(1).max(2_000) })
   .strict();
@@ -342,10 +356,11 @@ export function registerCockpitRoutes(app: FastifyInstance, deps: CockpitDeps): 
       return { ok: true };
     });
   });
-  app.post('/api/cockpit/sessions/:id/prompt', async (req) => {
+  // Chat files ride along as base64 (10 × 5 MB at most), like card-start.
+  app.post('/api/cockpit/sessions/:id/prompt', { bodyLimit: 72 * 1024 * 1024 }, async (req) => {
     const { id } = parseWith(SessionParams, req.params);
-    const { data } = parseWith(SessionInputSchema, req.body);
-    return run(() => ss.prompt(id, data));
+    const { data, attachments } = parseWith(SessionPromptBody, req.body);
+    return run(() => ss.prompt(id, data, attachments ?? []));
   });
   app.post('/api/cockpit/sessions/:id/resize', async (req) => {
     const { id } = parseWith(SessionParams, req.params);

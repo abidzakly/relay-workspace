@@ -4,6 +4,7 @@ import {
   AgentModelsSchema,
   SessionStartSchema,
   type AgentModels,
+  type CardStartAttachment,
   type CockpitSession,
   type ConversationCommand,
   type SessionMrLink,
@@ -14,6 +15,8 @@ import type { EventBus } from '../../sync/eventBus';
 import type { Logger } from '../../util/logger';
 import type { AiService } from '../ai/aiService';
 import type { Notifier } from '../notifier';
+import { attachmentGroup, decodeAttachment, withAttachmentPaths } from './attachmentFiles';
+import type { AttachmentRecord } from './attachmentStore';
 import { CockpitHostError, type CockpitHost } from './host';
 import type { MrSessionLinks } from './mrSessionLinks';
 import type { WorkspaceService } from './workspaces';
@@ -53,6 +56,8 @@ export interface SessionServiceDeps {
   agentModels?: () => AgentModels;
   /** Which session works on which MR. */
   mrLinks?: MrSessionLinks;
+  /** Called after chat files were saved, so cleanup knows what the attachment folder belongs to. */
+  onAttachments?: (a: AttachmentRecord) => void;
   /** Unused: Cursor sessions are conversations now and queue their first prompt. Kept so callers still compile. */
   cursorBootMs?: number;
   now?: () => number;
@@ -168,8 +173,18 @@ export class CockpitSessionService {
    * A composer prompt. For an agent: checkpoint the workspace first (the turn's "before"), then paste + Enter.
    * A failing checkpoint does not block the prompt (the turn review then falls back to the previous checkpoint).
    */
-  async prompt(id: string, text: string): Promise<{ checkpoint: number | null }> {
+  async prompt(
+    id: string,
+    text: string,
+    attachments: readonly CardStartAttachment[] = [],
+  ): Promise<{ checkpoint: number | null }> {
     const s = await this.session(id);
+    if (attachments.length > 0) {
+      if (!isConversationKind(s.kind)) {
+        throw new CockpitHostError('attachments_unsupported', 'only agent chats take files', 422);
+      }
+      text = withAttachmentPaths(text, await this.saveAttachments(s, attachments));
+    }
     let n: number | null = null;
     if (AGENT_KINDS.has(s.kind)) {
       try {
@@ -196,6 +211,25 @@ export class CockpitSessionService {
     }
     this.ensurePolling();
     return { checkpoint: n };
+  }
+
+  /** Saves chat files into the workspace's git dir (never committed) and returns their absolute paths. */
+  private async saveAttachments(
+    s: CockpitSession,
+    files: readonly CardStartAttachment[],
+  ): Promise<string[]> {
+    const decoded = files.map(decodeAttachment);
+    const ref = this.d.workspaces.ref(s.workspaceId);
+    const group = attachmentGroup(s.id, this.now());
+    const paths: string[] = [];
+    for (const [n, a] of decoded.entries()) {
+      paths.push(
+        (await this.d.host.wsSaveAttachment(ref, group, `user-${n + 1}-${a.name}`, a.dataBase64))
+          .path,
+      );
+    }
+    this.d.onAttachments?.({ group, workspaceId: s.workspaceId, kind: 'session', refId: s.id });
+    return paths;
   }
 
   resize(id: string, cols: number, rows: number): Promise<void> {
