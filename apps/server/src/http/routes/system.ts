@@ -4,8 +4,7 @@ import { POSIX_FEATURES, type OsKind, type SystemInfo } from '@relay/shared';
 import { IS_WINDOWS } from '../../util/platform';
 import type { LoadedPresets } from '../../config/presets';
 
-const WSL_REASON =
-  'Needs WSL on Windows: it runs macOS/Linux tools (shell scripts, the Claude and Flutter launchers).';
+const POSIX_REASON = 'Does not run on Windows: it needs macOS/Linux shell scripts.';
 
 function osKind(): OsKind {
   if (process.platform === 'darwin') return 'macos';
@@ -29,7 +28,7 @@ export function registerSystemRoutes(app: FastifyInstance, presets: LoadedPreset
   const info: SystemInfo = {
     os: osKind(),
     wsl: isWsl(),
-    unsupported: IS_WINDOWS ? POSIX_FEATURES.map((id) => ({ id, reason: WSL_REASON })) : [],
+    unsupported: IS_WINDOWS ? POSIX_FEATURES.map((id) => ({ id, reason: POSIX_REASON })) : [],
     edition: presets.edition,
     repoDefaults: presets.repo,
   };

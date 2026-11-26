@@ -125,7 +125,8 @@ export class LocalPtyBackend implements PtyBackend {
     if (IS_WINDOWS) {
       return {
         available: false,
-        reason: 'the release scripts are bash scripts: on Windows, run the dashboard in WSL',
+        reason:
+          'the release scripts are bash scripts, which do not run on Windows. The native engine does the same release',
         command: null,
       };
     }

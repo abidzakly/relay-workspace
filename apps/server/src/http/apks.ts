@@ -24,6 +24,8 @@ export function parseApkPath(
   if (!REPO_ID_RE.test(repoId)) return null;
   // eslint-disable-next-line no-control-regex
   if (/[\\\u0000-\u001f\u007f]/.test(fileName) || fileName.startsWith('.')) return null;
+  // Characters Windows refuses in file names (`:` would name an alternate data stream there).
+  if (/[:*?"<>|]/.test(fileName)) return null;
   const ext = /\.(apk|aab)$/.exec(fileName)?.[1] as keyof typeof MEDIA_TYPES | undefined;
   return ext ? { repoId, fileName, ext } : null;
 }
