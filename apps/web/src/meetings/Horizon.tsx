@@ -22,7 +22,16 @@ import {
   until,
   type Row,
 } from './meetingView';
-import { IconActions, JoinButton, PriorityChip, TagChip } from './parts';
+import {
+  canMark,
+  IconActions,
+  JoinButton,
+  ModeChip,
+  PresenceActions,
+  PresenceBadge,
+  PriorityChip,
+  TagChip,
+} from './parts';
 import { PriorityMenu } from './PriorityMenu';
 
 /**
@@ -128,7 +137,7 @@ export function Horizon({
       const capsule = span > size + 4;
       const x0 = PAD_L + f0 * inner;
       let opacity = key ? 1 : quiet ? lerp(0.6, 0.3, f) : lerp(1, 0.38, f);
-      if (m.dismissed && m.phase !== 'live') opacity *= 0.65;
+      if ((m.dismissed || m.presence) && m.phase !== 'live') opacity *= 0.65;
       const chipW = Math.min(230, 34 + splitTitle(m.title).text.length * 6.4 + (key ? 14 : 0));
       return {
         m,
@@ -619,14 +628,21 @@ function Lens({
         <span>{duration(m)}</span>
         {m.response === 'needsAction' ? <span>Not answered yet</span> : null}
       </p>
+      {m.mode !== 'unknown' || m.presence ? (
+        <div className="flex min-w-0 flex-wrap items-center gap-2">
+          <ModeChip m={m} className="max-w-full" />
+          <PresenceBadge m={m} />
+        </div>
+      ) : null}
       {m.priorityReason ? (
         <p className="text-xs text-muted-foreground">{m.priorityReason}</p>
       ) : null}
       <div className="flex flex-wrap items-center gap-1">
-        <JoinButton m={m} prominent={live || m.phase === 'soon'} />
+        <JoinButton m={m} prominent={(live || m.phase === 'soon') && !m.presence} />
         <IconActions m={m} />
         <PriorityMenu meeting={m} />
       </div>
+      {canMark(m) ? <PresenceActions m={m} className="justify-self-start" /> : null}
     </motion.div>
   );
 }

@@ -1,9 +1,15 @@
 import { AnimatePresence, LayoutGroup, motion } from 'motion/react';
-import { CalendarClock, ChevronDown, Video, X } from 'lucide-react';
+import { CalendarClock, ChevronDown, DoorOpen, Flag, MapPin, Video, X } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useLocation } from 'react-router';
-import { meetingLead, meetingPhase, type Meeting, type MeetingPhase } from '@relay/shared';
-import { useDismissMeeting, useMeetings, useNow } from '@/lib/calendarApi';
+import {
+  meetingLead,
+  meetingPhase,
+  type Meeting,
+  type MeetingPhase,
+  type MeetingPresence,
+} from '@relay/shared';
+import { useDismissMeeting, useMeetings, useNow, useSetMeetingPresence } from '@/lib/calendarApi';
 import { useFeatures } from '@/lib/features';
 import { vibrate } from '@/lib/haptics';
 import { SPRING } from '@/lib/motion/presets';
@@ -12,8 +18,9 @@ import { useCoarsePointer, useReducedMotion } from '@/workspace/useMedia';
 
 /**
  * The floating meeting alert: a small glass island at the top of every page while a meeting is under way (or about to
- * start) and you have neither joined it from here nor dismissed it. It does not time out on its own: a missed
- * meeting stays in view until it ends. Hover (or tap) opens it into a card with Join and Dismiss.
+ * start) and you have neither marked it (joined, in the room, ended) nor dismissed it. It does not time out on its
+ * own: a missed meeting stays in view until it ends. Hover (or tap) opens it into a card: Join for a call, "I'm here"
+ * for a room, "Ended" when it is over already, and Dismiss.
  */
 
 type Shown = Meeting & { phase: Extract<MeetingPhase, 'soon' | 'live'> };
@@ -54,6 +61,7 @@ export function MeetingAlert() {
 function MeetingAlertInner() {
   const q = useMeetings();
   const dismiss = useDismissMeeting();
+  const presence = useSetMeetingPresence();
   const reduced = useReducedMotion();
   const coarse = useCoarsePointer();
   const list = q.data;
@@ -67,7 +75,7 @@ function MeetingAlertInner() {
     if (!list?.connected) return [];
     const out: Shown[] = [];
     for (const m of list.meetings) {
-      if (m.dismissed) continue;
+      if (m.dismissed || m.presence) continue;
       const phase = meetingPhase(m, now, meetingLead(m, list));
       if (phase === 'soon' || phase === 'live') out.push({ ...m, phase });
     }
@@ -80,7 +88,11 @@ function MeetingAlertInner() {
   useEffect(() => {
     const near =
       list?.meetings.some(
-        (m) => !m.dismissed && m.end > now && m.start - now < meetingLead(m, list) * 1000 + 20_000,
+        (m) =>
+          !m.dismissed &&
+          !m.presence &&
+          m.end > now &&
+          m.start - now < meetingLead(m, list) * 1000 + 20_000,
       ) ?? false;
     setFast(near);
   }, [list, now]);
@@ -138,7 +150,9 @@ function MeetingAlertInner() {
   const join = (m: Meeting) => {
     const url = m.joinUrl ?? m.htmlLink;
     if (url) window.open(url, '_blank', 'noopener,noreferrer');
-    dismiss.mutate({ id: m.id });
+    // Opening a call link means you are in it; an event page alone just hides the alert.
+    if (m.joinUrl) presence.mutate({ id: m.id, status: 'joined' });
+    else dismiss.mutate({ id: m.id });
   };
 
   return (
@@ -176,6 +190,7 @@ function MeetingAlertInner() {
                     meetings={shown}
                     now={now}
                     onJoin={join}
+                    onMark={(m, status) => presence.mutate({ id: m.id, status })}
                     onDismiss={(m) => dismiss.mutate({ id: m.id })}
                     onCollapse={() => {
                       setOpen(false);
@@ -279,6 +294,12 @@ function Pill({
           ◆
         </span>
       ) : null}
+      {lead.mode === 'onsite' ? (
+        <MapPin
+          className="size-3.5 shrink-0 text-muted-foreground"
+          aria-label={lead.place ? `Onsite: ${lead.place}` : 'Onsite'}
+        />
+      ) : null}
       <motion.span layoutId="meeting-title" className="min-w-0 truncate text-sm font-medium">
         {lead.title}
       </motion.span>
@@ -299,12 +320,14 @@ function Card({
   meetings,
   now,
   onJoin,
+  onMark,
   onDismiss,
   onCollapse,
 }: {
   meetings: Shown[];
   now: number;
   onJoin: (m: Meeting) => void;
+  onMark: (m: Meeting, status: MeetingPresence) => void;
   onDismiss: (m: Meeting) => void;
   onCollapse: () => void;
 }) {
@@ -366,29 +389,10 @@ function Card({
                 ) : null}
                 {RESPONSE_NOTE[m.response] ? <span>{RESPONSE_NOTE[m.response]}</span> : null}
               </p>
+              <Where m={m} />
               {m.phase === 'live' ? <Progress start={m.start} end={m.end} now={now} /> : null}
             </div>
-            <div className="flex items-center gap-2">
-              <motion.button
-                type="button"
-                whileTap={{ scale: 0.96, transition: SPRING.press }}
-                onClick={() => onJoin(m)}
-                disabled={!m.joinUrl && !m.htmlLink}
-                className="inline-flex h-9 flex-1 cursor-pointer items-center justify-center gap-2 rounded-full bg-primary px-4 text-xs font-semibold tracking-[0.04em] text-primary-foreground uppercase transition-colors hover:bg-primary/85 focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none disabled:opacity-50"
-              >
-                <Video className="size-4" aria-hidden />
-                {m.joinUrl ? 'Join' : 'Open event'}
-              </motion.button>
-              <motion.button
-                type="button"
-                whileTap={{ scale: 0.96, transition: SPRING.press }}
-                onClick={() => onDismiss(m)}
-                className="inline-flex h-9 cursor-pointer items-center justify-center gap-1.5 rounded-full px-4 text-xs font-semibold tracking-[0.04em] text-muted-foreground uppercase transition-colors hover:bg-foreground/6 hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
-              >
-                <X className="size-3.5" aria-hidden />
-                Dismiss
-              </motion.button>
-            </div>
+            <Actions m={m} onJoin={onJoin} onMark={onMark} onDismiss={onDismiss} />
           </motion.article>
         ))}
       </AnimatePresence>
@@ -407,6 +411,112 @@ function Progress({ start, end, now }: { start: number; end: number; now: number
         animate={{ scaleX: p }}
         transition={SPRING.settle}
       />
+    </div>
+  );
+}
+
+/** Online or onsite, in one line: the call service, or the room (so you know whether to click or to walk). */
+function Where({ m }: { m: Meeting }) {
+  if (m.mode === 'unknown') return null;
+  const online = m.mode !== 'onsite';
+  return (
+    <p className="mt-0.5 flex min-w-0 items-center gap-1.5 text-xs">
+      {online ? (
+        <span className="inline-flex shrink-0 items-center gap-1 text-emphasis">
+          <Video className="size-3.5" aria-hidden />
+          {m.mode === 'hybrid' ? 'Hybrid' : 'Online'}
+        </span>
+      ) : null}
+      {m.place ? (
+        <span className="inline-flex min-w-0 items-center gap-1 text-foreground">
+          <MapPin className="size-3.5 shrink-0" aria-hidden />
+          <span className="truncate">{m.place}</span>
+        </span>
+      ) : null}
+    </p>
+  );
+}
+
+const pillBtn =
+  'inline-flex h-9 cursor-pointer items-center justify-center gap-1.5 rounded-full text-xs font-semibold tracking-[0.04em] uppercase transition-colors focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none disabled:opacity-50';
+
+/**
+ * The card's actions, shaped by where the meeting is: a call leads with Join, a room with "I'm here", hybrid offers
+ * both. "Ended" says it is over already; Dismiss only hides the alert.
+ */
+function Actions({
+  m,
+  onJoin,
+  onMark,
+  onDismiss,
+}: {
+  m: Meeting;
+  onJoin: (m: Meeting) => void;
+  onMark: (m: Meeting, status: MeetingPresence) => void;
+  onDismiss: (m: Meeting) => void;
+}) {
+  const onsiteFirst = m.mode === 'onsite' || (!m.joinUrl && m.mode !== 'online');
+  const primary = onsiteFirst ? (
+    <motion.button
+      type="button"
+      whileTap={{ scale: 0.96, transition: SPRING.press }}
+      onClick={() => onMark(m, 'here')}
+      className={cn(pillBtn, 'flex-1 bg-primary px-4 text-primary-foreground hover:bg-primary/85')}
+    >
+      <DoorOpen className="size-4" aria-hidden />
+      I’m here
+    </motion.button>
+  ) : (
+    <motion.button
+      type="button"
+      whileTap={{ scale: 0.96, transition: SPRING.press }}
+      onClick={() => onJoin(m)}
+      disabled={!m.joinUrl && !m.htmlLink}
+      className={cn(pillBtn, 'flex-1 bg-primary px-4 text-primary-foreground hover:bg-primary/85')}
+    >
+      <Video className="size-4" aria-hidden />
+      {m.joinUrl ? 'Join' : 'Open event'}
+    </motion.button>
+  );
+  const ghost = 'px-3 text-muted-foreground hover:bg-foreground/6 hover:text-foreground';
+  return (
+    <div className="flex items-center gap-1.5">
+      {primary}
+      {m.mode === 'hybrid' ? (
+        <motion.button
+          type="button"
+          whileTap={{ scale: 0.96, transition: SPRING.press }}
+          onClick={() => onMark(m, 'here')}
+          title="I’m in the room"
+          className={cn(pillBtn, ghost)}
+        >
+          <DoorOpen className="size-3.5" aria-hidden />
+          Here
+        </motion.button>
+      ) : null}
+      <motion.button
+        type="button"
+        whileTap={{ scale: 0.96, transition: SPRING.press }}
+        onClick={() => onMark(m, 'ended')}
+        title="The meeting is over already"
+        className={cn(pillBtn, ghost)}
+      >
+        <Flag className="size-3.5" aria-hidden />
+        Ended
+      </motion.button>
+      <motion.button
+        type="button"
+        whileTap={{ scale: 0.96, transition: SPRING.press }}
+        onClick={() => onDismiss(m)}
+        aria-label="Dismiss the alert"
+        title="Dismiss the alert"
+        className={cn(
+          pillBtn,
+          'w-9 text-muted-foreground hover:bg-foreground/6 hover:text-foreground',
+        )}
+      >
+        <X className="size-3.5" aria-hidden />
+      </motion.button>
     </div>
   );
 }

@@ -17,7 +17,17 @@ import {
   until,
   type Row,
 } from './meetingView';
-import { IconActions, JoinButton, LiveDot, PriorityChip, TagChip } from './parts';
+import {
+  canMark,
+  IconActions,
+  JoinButton,
+  LiveDot,
+  ModeChip,
+  PresenceActions,
+  PresenceBadge,
+  PriorityChip,
+  TagChip,
+} from './parts';
 import { PriorityMenu } from './PriorityMenu';
 
 /**
@@ -95,9 +105,10 @@ export function MeetingList({
                       i={i}
                       flash={flash === m.id}
                       compact={
-                        m.priority !== 'key' &&
-                        m.phase === 'later' &&
-                        m.start - now > COMPACT_AFTER_MS
+                        m.phase === 'over' ||
+                        (m.priority !== 'key' &&
+                          m.phase === 'later' &&
+                          m.start - now > COMPACT_AFTER_MS)
                       }
                     />
                   ))}
@@ -218,6 +229,9 @@ function MeetingRow({
 }) {
   const live = m.phase === 'live';
   const soon = m.phase === 'soon';
+  const ended = m.phase === 'over';
+  // In the call / in the room: the row reads settled (green tint) instead of calling for attention.
+  const settled = !!m.presence && !ended;
   const key = m.priority === 'key';
   const quiet = m.priority === 'quiet';
   const { tag, text } = splitTitle(m.title);
@@ -233,18 +247,21 @@ function MeetingRow({
         'group relative grid scroll-mt-24 items-center gap-x-4 gap-y-2 rounded-[14px] pr-2 pl-5 transition-colors',
         'grid-cols-[4.25rem_minmax(0,1fr)] sm:grid-cols-[4.75rem_minmax(0,1fr)_auto]',
         compact ? 'py-1.5' : 'py-3',
-        live
-          ? 'bg-emphasis/[0.07] ring-1 ring-emphasis/30'
-          : key
-            ? 'bg-emphasis/[0.035] hover:bg-emphasis/[0.06]'
-            : 'hover:bg-foreground/[0.035]',
+        settled
+          ? 'bg-success/[0.07] ring-1 ring-success/25'
+          : live
+            ? 'bg-emphasis/[0.07] ring-1 ring-emphasis/30'
+            : key
+              ? 'bg-emphasis/[0.035] hover:bg-emphasis/[0.06]'
+              : 'hover:bg-foreground/[0.035]',
         flash && 'ring-2 ring-emphasis',
         quiet && 'opacity-70',
-        m.dismissed && !live && 'opacity-60',
+        m.dismissed && !live && !settled && 'opacity-60',
+        ended && 'opacity-60',
       )}
     >
       {/* The rail: violet for Key and live, nothing for the rest. */}
-      {key || live ? (
+      {(key || live) && !settled && !ended ? (
         <span
           aria-hidden
           className="absolute inset-y-2 left-1.5 w-[3px] rounded-full bg-emphasis shadow-[0_0_12px_0_var(--emphasis)]"
@@ -260,19 +277,22 @@ function MeetingRow({
 
       <div className="min-w-0">
         <div className="flex min-w-0 items-center gap-2">
-          {live || soon ? <LiveDot live={live} /> : null}
+          {(live || soon) && !settled ? <LiveDot live={live} /> : null}
           <TagChip tag={tag} />
           <span
             className={cn(
               'truncate leading-snug tracking-[-0.01em]',
               compact ? 'text-sm' : 'text-[15px] font-semibold',
               quiet && 'font-normal',
+              ended && 'text-muted-foreground line-through decoration-foreground/30',
             )}
           >
             {text}
           </span>
           {key ? <PriorityChip meeting={m} className="shrink-0" /> : null}
-          {compact ? (
+          {ended ? (
+            <PresenceBadge m={m} className="ml-auto pl-2" />
+          ) : compact ? (
             <span className="ml-auto shrink-0 pl-2 text-xs text-muted-foreground">
               {duration(m)}
             </span>
@@ -288,6 +308,8 @@ function MeetingRow({
             >
               {live ? left(m, now) : until(m.start - now)}
             </span>
+            <ModeChip m={m} className="max-w-full sm:max-w-[24rem]" />
+            <PresenceBadge m={m} />
             <span className="inline-flex items-center gap-1.5">
               <span
                 className="relative h-1 w-14 overflow-hidden rounded-full bg-foreground/10"
@@ -315,7 +337,7 @@ function MeetingRow({
             {m.priorityReason && key ? (
               <span className="truncate text-emphasis/80">{m.priorityReason}</span>
             ) : null}
-            {m.dismissed ? <span>Alert dismissed</span> : null}
+            {m.dismissed && !m.presence ? <span>Alert dismissed</span> : null}
           </div>
         )}
       </div>
@@ -323,14 +345,19 @@ function MeetingRow({
       <div
         className={cn(
           'col-start-2 flex flex-wrap items-center gap-1 sm:col-start-auto sm:flex-nowrap sm:justify-end',
-          !(live || soon) &&
+          !(live || soon || ended) &&
             'sm:opacity-0 sm:transition-opacity sm:group-focus-within:opacity-100 sm:group-hover:opacity-100 [@media(pointer:coarse)]:opacity-100',
-          compact && 'hidden sm:flex',
+          compact && !ended && 'hidden sm:flex',
         )}
       >
-        <JoinButton m={m} prominent={live || soon} />
-        <IconActions m={m} />
-        <PriorityMenu meeting={m} />
+        {canMark(m) ? <PresenceActions m={m} compact={ended} wideLabels /> : null}
+        {ended ? null : (
+          <>
+            <JoinButton m={m} prominent={(live || soon) && !settled} />
+            <IconActions m={m} />
+            <PriorityMenu meeting={m} />
+          </>
+        )}
       </div>
     </motion.li>
   );

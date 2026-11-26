@@ -86,6 +86,27 @@ export type CalendarStatus = z.infer<typeof CalendarStatusSchema>;
 
 export const MEETING_RESPONSES = ['accepted', 'tentative', 'needsAction', 'none'] as const;
 
+/**
+ * What happened, as you tell Relay (local only, never written to Google): `joined` = you are in the call, `here` = you
+ * are in the room, `ended` = the meeting is over already (it ended early or did not happen). Any of them takes the
+ * meeting off the floating alert; `ended` also makes it count as over.
+ */
+export const MEETING_PRESENCE = ['joined', 'here', 'ended'] as const;
+export const MeetingPresenceSchema = z.enum(MEETING_PRESENCE);
+export type MeetingPresence = z.infer<typeof MeetingPresenceSchema>;
+
+/**
+ * Where a meeting happens: `online` (a call link), `onsite` (a place, no link), `hybrid` (both), `unknown` (neither:
+ * the invitation does not say).
+ */
+export const MEETING_MODES = ['online', 'onsite', 'hybrid', 'unknown'] as const;
+export const MeetingModeSchema = z.enum(MEETING_MODES);
+export type MeetingMode = z.infer<typeof MeetingModeSchema>;
+
+/** The call service behind `joinUrl`. */
+export const MeetingProviderSchema = z.enum(['meet', 'zoom', 'teams', 'other']);
+export type MeetingProvider = z.infer<typeof MeetingProviderSchema>;
+
 export const MeetingSchema = z.object({
   /** `<calendarId>|<eventId>`: unique across calendars, stable across polls. */
   id: z.string().min(1).max(600),
@@ -107,6 +128,12 @@ export const MeetingSchema = z.object({
   prioritySource: z.enum(['one', 'series', 'rule', 'none']),
   /** Dismissed here (or joined from the alert): the alert no longer shows it. */
   dismissed: z.boolean(),
+  /** What you marked: joined, in the room, or ended. Null = nothing yet. */
+  presence: z.object({ status: MeetingPresenceSchema, at: EpochMsSchema }).nullable(),
+  mode: MeetingModeSchema,
+  /** The room or address from the invitation's location (links stripped). Null when there is none. */
+  place: z.string().nullable(),
+  provider: MeetingProviderSchema.nullable(),
 });
 export type Meeting = z.infer<typeof MeetingSchema>;
 
@@ -134,6 +161,16 @@ export function meetingPhase(
   if (now >= m.start) return 'live';
   if (now >= m.start - leadSeconds * 1000) return 'soon';
   return 'later';
+}
+
+/** Like `meetingPhase`, but a meeting you marked as ended counts as over at once. */
+export function effectivePhase(
+  m: Pick<Meeting, 'start' | 'end' | 'presence'>,
+  now: number,
+  leadSeconds: number,
+): MeetingPhase {
+  if (m.presence?.status === 'ended') return 'over';
+  return meetingPhase(m, now, leadSeconds);
 }
 
 /**
@@ -206,3 +243,10 @@ export const MeetingPriorityBodySchema = z.object({
   level: MeetingPrioritySchema.nullable(),
 });
 export type MeetingPriorityBody = z.infer<typeof MeetingPriorityBodySchema>;
+
+/** `POST /api/calendar/meetings/presence`. `status: null` clears the mark. */
+export const MeetingPresenceBodySchema = z.object({
+  id: z.string().min(1).max(600),
+  status: MeetingPresenceSchema.nullable(),
+});
+export type MeetingPresenceBody = z.infer<typeof MeetingPresenceBodySchema>;

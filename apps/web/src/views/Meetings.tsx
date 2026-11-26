@@ -1,8 +1,8 @@
 import { motion } from 'motion/react';
-import { CalendarOff, LayoutList, RotateCw, Waves } from 'lucide-react';
+import { CalendarOff, DoorOpen, Flag, Headset, LayoutList, RotateCw, Waves } from 'lucide-react';
 import { useMemo, useState, type ReactNode } from 'react';
 import { Link } from 'react-router';
-import { meetingLead, meetingPhase } from '@relay/shared';
+import { effectivePhase, meetingLead } from '@relay/shared';
 import { PageTitle } from '@/components/PageTitle';
 import { TimeAgo } from '@/components/TimeAgo';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
@@ -16,6 +16,7 @@ import { MeetingList } from '@/meetings/MeetingList';
 import { NextUp } from '@/meetings/NextUp';
 import {
   DAY_MS,
+  dayStart,
   until,
   useMeetingsView,
   weekStart,
@@ -57,8 +58,9 @@ export function Meetings() {
     () =>
       list
         ? list.meetings
-            .map((m) => ({ ...m, phase: meetingPhase(m, now, meetingLead(m, list)) }))
-            .filter((m) => m.phase !== 'over')
+            .map((m) => ({ ...m, phase: effectivePhase(m, now, meetingLead(m, list)) }))
+            // A meeting you marked as ended stays (muted, with Undo) until its scheduled end.
+            .filter((m) => m.phase !== 'over' || m.presence?.status === 'ended')
         : [],
     [list, now],
   );
@@ -67,8 +69,20 @@ export function Meetings() {
     const weekEnd = weekStart(now) + 7 * DAY_MS;
     const thisWeek = rows.filter((m) => m.start < weekEnd);
     const keys = rows.filter((m) => m.priority === 'key').length;
-    const next = rows.find((m) => m.phase !== 'live');
-    return { thisWeek: thisWeek.length, keys, next };
+    const next = rows.find((m) => m.phase !== 'live' && m.phase !== 'over');
+    const today = rows.filter((m) => dayStart(m.start) === dayStart(now));
+    const count = (s: string) => today.filter((m) => m.presence?.status === s).length;
+    return {
+      thisWeek: thisWeek.length,
+      keys,
+      next,
+      today: {
+        joined: count('joined'),
+        here: count('here'),
+        ended: count('ended'),
+        toGo: today.filter((m) => !m.presence && m.phase !== 'over').length,
+      },
+    };
   }, [rows, now]);
 
   const connected = list?.connected ?? status.data?.connected ?? false;
@@ -97,6 +111,7 @@ export function Meetings() {
               `What is left on your Google Calendar over the next ${rangeLabel(lookAheadDays)}.`
             )}
           </p>
+          {connected ? <TodayTally t={summary.today} /> : null}
         </div>
         {connected ? (
           <div className="flex flex-wrap items-center gap-3">
@@ -231,5 +246,36 @@ function Empty({ title, body, action }: { title: string; body: string; action?: 
       </div>
       {action}
     </motion.div>
+  );
+}
+
+/** Today at a glance: what you marked (in the call, in the room, ended) and what is still to come. */
+function TodayTally({ t }: { t: { joined: number; here: number; ended: number; toGo: number } }) {
+  if (t.joined + t.here + t.ended + t.toGo === 0) return null;
+  const items = [
+    { n: t.joined, label: 'joined', icon: Headset, tone: 'text-success' },
+    { n: t.here, label: 'in the room', icon: DoorOpen, tone: 'text-success' },
+    { n: t.ended, label: 'ended', icon: Flag, tone: 'text-muted-foreground' },
+  ].filter((i) => i.n > 0);
+  return (
+    <p className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
+      <span className="type-micro text-foreground">Today</span>
+      {items.map((i) => (
+        <motion.span
+          key={i.label}
+          layout
+          initial={{ opacity: 0, y: 4 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={SPRING.settle}
+          className={cn('inline-flex items-center gap-1', i.tone)}
+        >
+          <i.icon className="size-3.5" aria-hidden />
+          <span className="font-mono tabular-nums">{i.n}</span> {i.label}
+        </motion.span>
+      ))}
+      <span className="inline-flex items-center gap-1">
+        <span className="font-mono tabular-nums text-foreground">{t.toGo}</span> still to come
+      </span>
+    </p>
   );
 }

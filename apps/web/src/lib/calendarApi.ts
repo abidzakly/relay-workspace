@@ -4,6 +4,7 @@ import type {
   CalendarConfigUpdate,
   CalendarStatus,
   MeetingList,
+  MeetingPresenceBody,
   MeetingPriorityBody,
 } from '@relay/shared';
 import { get, post, put } from './api';
@@ -85,6 +86,33 @@ export function useDismissMeeting() {
               ...old,
               meetings: old.meetings.map((m) =>
                 m.id === a.id ? { ...m, dismissed: a.dismissed ?? true } : m,
+              ),
+            }
+          : old,
+      );
+    },
+    onSuccess: (list) => qc.setQueryData(calendarKeys.meetings, list),
+  });
+}
+
+/**
+ * Marks what happened (joined / in the room / ended), or with `status: null` clears it. Optimistic: the alert and the
+ * page change at once; the server's answer carries the time it kept.
+ */
+export function useSetMeetingPresence() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (body: MeetingPresenceBody) =>
+      post<MeetingList>('/api/calendar/meetings/presence', body),
+    onMutate: (b) => {
+      qc.setQueryData<MeetingList>(calendarKeys.meetings, (old) =>
+        old
+          ? {
+              ...old,
+              meetings: old.meetings.map((m) =>
+                m.id === b.id
+                  ? { ...m, presence: b.status ? { status: b.status, at: Date.now() } : null }
+                  : m,
               ),
             }
           : old,
