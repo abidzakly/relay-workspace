@@ -137,6 +137,7 @@ const RawReviewNoteSchema = z.looseObject({
   system: z.boolean().nullish(),
   resolvable: z.boolean().nullish(),
   resolved: z.boolean().nullish(),
+  last_edited_at: z.string().nullish(),
   position: RawPositionSchema.nullish(),
 });
 const RawReviewDiscussionSchema = z.looseObject({ id: z.string(), notes: z.array(z.unknown()) });
@@ -189,6 +190,7 @@ export function mapReviewDiscussion(raw: unknown): ReviewDiscussion | null {
       body: (p.data.body ?? '').slice(0, NOTE_BODY_MAX),
       createdAt,
       unread: false,
+      ...(p.data.last_edited_at ? { edited: true } : {}),
     });
   }
   if (notes.length === 0) return null;

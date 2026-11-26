@@ -243,3 +243,26 @@ export function insertOwnNote(app: AppDb, n: Note): void {
     .onConflictDoNothing()
     .run();
 }
+
+/** After a live edit of my note: mirror the new body into the cache (the next sync reconciles the rest). */
+export function updateCachedNoteBody(
+  app: AppDb,
+  repoId: string,
+  noteId: number,
+  body: string,
+  updatedAt: number,
+): void {
+  app.db
+    .update(notesCache)
+    .set({ body, updatedAt })
+    .where(and(eq(notesCache.repoId, repoId), eq(notesCache.noteId, noteId)))
+    .run();
+}
+
+/** After a live delete of my note: drop it from the cache. */
+export function deleteCachedNote(app: AppDb, repoId: string, noteId: number): void {
+  app.db
+    .delete(notesCache)
+    .where(and(eq(notesCache.repoId, repoId), eq(notesCache.noteId, noteId)))
+    .run();
+}

@@ -8,6 +8,7 @@ import { Badge } from '@/components/Badge';
 import { Composer, type Person } from '@/components/composer/Composer';
 import { Markdown } from '@/components/Markdown';
 import { Avatar } from '@/components/mr/Avatar';
+import { useNoteEditing } from '@/components/mr/NoteEditing';
 import { useUserLabel } from '@/components/MrBits';
 import { ThreadAgentActions } from '@/components/ThreadAgentActions';
 import { TimeAgo } from '@/components/TimeAgo';
@@ -49,8 +50,25 @@ function Who({ n }: { n: DiscussionNote }) {
   );
 }
 
-function Note({ n, ctx, first }: { n: DiscussionNote; ctx: ThreadContext; first?: boolean }) {
+function Note({
+  n,
+  ctx,
+  first,
+  discussionId,
+}: {
+  n: DiscussionNote;
+  ctx: ThreadContext;
+  first?: boolean;
+  discussionId: string;
+}) {
   const pending = n.id < 0;
+  const change = useNoteEditing({
+    repo: ctx.repo,
+    iid: ctx.iid,
+    discussionId,
+    note: n,
+    people: ctx.people,
+  });
   return (
     <li
       className={cn(
@@ -72,10 +90,14 @@ function Note({ n, ctx, first }: { n: DiscussionNote; ctx: ThreadContext; first?
           <span className="ml-auto flex items-center gap-1">
             {n.unread && <Badge variant="warning">new</Badge>}
             {n.author && n.author === ctx.mrAuthor && <Badge variant="outline">Author</Badge>}
+            {change.actions}
           </span>
         </div>
-        <Markdown source={n.body} repo={ctx.repo} {...(ctx.refs ? { refs: ctx.refs } : {})} />
+        {change.editor ?? (
+          <Markdown source={n.body} repo={ctx.repo} {...(ctx.refs ? { refs: ctx.refs } : {})} />
+        )}
         {n.edited && <span className="text-xs text-muted-foreground">Edited</span>}
+        {change.extra}
       </div>
     </li>
   );
@@ -256,7 +278,7 @@ export function Thread({ d, ctx }: { d: Discussion; ctx: ThreadContext }) {
               </div>
             )}
             <ul className="min-w-0">
-              <Note n={first} ctx={ctx} first />
+              <Note n={first} ctx={ctx} first discussionId={d.id} />
             </ul>
             {replies.length > 0 && (
               <div className="border-t border-hairline bg-muted/25">
@@ -292,7 +314,7 @@ export function Thread({ d, ctx }: { d: Discussion; ctx: ThreadContext }) {
                   {showReplies && (
                     <motion.ul key="replies" {...fold} className="min-w-0 overflow-hidden">
                       {replies.map((n, i) => (
-                        <Note key={n.id} n={n} ctx={ctx} first={i === 0} />
+                        <Note key={n.id} n={n} ctx={ctx} first={i === 0} discussionId={d.id} />
                       ))}
                     </motion.ul>
                   )}

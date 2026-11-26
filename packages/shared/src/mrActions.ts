@@ -5,6 +5,8 @@ import { DiscussionNoteSchema } from './inbox';
  * MR discussion writes (MR Detail):
  *   POST /api/mrs/:repo/:iid/reply    { discussionId, body }
  *   POST /api/mrs/:repo/:iid/resolve  { discussionId, resolved }
+ *   POST /api/mrs/:repo/:iid/note/edit    { discussionId, noteId, body }  (my own comment only)
+ *   POST /api/mrs/:repo/:iid/note/delete  { discussionId, noteId }        (my own comment only)
  *   POST /api/audit/:id/undo          (only `mr.resolve` is undoable so far)
  */
 
@@ -44,6 +46,32 @@ export const MrNoteResultSchema = z.object({
   note: DiscussionNoteSchema.nullable(),
 });
 export type MrNoteResult = z.infer<typeof MrNoteResultSchema>;
+
+/** `POST /api/mrs/:repo/:iid/note/edit`: change the body of one of my comments. */
+export const MrNoteEditRequestSchema = z.object({
+  discussionId: DiscussionIdSchema,
+  noteId: z.number().int().positive(),
+  body: z
+    .string()
+    .max(REPLY_BODY_MAX, `comment is longer than ${REPLY_BODY_MAX} characters`)
+    .refine((s) => s.trim().length > 0, 'comment is empty'),
+});
+export type MrNoteEditRequest = z.infer<typeof MrNoteEditRequestSchema>;
+
+/** `POST /api/mrs/:repo/:iid/note/delete`: delete one of my comments. */
+export const MrNoteDeleteRequestSchema = z.object({
+  discussionId: DiscussionIdSchema,
+  noteId: z.number().int().positive(),
+});
+export type MrNoteDeleteRequest = z.infer<typeof MrNoteDeleteRequestSchema>;
+
+export const MrNoteChangeResultSchema = z.object({
+  dryRun: z.boolean(),
+  auditId: z.number().int().positive(),
+  /** The edited note as GitLab returned it; null after a delete, in dry-run, or when the answer was unreadable. */
+  note: DiscussionNoteSchema.nullable(),
+});
+export type MrNoteChangeResult = z.infer<typeof MrNoteChangeResultSchema>;
 
 /** Images a comment may carry. SVG is left out on purpose: it can hold script. */
 export const UPLOAD_IMAGE_TYPES = ['image/png', 'image/jpeg', 'image/gif', 'image/webp'] as const;
