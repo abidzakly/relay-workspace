@@ -51,6 +51,14 @@ export const NotionDataSourceOptionSchema = z.object({
   id: z.string(),
   title: z.string(),
   url: z.string().nullable(),
+  /** The database's own emoji, when it has one. */
+  emoji: z.string().nullable().optional(),
+  /** How many columns it has. */
+  columns: z.number().int().nonnegative().optional(),
+  /** ISO time of the last schema or title change. */
+  editedAt: z.string().nullable().optional(),
+  /** Has a status (or select) column and a people column, like a task board. */
+  boardLike: z.boolean().optional(),
 });
 export type NotionDataSourceOption = z.infer<typeof NotionDataSourceOptionSchema>;
 
@@ -89,3 +97,12 @@ export const NotionMeSchema = z
   .object({ id: z.string(), name: z.string().nullable(), email: z.string().nullable() })
   .nullable();
 export type NotionMe = z.infer<typeof NotionMeSchema>;
+
+/** A person found in a board's people column, for the setup wizard's "which one is you". */
+export const NotionPersonSchema = z.object({
+  id: z.string(),
+  name: z.string().nullable(),
+  email: z.string().nullable(),
+  avatarUrl: z.string().nullable().optional(),
+});
+export type NotionPerson = z.infer<typeof NotionPersonSchema>;

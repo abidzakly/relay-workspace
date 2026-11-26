@@ -16,11 +16,11 @@ You can set up only some of them. A card whose client is missing says "Not set u
 The GitLab, Google and Notion cards each have an **Advanced mode** switch. Off (Connect mode), Relay uses only the
 sign-in. On, it uses only what you set by hand:
 
-| Card | Connect mode | Advanced mode |
-| --- | --- | --- |
-| GitLab | the GitLab sign-in, for every repo, Reviews and git over HTTPS | each repo's project token, the Reviews personal token |
+| Card                     | Connect mode                                                     | Advanced mode                                                   |
+| ------------------------ | ---------------------------------------------------------------- | --------------------------------------------------------------- |
+| GitLab                   | the GitLab sign-in, for every repo, Reviews and git over HTTPS   | each repo's project token, the Reviews personal token           |
 | Google: Calendar & Drive | the Google sign-in (Calendar and Drive are asked for separately) | your own OAuth client for Calendar, a service account for Drive |
-| Notion | the Notion sign-in, set up with the wizard at `/setup/notion` | an integration token and the mapping typed in |
+| Notion                   | the Notion sign-in, set up with the wizard at `/setup/notion`    | a personal access token, set up with the same wizard            |
 
 The way not in use is kept (the sign-in stays signed in, tokens stay stored) but ignored until you switch back. On
 first start after this change, each card picks the mode that keeps your current setup working.
@@ -113,8 +113,11 @@ In Relay, press **Connect with Notion**. On Notion's page, tick the databases Re
 **Set up Notion** (or open `/setup/notion`): the setup walks through the board, its columns, how each status counts,
 and your Notion user id, then saves.
 
-**Advanced mode** (the switch on the Notion card) is the by-hand way: an internal integration token, and the mapping
-typed in. Only one way is used at a time. The other one is kept (the sign-in stays signed in, the token stays stored)
+**Advanced mode** (the switch on the Notion card) uses a token you make yourself instead of the sign-in: a personal
+access token (<https://www.notion.so/developers/tokens>, **New token**) or an internal integration secret. Paste
+it on the card or on the wizard's Connect step, then the same wizard sets up the board. A personal access token reads
+every database your account can open. Notion's sign-in page lists only databases you have **Full access** to, so use
+a token when your board is shared with you as "Can edit". Only one way is used at a time. The other one is kept (the sign-in stays signed in, the token stays stored)
 but ignored until you switch back.
 
 ## What stays manual

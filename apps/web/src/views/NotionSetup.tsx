@@ -1,7 +1,9 @@
+import { useQueryClient } from '@tanstack/react-query';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate } from 'react-router';
 import type { GlobalConfigPublic } from '@relay/shared';
 import { PaperGrid } from '@/components/PaperGrid';
+import { DoneStep } from '@/setup/notion/DoneStep';
 import { ThemeSync } from '@/components/ThemeSync';
 import { Button } from '@/components/ui/button';
 import { describeError, post } from '@/lib/api';
@@ -9,12 +11,13 @@ import { useNotionMe, useNotionSchema, useOAuthStatus } from '@/lib/oauthApi';
 import { useSaveGlobal, useSettings } from '@/lib/settingsApi';
 import { cn } from '@/lib/utils';
 import {
-  autoGroups,
   autoMap,
-  GROUPS,
+  autoStages,
+  groupsFromStages,
   ROLES,
-  type GroupKey,
+  stagesFromGroups,
   type RoleKey,
+  type StageKey,
 } from '@/setup/notion/autoMap';
 import {
   BoardPreview,
@@ -22,6 +25,7 @@ import {
   ConnectStep,
   DatabasePicker,
   StatusesStep,
+  TokenStep,
   YouStep,
 } from '@/setup/notion/steps';
 
@@ -32,7 +36,7 @@ const STEP_COPY: Record<StepKey, { rail: string; title: string; lede: string }> 
   connect: {
     rail: 'Connect',
     title: 'Plug Relay into your Notion',
-    lede: 'One sign-in on Notion’s own page. Nothing to create or paste.',
+    lede: 'One sign-in on Notion’s own page, or a personal access token.',
   },
   board: {
     rail: 'Board',
@@ -67,7 +71,8 @@ interface Draft {
   map: Partial<Record<RoleKey, string>>;
   statuses: string[];
   readyStatus: string;
-  groups: Record<GroupKey, string[]>;
+  /** One stage per status; the stored status lists are derived from it on Save. */
+  stages: Record<string, StageKey>;
   aliases: string;
 }
 
@@ -84,14 +89,16 @@ function draftOf(s: GlobalConfigPublic): Draft {
     map,
     statuses: [...n.statuses],
     readyStatus: n.readyStatus,
-    groups: {
-      complete: [...n.statusGroups.complete],
-      done: [...n.statusGroups.done],
-      inactive: [...n.statusGroups.inactive],
-      uncommitted: [...n.statusGroups.uncommitted],
-    },
+    stages: stagesFromGroups(n.statuses, n.statusGroups),
     aliases: n.assigneeAliases.join(', '),
   };
+}
+
+/** Ready to Test must be a "with QA" status: keep the current one when it still is, else the best match. */
+function pickReady(statuses: string[], stages: Record<string, StageKey>, current: string): string {
+  const qa = statuses.filter((s) => stages[s] === 'qa');
+  if (qa.includes(current)) return current;
+  return qa.find((s) => /ready to test/i.test(s)) ?? qa[0] ?? current;
 }
 
 const splitAliases = (s: string) => [
@@ -102,11 +109,14 @@ const splitAliases = (s: string) => [
       .filter(Boolean),
   ),
 ];
+/** Advanced mode reads with the saved token, so it is ready without the sign-in. */
+const tokenMode = (s: GlobalConfigPublic) => s.notion.authMode === 'token';
 const USER_ID = /[0-9a-f]{8}-?[0-9a-f]{4}-?[0-9a-f]{4}-?[0-9a-f]{4}-?[0-9a-f]{12}/i;
 
 /**
- * Set up Notion through the sign-in: a full-screen walk from Connect to a saved setup. Nothing is written until Save;
- * the result is the normal Notion settings (and Connect mode). Advanced mode in Settings > Notion is the by-hand way.
+ * Set up Notion: a full-screen walk from Connect to a saved setup. Relay reads with the active mode's credential, the
+ * sign-in (Connect mode) or a personal access token (Advanced mode). Only the mode and token save early; the rest is
+ * written on Save.
  */
 export function NotionSetup() {
   const settings = useSettings();
@@ -135,16 +145,26 @@ function Shell({ children }: { children: React.ReactNode }) {
 function Wizard({ settings }: { settings: GlobalConfigPublic }) {
   const navigate = useNavigate();
   const connected = !!useOAuthStatus().data?.notion.connected;
+  const qc = useQueryClient();
+  const viaToken = tokenMode(settings);
+  // Relay can read Notion: the saved token in Advanced mode, the sign-in in Connect mode.
+  const ready = viaToken ? settings.notion.tokenSet : connected;
   const [draft, setDraft] = useState<Draft>(() => draftOf(settings));
   const [at, setAt] = useState(0);
   const step = STEPS[at]!;
-  // The wizard works on the sign-in, so the schema reads need Connect mode on the server.
-  const modeReady = settings.notion.authMode === 'connect';
-  const board = useNotionSchema(
-    connected && modeReady && draft.dataSourceId ? draft.dataSourceId : undefined,
-  );
-  const me = useNotionMe(connected && modeReady);
+  const board = useNotionSchema(ready && draft.dataSourceId ? draft.dataSourceId : undefined);
+  const me = useNotionMe(ready);
   const save = useSaveGlobal();
+  const credential = useSaveGlobal();
+  // Switch mode or store a token. Lists read with the other credential are dropped, since it sees other databases.
+  const setCredential = (authMode: 'token' | 'connect', token?: string) =>
+    credential.mutate(
+      {
+        ...(token ? { notionToken: token } : {}),
+        patch: (s) => ({ ...s, notion: { ...s.notion, authMode } }),
+      },
+      { onSuccess: () => void qc.invalidateQueries({ queryKey: ['oauth', 'notion'] }) },
+    );
   const [saved, setSaved] = useState(false);
   const stage = useRef<HTMLDivElement>(null);
 
@@ -159,15 +179,14 @@ function Wizard({ settings }: { settings: GlobalConfigPublic }) {
       const options = v.props.find((p) => p.name === map.status)?.options ?? [];
       const sameStatuses = options.length > 0 && d.statuses.every((s) => options.includes(s));
       const statuses = options.length ? options : d.statuses;
+      const stages = sameStatuses ? { ...autoStages(statuses), ...d.stages } : autoStages(statuses);
       return {
         ...d,
         boardTitle: v.title,
         map,
         statuses,
-        readyStatus: statuses.includes(d.readyStatus)
-          ? d.readyStatus
-          : (statuses.find((s) => /ready to test/i.test(s)) ?? statuses[0] ?? d.readyStatus),
-        groups: sameStatuses ? d.groups : autoGroups(statuses),
+        stages,
+        readyStatus: pickReady(statuses, stages, d.readyStatus),
       };
     });
   }, [board.data]);
@@ -196,25 +215,24 @@ function Wizard({ settings }: { settings: GlobalConfigPublic }) {
   const missingRequired = ROLES.filter((r) => r.required && !draft.map[r.key]);
   const canGo: Record<StepKey, boolean> = useMemo(
     () => ({
-      connect: connected && modeReady,
+      connect: ready,
       board: !!draft.dataSourceId && !!board.data,
       columns: !!board.data && missingRequired.length === 0,
-      statuses: draft.statuses.includes(draft.readyStatus),
+      statuses: draft.stages[draft.readyStatus] === 'qa',
       you: USER_ID.test(draft.aliases),
       done: true,
     }),
-    [connected, modeReady, draft, board.data, missingRequired.length],
+    [ready, draft, board.data, missingRequired.length],
   );
 
   const onSave = () => {
-    const keep = (xs: string[]) => xs.filter((x) => draft.statuses.includes(x));
+    const groups = groupsFromStages(draft.statuses, draft.stages);
     save.mutate(
       {
         patch: (s) => ({
           ...s,
           notion: {
             ...s.notion,
-            authMode: 'connect',
             dataSourceId: draft.dataSourceId,
             props: {
               ...s.notion.props,
@@ -228,12 +246,7 @@ function Wizard({ settings }: { settings: GlobalConfigPublic }) {
             statuses: draft.statuses,
             readyStatus: draft.readyStatus,
             assigneeAliases: splitAliases(draft.aliases),
-            statusGroups: {
-              complete: keep(draft.groups.complete),
-              done: keep(draft.groups.done),
-              inactive: keep(draft.groups.inactive),
-              uncommitted: keep(draft.groups.uncommitted),
-            },
+            statusGroups: groups,
           },
         }),
       },
@@ -310,16 +323,17 @@ function Wizard({ settings }: { settings: GlobalConfigPublic }) {
                 </Button>
               </div>
             ) : step === 'connect' ? (
-              <div className="grid gap-4">
-                <ConnectStep connected={connected} />
-                {!modeReady ? (
-                  <p role="alert" className="text-sm text-destructive">
-                    Advanced mode is on, so Relay uses the integration token. Turn Advanced mode off
-                    in <Link to="/settings#notion">Settings &gt; Notion</Link> to set up through the
-                    sign-in.
-                  </p>
-                ) : null}
-              </div>
+              viaToken ? (
+                <TokenStep
+                  tokenSet={settings.notion.tokenSet}
+                  saving={credential.isPending}
+                  error={credential.error}
+                  onSave={(t) => setCredential('token', t)}
+                  onUseSignIn={() => setCredential('connect')}
+                />
+              ) : (
+                <ConnectStep connected={connected} onUseToken={() => setCredential('token')} />
+              )
             ) : step === 'board' ? (
               <div className="grid gap-8">
                 <DatabasePicker
@@ -350,30 +364,41 @@ function Wizard({ settings }: { settings: GlobalConfigPublic }) {
             ) : step === 'statuses' ? (
               <StatusesStep
                 options={draft.statuses}
+                stages={draft.stages}
                 ready={draft.readyStatus}
-                groups={draft.groups}
                 onReady={(s) => setDraft((d) => ({ ...d, readyStatus: s }))}
-                onToggle={(g, s) =>
-                  setDraft((d) => ({
-                    ...d,
-                    groups: {
-                      ...d.groups,
-                      [g]: d.groups[g].includes(s)
-                        ? d.groups[g].filter((x) => x !== s)
-                        : [...d.groups[g], s],
-                    },
-                  }))
+                onStage={(s, stage) =>
+                  setDraft((d) => {
+                    const stages = { ...d.stages, [s]: stage };
+                    return {
+                      ...d,
+                      stages,
+                      readyStatus: pickReady(d.statuses, stages, d.readyStatus),
+                    };
+                  })
                 }
               />
             ) : step === 'you' ? (
               <YouStep
                 me={me.data}
                 meError={me.error}
+                boardId={draft.dataSourceId}
+                assigneeColumn={draft.map.assignee}
                 aliases={draft.aliases}
                 onChange={(v) => setDraft((d) => ({ ...d, aliases: v }))}
               />
             ) : step === 'done' ? (
-              <Summary draft={draft} />
+              <DoneStep
+                view={board.data}
+                boardTitle={draft.boardTitle || board.data?.title || ''}
+                map={draft.map}
+                statuses={draft.statuses}
+                stages={draft.stages}
+                readyStatus={draft.readyStatus}
+                aliases={draft.aliases}
+                me={me.data}
+                onEdit={(k) => setAt(Math.max(0, STEPS.indexOf(k)))}
+              />
             ) : (
               <p className="text-sm text-muted-foreground">Pick a board first.</p>
             )}
@@ -389,9 +414,18 @@ function Wizard({ settings }: { settings: GlobalConfigPublic }) {
                 Back
               </Button>
               {step === 'done' ? (
-                <Button size="lg" disabled={save.isPending} onClick={onSave}>
-                  {save.isPending ? 'Saving…' : 'Save and start reading'}
-                </Button>
+                <button
+                  type="button"
+                  className="sb-switch"
+                  data-on={save.isPending}
+                  disabled={save.isPending}
+                  onClick={onSave}
+                >
+                  <span className="sb-switch-track" aria-hidden>
+                    <span className="sb-switch-knob" />
+                  </span>
+                  {save.isPending ? 'Switching on…' : 'Switch on and start reading'}
+                </button>
               ) : (
                 <Button size="lg" disabled={!canGo[step]} onClick={() => setAt((i) => i + 1)}>
                   Continue
@@ -412,28 +446,5 @@ function Wizard({ settings }: { settings: GlobalConfigPublic }) {
         </main>
       </div>
     </Shell>
-  );
-}
-
-function Summary({ draft }: { draft: Draft }) {
-  const rows: [string, string][] = [
-    ['Board', draft.boardTitle || draft.dataSourceId || 'not picked'],
-    ...ROLES.filter((r) => draft.map[r.key]).map((r): [string, string] => [
-      r.label,
-      draft.map[r.key]!,
-    ]),
-    ['Ready for QA', draft.readyStatus],
-    ...GROUPS.map((g): [string, string] => [g.label, draft.groups[g.key].join(', ') || 'none']),
-    ['My names', draft.aliases || 'not set'],
-  ];
-  return (
-    <dl className="sb-summary">
-      {rows.map(([k, v]) => (
-        <div key={k}>
-          <dt>{k}</dt>
-          <dd className="font-mono">{v}</dd>
-        </div>
-      ))}
-    </dl>
   );
 }

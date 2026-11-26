@@ -1484,53 +1484,52 @@ li[data-state='now'] .sb-node {
   color: var(--muted-foreground);
 }
 
-/* Board picker */
+/* Board picker: the shared pick rows, laid out as a list. */
 .sb-db-list {
   display: grid;
-  gap: 0.25rem;
+  gap: 0.375rem;
 }
-.sb-db {
+.sb-pager {
   display: flex;
   align-items: center;
-  gap: 0.9rem;
-  width: 100%;
-  padding: 0.8rem 0.75rem;
-  border-radius: var(--radius);
-  border: 1px solid transparent;
-  transition:
-    background 200ms,
-    border-color 200ms;
+  justify-content: space-between;
+  gap: 1rem;
+  color: var(--muted-foreground);
+  font-size: 0.8125rem;
 }
-.sb-db:hover {
-  background: var(--accent);
-}
-.sb-db:focus-visible {
-  outline: 2px solid var(--ring);
-  outline-offset: 1px;
-}
-.sb-db-on {
-  border-color: var(--emphasis);
-  background: color-mix(in oklch, var(--emphasis) 7%, transparent);
-}
-.sb-db-jack {
-  flex: none;
-  width: 0.75rem;
-  height: 0.75rem;
+.sb-pager-btn {
+  display: grid;
+  place-items: center;
+  width: 2rem;
+  height: 2rem;
   border-radius: 999px;
-  border: 1.5px solid var(--border);
+  border: 1px solid var(--border);
+  color: var(--foreground);
+  transition:
+    background-color 150ms ease-out,
+    border-color 150ms ease-out;
 }
-.sb-db-on .sb-db-jack {
-  border-color: var(--emphasis);
-  background: var(--emphasis);
+.sb-pager-btn:hover:not(:disabled) {
+  border-color: var(--foreground);
+  background: var(--card);
 }
+.sb-pager-btn:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+}
+.sb-pager-btn:disabled {
+  opacity: 0.35;
+}
+
 .sb-card-peek {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 1rem;
   padding: 0.55rem 0.75rem;
-  border-left: 2px solid var(--emphasis);
-  background: var(--card);
+  border-radius: var(--radius-surface);
+  background: color-mix(in oklch, var(--card) 78%, transparent);
+  box-shadow: var(--shadow-rest);
   font-size: 0.875rem;
 }
 .sb-status-chip {
@@ -1561,55 +1560,76 @@ li[data-state='now'] .sb-node {
   background: var(--emphasis);
   color: var(--background);
 }
-.sb-chip:focus-visible,
-.sb-dot:focus-visible {
+.sb-chip:focus-visible {
   outline: 2px solid var(--ring);
   outline-offset: 2px;
 }
-.sb-matrix-wrap {
-  overflow-x: auto;
+.sb-chip:disabled {
+  opacity: 0.4;
+  pointer-events: none;
 }
-.sb-matrix {
-  border-collapse: collapse;
+.sb-stages {
+  display: grid;
+  gap: 0.875rem 1.5rem;
+  grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr));
   font-size: 0.875rem;
 }
-.sb-matrix th {
+.sb-stages dt {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
   font-weight: 500;
-  text-align: left;
 }
-.sb-matrix thead th {
-  padding: 0 0.75rem 0.6rem;
-  font-size: 0.75rem;
+.sb-stages dd {
+  padding-left: 1.125rem;
   color: var(--muted-foreground);
-  vertical-align: bottom;
-  max-width: 8rem;
 }
-.sb-matrix tbody th {
-  padding: 0.45rem 1rem 0.45rem 0;
-  white-space: nowrap;
-}
-.sb-matrix td {
-  padding: 0.3rem 0.75rem;
-  text-align: center;
-  border-top: 1px solid var(--hairline);
-}
-.sb-matrix tbody th {
-  border-top: 1px solid var(--hairline);
-}
-.sb-dot {
-  width: 1.1rem;
-  height: 1.1rem;
+/* One colour per stage, the same in the legend and on every row. */
+.sb-stage-dot {
+  flex: none;
+  width: 0.625rem;
+  height: 0.625rem;
   border-radius: 999px;
-  border: 1.5px dashed var(--border);
-  transition:
-    background 200ms,
-    border-color 200ms;
+  background: var(--stage, var(--stone));
 }
-.sb-dot[data-on='true'] {
-  border-style: solid;
-  border-color: var(--emphasis);
-  background: var(--emphasis);
-  box-shadow: inset 0 0 0 2.5px var(--background);
+[data-stage='parked'] {
+  --stage: var(--stone);
+}
+[data-stage='hold'] {
+  --stage: var(--warning);
+}
+[data-stage='working'] {
+  --stage: var(--foreground);
+}
+[data-stage='review'] {
+  --stage: var(--emphasis);
+}
+[data-stage='qa'] {
+  --stage: var(--success);
+}
+.sb-stage-rows {
+  display: grid;
+  gap: 0.375rem;
+}
+.sb-stage-rows > li {
+  display: grid;
+  grid-template-columns: minmax(8rem, 1fr) minmax(12rem, 14rem);
+  align-items: center;
+  gap: 0.5rem 1rem;
+  padding: 0.7rem 0.75rem 0.7rem 0.9rem;
+  border-radius: var(--radius-surface);
+  background: color-mix(in oklch, var(--card) 78%, transparent);
+  box-shadow: var(--shadow-rest);
+  font-size: 0.875rem;
+  transition: box-shadow 200ms ease-out;
+}
+.sb-stage-rows > li:hover,
+.sb-stage-rows > li:focus-within {
+  box-shadow: 0 0 0 1px color-mix(in oklch, var(--foreground) 16%, transparent);
+}
+.sb-stage-rows > li > :last-child {
+  grid-column: 1 / -1;
+  padding-left: 1.125rem;
 }
 
 /* Branch */
@@ -1679,5 +1699,822 @@ li[data-state='now'] .sb-node {
   .sb-node {
     animation: none !important;
     transition: none !important;
+  }
+}
+
+/*
+ * Pick rows (components/PickRow.tsx): one choice in a list you pick from. Each row sits on its own sheet of paper
+ * with a hairline, a socket on the left takes the plug when picked, and the picked row turns violet. Used by the
+ * Notion setup, the start-card dialog and the other pickers.
+ */
+.pick {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 0.875rem;
+  width: 100%;
+  min-width: 0;
+  padding: 0.75rem 0.875rem 0.75rem 0.8rem;
+  border-radius: var(--radius-surface);
+  background: color-mix(in oklch, var(--card) 78%, transparent);
+  box-shadow: var(--shadow-rest);
+  text-align: left;
+  cursor: pointer;
+  transition:
+    background-color 180ms ease-out,
+    box-shadow 260ms var(--ease-editorial),
+    transform 260ms var(--ease-editorial);
+}
+.pick:hover:not(:disabled) {
+  background: var(--card);
+  box-shadow:
+    0 0 0 1px color-mix(in oklch, var(--foreground) 16%, transparent),
+    0 10px 24px -18px rgb(var(--elevation) / 0.5);
+  transform: translateY(-1px);
+}
+.pick:active:not(:disabled) {
+  transform: translateY(0);
+  transition-duration: 80ms;
+}
+.pick:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+}
+.pick:disabled {
+  cursor: default;
+  opacity: 0.5;
+}
+.pick[data-selected='true'] {
+  background: color-mix(in oklch, var(--emphasis) 7%, var(--card));
+  box-shadow:
+    0 0 0 1.5px var(--emphasis),
+    0 14px 30px -20px color-mix(in oklch, var(--emphasis) 80%, transparent);
+  transform: none;
+}
+
+/* The socket: an empty jack at rest, the plug seated when picked. */
+.pick-mark {
+  position: relative;
+  flex: none;
+  width: 1.125rem;
+  height: 1.125rem;
+  border-radius: 999px;
+  background: var(--background);
+  box-shadow: inset 0 0 0 1.5px color-mix(in oklch, var(--foreground) 24%, transparent);
+  transition:
+    background-color 200ms ease-out,
+    box-shadow 200ms ease-out;
+}
+.pick-mark::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  margin: auto;
+  width: 0.3rem;
+  height: 0.3rem;
+  border-radius: 999px;
+  background: color-mix(in oklch, var(--foreground) 22%, transparent);
+  transition:
+    transform 320ms var(--ease-editorial),
+    background-color 200ms ease-out;
+}
+.pick:hover:not(:disabled) .pick-mark {
+  box-shadow: inset 0 0 0 1.5px color-mix(in oklch, var(--foreground) 45%, transparent);
+}
+.pick[data-selected='true'] .pick-mark {
+  background: var(--emphasis);
+  box-shadow:
+    inset 0 0 0 1.5px var(--emphasis),
+    0 0 0 3px color-mix(in oklch, var(--emphasis) 18%, transparent);
+}
+.pick[data-selected='true'] .pick-mark::after {
+  background: var(--card);
+  transform: scale(1.5);
+}
+
+/* The thing's own face: its emoji, icon or avatar. */
+.pick-tile {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 2.25rem;
+  height: 2.25rem;
+  overflow: hidden;
+  border-radius: var(--radius-surface);
+  background: var(--background);
+  box-shadow: inset 0 0 0 1px var(--hairline);
+  color: var(--muted-foreground);
+  font-size: 1.125rem;
+  line-height: 1;
+  transition: color 200ms ease-out;
+}
+.pick-tile img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.pick[data-selected='true'] .pick-tile {
+  color: var(--emphasis);
+}
+.pick-body {
+  display: grid;
+  min-width: 0;
+  gap: 0.125rem;
+}
+.pick-title {
+  overflow: hidden;
+  font-size: 0.9375rem;
+  font-weight: 500;
+  line-height: 1.3;
+  letter-spacing: -0.01em;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.pick-meta {
+  overflow: hidden;
+  color: var(--muted-foreground);
+  font-size: 0.75rem;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.35;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.pick-trail {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 0.5rem;
+  margin-left: auto;
+  padding-left: 0.5rem;
+}
+.pick-tag {
+  padding: 0.125rem 0.5rem;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  color: var(--muted-foreground);
+  font-size: var(--text-2xs);
+  line-height: 1rem;
+  white-space: nowrap;
+}
+.pick-tag-em {
+  border-color: color-mix(in oklch, var(--emphasis) 35%, transparent);
+  background: color-mix(in oklch, var(--emphasis) 6%, transparent);
+  color: var(--emphasis);
+}
+.pick-picked {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  color: var(--emphasis);
+  font-size: var(--text-2xs);
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  animation: pick-in 320ms var(--ease-editorial) both;
+}
+@keyframes pick-in {
+  from {
+    opacity: 0;
+    transform: translateX(-4px);
+  }
+}
+
+/* Long text wraps instead of cutting off (answers with a description). */
+.pick-wrap .pick-title,
+.pick-wrap .pick-meta {
+  white-space: normal;
+}
+.pick-wrap {
+  align-items: flex-start;
+}
+.pick-wrap .pick-mark {
+  margin-top: 0.1rem;
+}
+
+/* Pick several: a square socket. */
+.pick-multi .pick-mark {
+  border-radius: var(--radius-control);
+}
+.pick-multi .pick-mark::after {
+  border-radius: 1px;
+}
+
+/* Compact rows for dialogs and popovers. */
+.pick-sm {
+  gap: 0.7rem;
+  padding: 0.5rem 0.7rem 0.5rem 0.6rem;
+}
+.pick-sm .pick-mark {
+  width: 0.95rem;
+  height: 0.95rem;
+}
+.pick-sm .pick-tile {
+  width: 1.75rem;
+  height: 1.75rem;
+  font-size: 0.95rem;
+}
+.pick-sm .pick-title {
+  font-size: 0.875rem;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pick,
+  .pick-mark,
+  .pick-mark::after {
+    transition: none;
+  }
+  .pick:hover:not(:disabled) {
+    transform: none;
+  }
+  .pick-picked {
+    animation: none;
+  }
+}
+
+/*
+ * Columns: the patch bay (setup/notion/PatchBay.tsx). Relay's lines on the left, the board's columns on the right,
+ * real cables between them. On a narrow screen the plain row list takes over.
+ */
+.sb-bay-wrap,
+.sb-viewswitch {
+  display: none;
+}
+@media (min-width: 900px) {
+  [data-wiring='bay'] .sb-bay-wrap {
+    display: block;
+  }
+  [data-wiring='bay'] .sb-board-narrow {
+    display: none;
+  }
+  .sb-viewswitch {
+    display: inline-flex;
+  }
+}
+/* Patch bay or Classic: a two-way pill. */
+.sb-viewswitch {
+  justify-self: end;
+  gap: 0.125rem;
+  padding: 0.2rem;
+  border-radius: 999px;
+  background: color-mix(in oklch, var(--card) 78%, transparent);
+  box-shadow: var(--shadow-rest);
+}
+.sb-viewswitch-opt {
+  padding: 0.3rem 0.85rem;
+  border-radius: 999px;
+  color: var(--muted-foreground);
+  font-size: 0.8125rem;
+  transition:
+    background-color 200ms ease-out,
+    color 200ms ease-out;
+}
+.sb-viewswitch-opt:hover {
+  color: var(--foreground);
+}
+.sb-viewswitch-opt[aria-checked='true'] {
+  background: var(--foreground);
+  color: var(--background);
+}
+.sb-viewswitch-opt:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+}
+.sb-bay-status {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem 1rem;
+  min-height: 2.25rem;
+  color: var(--muted-foreground);
+  font-size: 0.875rem;
+}
+.sb-bay-status b {
+  color: var(--foreground);
+  font-weight: 600;
+}
+.sb-bay-cancel {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  padding: 0.3rem 0.7rem;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  color: var(--foreground);
+  font-size: 0.8125rem;
+}
+.sb-bay-cancel:hover {
+  border-color: var(--foreground);
+}
+.sb-bay {
+  position: relative;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(5rem, 8rem) minmax(0, 0.85fr);
+  align-items: start;
+  padding: 1.25rem;
+  border-radius: var(--radius-sheet);
+  background: color-mix(in oklch, var(--card) 60%, transparent);
+  box-shadow: var(--shadow-rest);
+}
+.sb-bay > .sb-bay-side:last-of-type {
+  grid-column: 3;
+}
+.sb-bay-side {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  gap: 0.75rem;
+  min-width: 0;
+}
+.sb-bay-head {
+  color: var(--muted-foreground);
+  font-family: var(--font-mono);
+  font-size: var(--text-2xs);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+/* The port every cable plugs into. */
+.sb-port {
+  position: relative;
+  flex: none;
+  width: 0.95rem;
+  height: 0.95rem;
+  border-radius: 999px;
+  background: var(--background);
+  box-shadow: inset 0 0 0 1.5px color-mix(in oklch, var(--foreground) 28%, transparent);
+  transition:
+    background-color 200ms ease-out,
+    box-shadow 200ms ease-out,
+    transform 260ms var(--ease-editorial);
+}
+.sb-port::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  margin: auto;
+  width: 0.28rem;
+  height: 0.28rem;
+  border-radius: 999px;
+  background: color-mix(in oklch, var(--foreground) 25%, transparent);
+}
+[data-live='true'] > .sb-line-btn .sb-port,
+.sb-col[data-used='true'] .sb-port {
+  background: var(--emphasis);
+  box-shadow: inset 0 0 0 1.5px var(--emphasis);
+}
+[data-live='true'] > .sb-line-btn .sb-port::after,
+.sb-col[data-used='true'] .sb-port::after {
+  background: var(--card);
+}
+/* Relay's lines. */
+.sb-line {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+.sb-line-btn,
+.sb-col-btn {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  gap: 0.75rem;
+  min-width: 0;
+  min-height: 3.25rem;
+  padding: 0.5rem 0.75rem;
+  border-radius: var(--radius-surface);
+  background: var(--card);
+  box-shadow: var(--shadow-rest);
+  text-align: left;
+  transition:
+    background-color 180ms ease-out,
+    box-shadow 220ms var(--ease-editorial),
+    opacity 200ms ease-out;
+}
+.sb-line-btn {
+  justify-content: space-between;
+  padding-right: 0.6rem;
+}
+.sb-line-btn:hover,
+.sb-col-btn:hover:not(:disabled),
+[data-hot='true'] > .sb-line-btn,
+[data-hot='true'] > .sb-col-btn {
+  box-shadow:
+    0 0 0 1px color-mix(in oklch, var(--emphasis) 45%, transparent),
+    0 10px 24px -18px color-mix(in oklch, var(--emphasis) 70%, transparent);
+}
+.sb-line-btn:focus-visible,
+.sb-col-btn:focus-visible,
+.sb-unplug:focus-visible,
+.sb-bay-cancel:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+}
+.sb-line-read {
+  overflow: hidden;
+  max-width: 100%;
+  color: var(--muted-foreground);
+  font-size: 0.6875rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.sb-line[data-live='false'] .sb-line-btn {
+  background: transparent;
+  box-shadow: none;
+  outline: 1.5px dashed var(--border);
+  outline-offset: -1.5px;
+}
+.sb-line[data-live='false'] .sb-line-read {
+  font-family: var(--font-sans);
+}
+.sb-line[data-live='false']:has(.font-normal) .sb-line-read {
+  opacity: 0.7;
+}
+.sb-line[data-armed='true'] .sb-line-btn {
+  background: color-mix(in oklch, var(--emphasis) 8%, var(--card));
+  box-shadow:
+    0 0 0 1.5px var(--emphasis),
+    0 14px 30px -20px color-mix(in oklch, var(--emphasis) 80%, transparent);
+}
+.sb-line[data-armed='true'] .sb-port {
+  transform: scale(1.25);
+  background: var(--emphasis);
+  box-shadow:
+    inset 0 0 0 1.5px var(--emphasis),
+    0 0 0 4px color-mix(in oklch, var(--emphasis) 18%, transparent);
+}
+.sb-unplug {
+  position: absolute;
+  top: 50%;
+  right: -2.25rem;
+  display: grid;
+  place-items: center;
+  width: 1.6rem;
+  height: 1.6rem;
+  border-radius: 999px;
+  color: var(--muted-foreground);
+  opacity: 0;
+  transform: translateY(-50%);
+  transition:
+    opacity 150ms ease-out,
+    color 150ms ease-out,
+    background-color 150ms ease-out;
+}
+.sb-line:hover .sb-unplug,
+.sb-unplug:focus-visible {
+  opacity: 1;
+}
+.sb-unplug:hover {
+  background: var(--card);
+  color: var(--destructive);
+}
+
+/* The board's columns. */
+.sb-col {
+  display: flex;
+}
+.sb-col-list {
+  transition: margin-top 360ms var(--ease-editorial);
+}
+.sb-bay[data-armed='true'] .sb-col[data-fit='true'] .sb-col-btn {
+  cursor: pointer;
+  box-shadow: 0 0 0 1px color-mix(in oklch, var(--emphasis) 40%, transparent);
+}
+.sb-bay[data-armed='true'] .sb-col[data-fit='true'] .sb-col-btn:hover {
+  background: color-mix(in oklch, var(--emphasis) 8%, var(--card));
+  box-shadow: 0 0 0 1.5px var(--emphasis);
+}
+.sb-bay[data-armed='true'] .sb-col[data-fit='true'] .sb-col-btn:hover .sb-port {
+  transform: scale(1.25);
+}
+.sb-bay[data-armed='true'] .sb-col[data-fit='false'] .sb-col-btn {
+  opacity: 0.35;
+}
+.sb-bay[data-armed='true'] .sb-line:not([data-armed='true']) .sb-line-btn {
+  opacity: 0.55;
+}
+
+/* The cables. */
+.sb-cables {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+  pointer-events: none;
+}
+.sb-cables path {
+  fill: none;
+  stroke-linecap: round;
+}
+.sb-cable-shadow {
+  stroke: rgb(var(--elevation) / 0.12);
+  stroke-width: 6;
+  transform: translateY(3px);
+}
+.sb-cable-line {
+  stroke: var(--emphasis);
+  stroke-width: 2.25;
+  stroke-dasharray: 1;
+  stroke-dashoffset: 0;
+  animation: sb-cable-in 700ms var(--ease-editorial) both;
+  transition:
+    stroke-width 200ms ease-out,
+    opacity 200ms ease-out;
+}
+.sb-cables g[data-optional='true'] .sb-cable-line {
+  stroke: color-mix(in oklch, var(--emphasis) 55%, var(--foreground) 10%);
+  stroke-width: 1.75;
+}
+.sb-cables:has(g[data-hot='true']) g:not([data-hot='true']) {
+  opacity: 0.25;
+}
+.sb-cables g[data-hot='true'] .sb-cable-line {
+  stroke-width: 3.25;
+}
+.sb-bay[data-armed='true'] .sb-cables g {
+  opacity: 0.3;
+}
+.sb-cable-lifted {
+  stroke: var(--emphasis);
+  stroke-width: 2.25;
+  stroke-dasharray: 6 5;
+  animation: sb-cable-crawl 900ms linear infinite;
+}
+@keyframes sb-cable-in {
+  from {
+    stroke-dashoffset: 1;
+  }
+}
+@keyframes sb-cable-crawl {
+  to {
+    stroke-dashoffset: -11;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .sb-cable-line,
+  .sb-cable-lifted {
+    animation: none;
+  }
+  .sb-port {
+    transition: none;
+  }
+}
+
+/* Done: the proof card, the ledger and the switch (setup/notion/DoneStep.tsx). */
+.sb-proof {
+  display: grid;
+  gap: 0.75rem;
+}
+.sb-proof-cap {
+  color: var(--muted-foreground);
+  font-size: 0.8125rem;
+}
+.sb-ticket {
+  display: grid;
+  gap: 0.9rem;
+  padding: 1.5rem 1.5rem 1.25rem;
+  border-radius: var(--radius-sheet);
+  background: var(--card);
+  box-shadow:
+    0 0 0 1px var(--hairline),
+    0 24px 48px -30px rgb(var(--elevation) / 0.45),
+    0 2px 0 rgb(var(--elevation) / 0.04);
+  animation: sb-ticket-in 600ms var(--ease-editorial) both;
+}
+@keyframes sb-ticket-in {
+  from {
+    opacity: 0;
+    transform: translateY(10px) rotate(-0.4deg);
+  }
+}
+.sb-ticket-type {
+  padding: 0.15rem 0.55rem;
+  border-radius: var(--radius-control);
+  background: var(--foreground);
+  color: var(--background);
+  font-size: var(--text-2xs);
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+.sb-ticket-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.15rem 0.6rem 0.15rem 0.45rem;
+  border-radius: 999px;
+  border: 1px solid color-mix(in oklch, var(--stage, var(--border)) 45%, transparent);
+  background: color-mix(in oklch, var(--stage, var(--border)) 8%, transparent);
+  font-size: 0.75rem;
+}
+.sb-ticket-title {
+  max-width: 40ch;
+  font-size: clamp(1.25rem, 2.4vw, 1.5rem);
+  font-weight: 600;
+  line-height: 1.2;
+  letter-spacing: -0.02em;
+  text-wrap: balance;
+}
+.sb-ticket-facts {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(13rem, 1fr));
+  gap: 0.25rem 1.5rem;
+  padding-top: 0.9rem;
+  border-top: 1px solid var(--hairline);
+}
+.sb-ticket-facts > div {
+  display: grid;
+  gap: 0.1rem;
+  min-width: 0;
+  padding: 0.45rem 0;
+}
+.sb-ticket-facts dt {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  color: var(--muted-foreground);
+  font-size: 0.75rem;
+}
+.sb-ticket-facts dd {
+  overflow: hidden;
+  font-size: 0.875rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.sb-ticket-from {
+  color: var(--emphasis);
+  font-family: var(--font-mono);
+  font-size: 0.625rem;
+  letter-spacing: 0.02em;
+  opacity: 0.8;
+}
+.sb-ledger {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(16rem, 1fr));
+  gap: 0.75rem;
+}
+.sb-ledger-cell {
+  display: grid;
+  align-content: start;
+  gap: 0.6rem;
+  padding: 1rem 1.1rem;
+  border-radius: var(--radius-surface);
+  background: color-mix(in oklch, var(--card) 78%, transparent);
+  box-shadow: var(--shadow-rest);
+}
+.sb-ledger-wide {
+  grid-column: 1 / -1;
+}
+.sb-ledger-big {
+  font-size: 1.125rem;
+  font-weight: 500;
+  letter-spacing: -0.01em;
+}
+.sb-ledger-sub {
+  color: var(--muted-foreground);
+  font-size: 0.8125rem;
+}
+.sb-inline-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.2rem;
+  color: var(--emphasis);
+  font-size: 0.8125rem;
+  text-decoration: underline;
+  text-decoration-color: color-mix(in oklch, var(--emphasis) 35%, transparent);
+  text-underline-offset: 3px;
+}
+.sb-inline-link:hover {
+  text-decoration-color: var(--emphasis);
+}
+.sb-inline-link:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+}
+.sb-avatar {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 2.5rem;
+  height: 2.5rem;
+  border-radius: 999px;
+  background: var(--emphasis);
+  color: var(--card);
+  font-size: 0.8125rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+}
+.sb-flow {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 0.5rem;
+  counter-reset: none;
+}
+@media (max-width: 760px) {
+  .sb-flow {
+    grid-template-columns: 1fr;
+  }
+}
+.sb-flow > li {
+  display: grid;
+  align-content: start;
+  gap: 0.5rem;
+  padding-top: 0.6rem;
+  border-top: 2px solid var(--stage);
+}
+.sb-flow > li[data-empty='true'] {
+  border-top-style: dashed;
+  opacity: 0.6;
+}
+.sb-flow-head {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.75rem;
+  font-weight: 500;
+}
+.sb-flow-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.1rem 0.45rem;
+  border-radius: var(--radius-control);
+  background: color-mix(in oklch, var(--stage) 9%, var(--card));
+  font-size: 0.75rem;
+}
+.sb-flow-chip[data-ready='true'] {
+  box-shadow: 0 0 0 1.5px var(--success);
+}
+.sb-flow-ready {
+  color: var(--success);
+  font-size: 0.625rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+/* The switch that saves: a lever that throws when pressed. */
+.sb-switch {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.75rem;
+  height: 2.75rem;
+  padding: 0 1.25rem 0 0.4rem;
+  border-radius: 999px;
+  background: var(--primary);
+  color: var(--primary-foreground);
+  font-size: 0.8125rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  transition:
+    background-color 200ms ease-out,
+    transform 260ms var(--ease-editorial);
+}
+.sb-switch:hover:not(:disabled) {
+  background: var(--emphasis);
+}
+.sb-switch:active:not(:disabled) {
+  transform: scale(0.98);
+}
+.sb-switch:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 3px;
+}
+.sb-switch-track {
+  position: relative;
+  width: 3.25rem;
+  height: 2rem;
+  border-radius: 999px;
+  background: color-mix(in oklch, var(--primary-foreground) 16%, transparent);
+}
+.sb-switch-knob {
+  position: absolute;
+  top: 0.25rem;
+  left: 0.25rem;
+  width: 1.5rem;
+  height: 1.5rem;
+  border-radius: 999px;
+  background: var(--primary-foreground);
+  box-shadow: 0 2px 6px rgb(0 0 0 / 0.25);
+  transition:
+    transform 420ms var(--ease-settle),
+    background-color 200ms ease-out;
+}
+.sb-switch:hover:not(:disabled) .sb-switch-knob {
+  transform: translateX(0.3rem);
+}
+.sb-switch[data-on='true'] .sb-switch-knob {
+  transform: translateX(1.25rem);
+  background: var(--success);
+}
+@media (prefers-reduced-motion: reduce) {
+  .sb-ticket {
+    animation: none;
+  }
+  .sb-switch-knob {
+    transition: none;
   }
 }
