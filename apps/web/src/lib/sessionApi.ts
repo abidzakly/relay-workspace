@@ -90,7 +90,8 @@ export function useKillSession() {
   const qc = useQueryClient();
   return useMutation<{ ok: boolean }, Error, string>({
     mutationFn: (id) => post(`/api/cockpit/sessions/${e(id)}/kill`, {}),
-    onSettled: () => void qc.invalidateQueries({ queryKey: sessionKeys.list }),
+    // Returned so the mutation stays pending until the list shows the ended session: no gap for a second click.
+    onSettled: () => qc.invalidateQueries({ queryKey: sessionKeys.list }),
   });
 }
 

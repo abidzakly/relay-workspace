@@ -4,9 +4,11 @@ import { lazy, Suspense, useRef } from 'react';
 import { Link } from 'react-router';
 import { Button } from '@/components/ui/button';
 import type { TerminalHandle } from '@/components/term/Terminal';
+import { describeError } from '@/lib/api';
 import { deckPath } from '@/lib/deckApi';
 import { sendPrompt, useKillSession, type SessionView } from '@/lib/sessionApi';
 import { SPRING } from '@/lib/motion/presets';
+import { cn } from '@/lib/utils';
 import { useCoarsePointer } from '@/workspace/useMedia';
 import { Composer } from './Composer';
 import { FinishBurst, MoodCrystal, MoodLine, terminalMood } from './TerminalChrome';
@@ -41,9 +43,16 @@ export function AgentView({ s, returnTo }: { s: SessionView; returnTo?: string |
           className="ml-auto h-7 shrink-0 px-2"
           onClick={() => kill.mutate(s.id)}
           disabled={kill.isPending}
+          aria-busy={kill.isPending}
           aria-label="Close session"
+          title={kill.error ? describeError(kill.error) : undefined}
         >
-          <X className="size-3.5" /> {exited ? 'Close' : 'Stop'}
+          {kill.isPending ? (
+            <Loader2 className="size-3.5 motion-safe:animate-spin" aria-hidden />
+          ) : (
+            <X className={cn('size-3.5', kill.error && 'text-destructive')} />
+          )}{' '}
+          {kill.isPending ? (exited ? 'Closing…' : 'Stopping…') : exited ? 'Close' : 'Stop'}
         </Button>
       </div>
 
