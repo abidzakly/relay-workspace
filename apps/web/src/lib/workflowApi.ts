@@ -105,6 +105,7 @@ export function useThreadAgent() {
       branch: string;
       attachments: number;
       failedAttachments: number;
+      reused: boolean;
     },
     Error,
     {
@@ -116,6 +117,8 @@ export function useThreadAgent() {
       model?: string;
       /** The thread's "Ask AI" chat so far, handed to the agent as context. */
       conversation?: MrChatMessage[];
+      /** Start a fresh session even when one already works on this MR. */
+      newSession?: boolean;
     }
   >({
     mutationFn: (b) => post('/api/cockpit/thread-agent', b),

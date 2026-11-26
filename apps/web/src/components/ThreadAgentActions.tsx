@@ -10,7 +10,7 @@ import {
   Wrench,
 } from 'lucide-react';
 import { useState, type KeyboardEvent } from 'react';
-import { useNavigate } from 'react-router';
+import { Link, useLocation, useNavigate } from 'react-router';
 import {
   AGENT_MODEL_CHOICES,
   agentModelLabel,
@@ -21,6 +21,7 @@ import {
   type MrChatMessage,
 } from '@relay/shared';
 import { describeError } from '@/lib/api';
+import { sessionHref, sessionStateLabel, useMrSessions } from '@/lib/mrSessions';
 import { useSettings } from '@/lib/settingsApi';
 import {
   useThreadAgent,
@@ -64,9 +65,9 @@ function explanationText(r: ExplainThreadResult): string {
 /**
  * "Ask AI" on a reviewer's thread (Code Review and MR Detail). One button opens a panel: the AI first checks the
  * comment against the MR's commits and changes (verdict + a reply for the reviewer), then I can ask follow-ups or add
- * context (links are opened) in the same conversation. When it needs code, "Hand to agent" starts a Cockpit session
- * with the conversation so far: "Review" only reads and advises, "Fix" commits the change. The server re-reads the
- * thread, its code and attachments.
+ * context (links are opened) in the same conversation. When it needs code, "Hand to agent" gives the conversation so
+ * far to the MR's Cockpit session (a new one when none runs, or when asked): "Review" only reads and advises, "Fix"
+ * commits the change. The server re-reads the thread, its code and attachments.
  */
 export function ThreadAgentActions({
   repo,
@@ -78,6 +79,10 @@ export function ThreadAgentActions({
   discussionId: string;
 }) {
   const navigate = useNavigate();
+  const { pathname, search } = useLocation();
+  const here = `${pathname}${search}`;
+  const mrSession = useMrSessions(repo, iid)[0];
+  const [fresh, setFresh] = useState(false);
   const start = useThreadAgent();
   const explain = useThreadExplain();
   const chat = useThreadChat();
@@ -138,12 +143,17 @@ export function ThreadAgentActions({
   const go = (mode: ThreadAgentMode) => {
     const conversation = history();
     start.mutate(
-      { ...ids, mode, agent, model, ...(conversation.length ? { conversation } : {}) },
+      {
+        ...ids,
+        mode,
+        agent,
+        model,
+        ...(conversation.length ? { conversation } : {}),
+        ...(fresh ? { newSession: true } : {}),
+      },
       {
         onSuccess: (r) =>
-          void navigate(
-            `/cockpit?ws=${encodeURIComponent(r.workspaceId)}&session=${r.sessionId}&tab=agent`,
-          ),
+          void navigate(sessionHref({ id: r.sessionId, workspaceId: r.workspaceId }, here)),
       },
     );
   };
@@ -158,6 +168,16 @@ export function ThreadAgentActions({
   if (!open) {
     return (
       <div className="flex flex-wrap items-center gap-2">
+        {mrSession?.mr?.discussionId === discussionId && (
+          <Link
+            to={sessionHref(mrSession, here)}
+            className="inline-flex h-8 items-center gap-1.5 rounded-control border px-2.5 text-xs font-medium hover:bg-accent"
+            title="The agent session working on this thread"
+          >
+            <Bot className="size-3.5" aria-hidden />
+            Agent · {sessionStateLabel(mrSession)}
+          </Link>
+        )}
         <Button
           type="button"
           size="sm"
@@ -253,7 +273,7 @@ export function ThreadAgentActions({
           size="sm"
           variant="outline"
           disabled={start.isPending}
-          title="New agent session with this conversation: explains the comment and proposes a fix, without changing files"
+          title="Agent session with this conversation: explains the comment and proposes a fix, without changing files"
           onClick={() => go('review')}
         >
           {pendingMode === 'review' ? (
@@ -268,7 +288,7 @@ export function ThreadAgentActions({
           size="sm"
           variant="outline"
           disabled={start.isPending}
-          title="New agent session with this conversation: plans, then makes the change as a new commit on the MR's branch"
+          title="Agent session with this conversation: plans, then makes the change as a new commit on the MR's branch"
           onClick={() => go('fix')}
         >
           {pendingMode === 'fix' ? (
@@ -313,6 +333,30 @@ export function ThreadAgentActions({
           )}
         </Select>
       </footer>
+      {mrSession && (
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
+          <span>
+            {fresh
+              ? 'Review and Fix start a new session.'
+              : `Review and Fix continue this MR's agent session (${sessionStateLabel(mrSession)}).`}
+          </span>
+          <Link
+            to={sessionHref(mrSession, here)}
+            className="font-medium text-primary-ink hover:underline"
+          >
+            Open session →
+          </Link>
+          <label className="inline-flex items-center gap-1.5">
+            <input
+              type="checkbox"
+              className="size-3.5 accent-primary"
+              checked={fresh}
+              onChange={(e) => setFresh(e.target.checked)}
+            />
+            New session
+          </label>
+        </div>
+      )}
       {start.error && <p className="text-xs text-destructive">{describeError(start.error)}</p>}
     </section>
   );

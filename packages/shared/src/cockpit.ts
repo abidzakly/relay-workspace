@@ -182,6 +182,16 @@ export const CockpitSessionSchema = z.object({
 });
 export type CockpitSession = z.infer<typeof CockpitSessionSchema>;
 
+/** The MR (and review thread) an agent session was started from: MR Detail and the Cockpit link to each other. */
+export const SessionMrLinkSchema = z.object({
+  repoId: z.string().min(1).max(64),
+  iid: z.number().int().positive(),
+  /** The reviewer thread last handed to this session. */
+  discussionId: z.string().max(64).optional(),
+  title: z.string().max(300).optional(),
+});
+export type SessionMrLink = z.infer<typeof SessionMrLinkSchema>;
+
 /**
  * An AI device-test session: Claude with only the bench and Marionette MCP tools, no file edits
  * and no shell. The bench tools reach the dashboard on `benchUrl` with a token scoped to this one run.

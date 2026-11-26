@@ -13,6 +13,7 @@ import { useCoarsePointer } from '@/workspace/useMedia';
 import { Composer } from './Composer';
 import { FinishBurst, MoodCrystal, MoodLine, terminalMood } from './TerminalChrome';
 import { ExtraKeys } from './ExtraKeys';
+import { MrBackLink } from './MrBackLink';
 
 const Terminal = lazy(() => import('@/components/term/Terminal'));
 
@@ -37,6 +38,7 @@ export function AgentView({ s, returnTo }: { s: SessionView; returnTo?: string |
           mood={mood}
           detail={exited ? `${s.title} · exit ${s.exitCode ?? '?'}` : s.title}
         />
+        <MrBackLink s={s} />
         <Button
           size="sm"
           variant="ghost"

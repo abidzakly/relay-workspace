@@ -1,3 +1,4 @@
+import { MrSessionLink } from '@/components/mr/MrSessionLink';
 import { RunBranchButton } from '@/components/runBranch/RunBranchButton';
 import * as DialogPrimitive from '@radix-ui/react-dialog';
 import {
@@ -341,6 +342,7 @@ export function MrDetail() {
                         <span className="hidden sm:inline">Make more changes</span>
                       </button>
                     )}
+                    <MrSessionLink repo={repo} iid={n} />
                     {q.data && (
                       <RunBranchButton repo={q.data.mr.repoId} branch={q.data.mr.sourceBranch} />
                     )}

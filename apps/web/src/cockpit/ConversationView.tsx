@@ -25,6 +25,7 @@ import { describeError } from '@/lib/api';
 import { sendInput, sendPrompt, useKillSession, type SessionView } from '@/lib/sessionApi';
 import { IS_MAC } from '@/lib/shortcuts';
 import { cn } from '@/lib/utils';
+import { MrBackLink } from './MrBackLink';
 import { useCoarsePointer } from '@/workspace/useMedia';
 
 /**
@@ -516,6 +517,7 @@ export function ConversationView({ s }: { s: SessionView }) {
         <span className="text-sm text-foreground" role="status">
           {status.label}
         </span>
+        <MrBackLink s={s} />
         <span className="ml-auto" />
         {!exited && !paused && (
           <>

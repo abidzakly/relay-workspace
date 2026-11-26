@@ -4,6 +4,7 @@ import type {
   FlutterDevice,
   FlutterRunMode,
   RunTargets,
+  SessionMrLink,
   SessionStart,
 } from '@relay/shared';
 import { get, post } from './api';
@@ -16,7 +17,11 @@ export interface TurnInfo {
   at: number;
   reviewed?: boolean;
 }
-export type SessionView = CockpitSession & { turn: TurnInfo | null };
+export type SessionView = CockpitSession & {
+  turn: TurnInfo | null;
+  /** The MR this agent session was started from (MR Detail ↔ Cockpit). */
+  mr?: SessionMrLink;
+};
 
 export const sessionKeys = {
   list: ['cockpit', 'sessions'] as const,

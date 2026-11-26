@@ -56,6 +56,7 @@ import { LocalCockpitHost } from './services/cockpit/localHost';
 import { RemoteCockpitHost } from './services/cockpit/remoteHost';
 import { WorkspaceService } from './services/cockpit/workspaces';
 import { CockpitSessionService } from './services/cockpit/sessionService';
+import { MR_SESSION_LINKS_STATE, MrSessionLinks } from './services/cockpit/mrSessionLinks';
 import { CleanupService } from './services/cleanup/cleanupService';
 import { recordAttachments } from './services/cockpit/attachmentStore';
 import { CardContentService } from './services/cockpit/cardContent';
@@ -342,6 +343,10 @@ async function main(): Promise<void> {
     ai,
     preferredAgent: () => store.getGlobalStored().agentPreference,
     agentModels: () => store.getGlobalStored().agentModels,
+    mrLinks: new MrSessionLinks({
+      load: () => store.getState(MR_SESSION_LINKS_STATE),
+      save: (v) => store.setState(MR_SESSION_LINKS_STATE, v),
+    }),
   });
   // In Docker the bridge runs on the Mac, inside `pnpm agent`; the dashboard asks the agent for it.
   const figmaBridge = agent
