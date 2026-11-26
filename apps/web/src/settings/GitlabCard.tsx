@@ -1,9 +1,11 @@
 import { useQueryClient } from '@tanstack/react-query';
+import { Link } from 'react-router';
 import type { GlobalConfigPublic } from '@relay/shared';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Field, errorMap } from '@/components/Field';
 import { ApiError } from '@/lib/api';
+import { useOAuthStatus } from '@/lib/oauthApi';
 import { useSaveGlobal } from '@/lib/settingsApi';
 import { opt, useDraft } from './drafts';
 import { OAuthConnect } from './OAuthConnect';
@@ -27,6 +29,7 @@ export function GitlabCard({ settings }: { settings: GlobalConfigPublic }) {
   const advanced = settings.gitlab.authMode === 'token';
   const mode = useSaveGlobal();
   const qc = useQueryClient();
+  const signedInAs = useOAuthStatus().data?.gitlab.account ?? null;
   // Every GitLab reader changes with the mode (repos, Reviews, pickers): refetch them all.
   const setMode = (on: boolean) =>
     mode.mutate(
@@ -53,6 +56,16 @@ export function GitlabCard({ settings }: { settings: GlobalConfigPublic }) {
       }
     >
       <ErrorAlert error={mode.error} />
+      <div className="flex flex-wrap items-center gap-3 text-sm">
+        <Button asChild size="sm" variant={settings.gitlab.host ? 'outline' : 'default'}>
+          <Link to="/setup/gitlab">
+            {settings.gitlab.host ? 'Run the GitLab setup' : 'Set up GitLab'}
+          </Link>
+        </Button>
+        <span className="text-muted-foreground">
+          A guided walk: host, sign-in, your username, webhooks and repositories.
+        </span>
+      </div>
       {advanced ? (
         <p className="rounded-control border border-hairline px-4 py-3 text-sm text-muted-foreground">
           Relay uses only the tokens you paste: a project access token on each repository (Repos
@@ -85,7 +98,19 @@ export function GitlabCard({ settings }: { settings: GlobalConfigPublic }) {
           label="Your GitLab username"
           htmlFor="gl-user"
           error={errs['gitlab.myUsername']}
-          hint="Used for “mine” filters and as the default version-MR assignee."
+          hint={
+            signedInAs && !advanced && draft.myUsername !== signedInAs ? (
+              <button
+                type="button"
+                className="underline underline-offset-4"
+                onClick={() => set('myUsername', signedInAs)}
+              >
+                Use @{signedInAs} from your GitLab sign-in
+              </button>
+            ) : (
+              'Used for “mine” filters and as the default version-MR assignee.'
+            )
+          }
         >
           <Input
             id="gl-user"
