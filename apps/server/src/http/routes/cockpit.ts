@@ -286,6 +286,14 @@ export function registerCockpitRoutes(app: FastifyInstance, deps: CockpitDeps): 
     const body = parseWith(WorkspaceCreateSchema, req.body);
     return run(() => ws.add(body));
   });
+  // Opens a dialog on the computer; changes nothing, so no audit row.
+  app.post('/api/cockpit/pick-folder', async () =>
+    wrapCockpit(async () =>
+      deps.host.pickFolder
+        ? deps.host.pickFolder()
+        : { status: 'unsupported' as const, reason: 'No folder dialog here.' },
+    ),
+  );
   app.delete('/api/cockpit/workspaces/:id', async (req) => {
     const { id } = parseWith(WsParams, req.params);
     return run(() => {

@@ -4,10 +4,12 @@ import type {
   DiffFile,
   FetchFailure,
   FlutterDevice,
+  FolderPickResult,
   LocalBranchList,
   RunTargets,
 } from '@relay/shared';
 import { wsDeleteBranch } from './branchDelete';
+import { pickFolderNative } from './folderPicker';
 import { wsListBranches } from './branchList';
 import { fetchOriginReport } from './fetchFailure';
 import { ensureAgentRules } from './agentRules';
@@ -106,6 +108,14 @@ export class LocalCockpitHost implements CockpitHost {
 
   protected cwd(ref: WsRef): Promise<string> {
     return guardWorkspace(ref.path, this.roots);
+  }
+
+  /** The folder dialog, then the same checks as adding the workspace (inside the roots, the repository root). */
+  async pickFolder(): Promise<FolderPickResult> {
+    const r = await pickFolderNative(this.roots[0]);
+    if (r.status !== 'picked') return r;
+    const v = await this.wsValidate({ path: r.path, wsId: 'pick' });
+    return { status: 'picked', path: v.realPath, branch: v.branch, origin: v.origin };
   }
 
   async wsValidate(ref: WsRef): Promise<WsValidation> {

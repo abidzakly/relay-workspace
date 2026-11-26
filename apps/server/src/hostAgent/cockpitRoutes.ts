@@ -189,6 +189,14 @@ export function registerCockpitAgentRoutes(app: FastifyInstance, host: LocalCock
     host.agentModels((req.query as { refresh?: string } | undefined)?.refresh === '1'),
   );
 
+  app.post('/v1/cockpit/pick-folder', async (_req, reply) => {
+    try {
+      return await host.pickFolder();
+    } catch (e) {
+      return sendHostError(reply, e);
+    }
+  });
+
   // Workspaces: every call re-validates the path against the agent's roots.
   app.post<{ Params: { op: string } }>(
     '/v1/cockpit/ws/:op',

@@ -9,6 +9,7 @@ import type {
   DiffFile,
   FetchFailure,
   FlutterDevice,
+  FolderPickResult,
   LocalBranch,
   LocalBranchList,
   RunTargets,
@@ -94,6 +95,21 @@ export class RemoteCockpitHost implements CockpitHost {
 
   private ws<T>(op: string, body: Record<string, unknown>, timeoutMs = 90_000): Promise<T> {
     return viaAgent(() => this.agent.json<T>('POST', `/v1/cockpit/ws/${op}`, body, timeoutMs));
+  }
+
+  /** The dialog opens on the Mac and waits for a person, so allow minutes, not seconds. */
+  async pickFolder(): Promise<FolderPickResult> {
+    try {
+      return await viaAgent(() =>
+        this.agent.json<FolderPickResult>('POST', '/v1/cockpit/pick-folder', {}, 6 * 60_000),
+      );
+    } catch (e) {
+      // An agent from before the folder dialog.
+      if (e instanceof CockpitHostError && e.status === 404) {
+        return { status: 'unsupported', reason: 'Update the host agent to choose a folder.' };
+      }
+      throw e;
+    }
   }
 
   wsValidate(ref: WsRef): Promise<WsValidation> {
