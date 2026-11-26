@@ -27,7 +27,7 @@ export function ScriptSetupDialog({
 }) {
   const status = useScripts(missing !== null);
   const save = useSaveScripts();
-  const [draft, setDraft] = useState<Record<string, string>>({});
+  const [draft, setDraft] = useState<Record<string, string | null>>({});
   const keys = missing?.required ?? [];
   const complete = keys.every((k) => (draft[k] ?? '').trim() !== '');
 
@@ -46,7 +46,7 @@ export function ScriptSetupDialog({
           onSubmit={(e) => {
             e.preventDefault();
             if (!complete) return;
-            save.mutate(Object.fromEntries(keys.map((k) => [k, draft[k]!.trim()])), {
+            save.mutate(Object.fromEntries(keys.map((k) => [k, (draft[k] ?? '').trim()])), {
               onSuccess: () => {
                 setDraft({});
                 onSaved();
@@ -59,7 +59,13 @@ export function ScriptSetupDialog({
             states={status.data?.fields ?? []}
             draft={draft}
             idPrefix="script-setup"
-            onChange={(k, v) => setDraft((d) => ({ ...d, [k]: v }))}
+            onChange={(k, v) =>
+              setDraft((d) => {
+                // Nothing is saved for these yet, so "Use Settings" just clears the pick.
+                const { [k]: _drop, ...rest } = d;
+                return v == null ? rest : { ...rest, [k]: v };
+              })
+            }
           />
           <ErrorAlert error={save.error} />
           <div className="flex justify-end gap-2">

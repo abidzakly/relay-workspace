@@ -21,6 +21,13 @@ const GROUPS: { need: ScriptNeed; title: string; note: string }[] = [
   { need: 'optional', title: 'Optional', note: 'Leave empty to use the scripts’ defaults.' },
 ];
 
+function setDraftKey(d: Record<string, string | null>, k: string, v: string | null | undefined) {
+  const next = { ...d };
+  if (v === undefined) delete next[k];
+  else next[k] = v;
+  return next;
+}
+
 /**
  * Release scripts (tools/bin). Most values come from Settings; typing one here overrides it. Everything is written to
  * one env file the scripts read, so a terminal run and a dashboard run use the same values.
@@ -28,9 +35,12 @@ const GROUPS: { need: ScriptNeed; title: string; note: string }[] = [
 export function ScriptsCard() {
   const q = useScripts();
   const save = useSaveScripts();
-  const [draft, setDraft] = useState<Record<string, string>>({});
+  const [draft, setDraft] = useState<Record<string, string | null>>({});
   const s = q.data;
-  const changed = Object.entries(draft).filter(([, v]) => v.trim() !== '');
+  // null = forget a typed value (back to Settings); empty text = nothing to save yet.
+  const changed = Object.entries(draft)
+    .filter(([, v]) => v === null || v.trim() !== '')
+    .map(([k, v]) => [k, v === null ? null : v.trim()] as const);
   const saved = s?.fields.filter((f) => f.saved) ?? [];
 
   return (
@@ -94,7 +104,7 @@ export function ScriptsCard() {
                 states={s.fields}
                 draft={draft}
                 idPrefix="scripts"
-                onChange={(k, v) => setDraft((d) => ({ ...d, [k]: v }))}
+                onChange={(k, v) => setDraft((d) => setDraftKey(d, k, v))}
               />
             </div>
           );
