@@ -1,5 +1,5 @@
 import { createHash, randomBytes } from 'node:crypto';
-import { safeExternalUrl, type Meeting } from '@relay/shared';
+import { isHolidayCalendar, safeExternalUrl, type Holiday, type Meeting } from '@relay/shared';
 import type { HttpClient } from '../httpClient';
 import { CALENDAR_LIST_SCOPE } from '../oauth/providers';
 
@@ -281,30 +281,70 @@ export function toMeeting(calendarId: string, raw: unknown): RawMeeting | null {
   };
 }
 
+const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+/** A holiday spanning more days than this is cut short (a holiday calendar never has one this long). */
+const MAX_HOLIDAY_DAYS = 14;
+
+/**
+ * One all-day event of a holiday calendar -> one entry per day it covers (Google's end date is exclusive), or none
+ * when it is not an all-day event. Pure.
+ */
+export function toHolidays(calendarId: string, raw: unknown): Holiday[] {
+  const ev = rec(raw);
+  const id = str(ev.id);
+  const first = str(rec(ev.start).date);
+  if (!id || ev.status === 'cancelled' || !first || !DATE_RE.test(first)) return [];
+  const endRaw = str(rec(ev.end).date);
+  const end = endRaw && DATE_RE.test(endRaw) && endRaw > first ? endRaw : null;
+  const title = (str(ev.summary) ?? 'Public holiday').slice(0, 300);
+  const out: Holiday[] = [];
+  const d = new Date(`${first}T00:00:00Z`);
+  for (let i = 0; i < MAX_HOLIDAY_DAYS; i++) {
+    const date = d.toISOString().slice(0, 10);
+    if (i > 0 && (!end || date >= end)) break;
+    out.push({ id: `${calendarId}|${id}|${date}`.slice(0, 700), date, title, calendarId });
+    d.setUTCDate(d.getUTCDate() + 1);
+  }
+  return out;
+}
+
 /** Pages of 250 events, at most this many: a month of a busy calendar fits with room to spare. */
 const MAX_PAGES = 8;
 
-/** Events of one calendar between `from` and `to` (recurring ones expanded), following `nextPageToken`. */
+/**
+ * Events of one calendar between `from` and `to` (recurring ones expanded), following `nextPageToken`. Holidays are
+ * read only from a holiday calendar; any other all-day event is left out, as before.
+ */
+export async function listEvents(
+  http: HttpClient,
+  o: { accessToken: string; calendarId: string; from: number; to: number },
+): Promise<{ meetings: RawMeeting[]; holidays: Holiday[] }> {
+  const meetings: RawMeeting[] = [];
+  const holidays: Holiday[] = [];
+  let pageToken: string | undefined;
+  for (let page = 0; page < MAX_PAGES; page++) {
+    const res = await listPage(http, o, pageToken);
+    meetings.push(...res.items);
+    holidays.push(...res.holidays);
+    if (!res.next) break;
+    pageToken = res.next;
+  }
+  return { meetings, holidays };
+}
+
+/** The meetings of one calendar (see `listEvents`). */
 export async function listMeetings(
   http: HttpClient,
   o: { accessToken: string; calendarId: string; from: number; to: number },
 ): Promise<RawMeeting[]> {
-  const out: RawMeeting[] = [];
-  let pageToken: string | undefined;
-  for (let page = 0; page < MAX_PAGES; page++) {
-    const { items, next } = await listPage(http, o, pageToken);
-    out.push(...items);
-    if (!next) break;
-    pageToken = next;
-  }
-  return out;
+  return (await listEvents(http, o)).meetings;
 }
 
 async function listPage(
   http: HttpClient,
   o: { accessToken: string; calendarId: string; from: number; to: number },
   pageToken: string | undefined,
-): Promise<{ items: RawMeeting[]; next: string | undefined }> {
+): Promise<{ items: RawMeeting[]; holidays: Holiday[]; next: string | undefined }> {
   const q = new URLSearchParams({
     timeMin: new Date(o.from).toISOString(),
     timeMax: new Date(o.to).toISOString(),
@@ -330,6 +370,9 @@ async function listPage(
     items: items
       .map((it) => toMeeting(o.calendarId, it))
       .filter((m): m is NonNullable<typeof m> => m !== null),
+    holidays: isHolidayCalendar(o.calendarId)
+      ? items.flatMap((it) => toHolidays(o.calendarId, it))
+      : [],
     next: str(body.nextPageToken),
   };
 }

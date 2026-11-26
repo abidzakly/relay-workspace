@@ -15,6 +15,7 @@ import {
   type CalendarStatus,
   type MeetingList,
   type CalendarListResult,
+  type Holiday,
 } from '@relay/shared';
 import { listCalendars } from './calendarList';
 import type { ConfigStore } from '../../config/store';
@@ -27,7 +28,7 @@ import {
   authUrl,
   exchangeCode,
   GoogleError,
-  listMeetings,
+  listEvents,
   makePkce,
   refreshAccess,
   revoke,
@@ -117,6 +118,8 @@ export class CalendarService {
   private stopped = true;
   private access: { token: string; expiresAt: number } | undefined;
   private meetings: Raw[] = [];
+  /** Public holidays read from holiday calendars, by date. */
+  private holidays: Holiday[] = [];
   private lastSyncAt: number | null = null;
   private lastError: string | null = null;
   private readonly pending = new Map<string, { verifier: string; at: number }>();
@@ -279,6 +282,7 @@ export class CalendarService {
     this.d.config.setState(ACCOUNT, undefined);
     this.access = undefined;
     this.meetings = [];
+    this.holidays = [];
     this.lastSyncAt = null;
     this.lastError = null;
     clearTimeout(this.startTimer);
@@ -340,8 +344,9 @@ export class CalendarService {
 
   private async read(): Promise<void> {
     if (!this.enabled() || !this.connected()) {
-      if (this.meetings.length > 0) {
+      if (this.meetings.length > 0 || this.holidays.length > 0) {
         this.meetings = [];
+        this.holidays = [];
         this.changed();
       }
       return;
@@ -352,7 +357,7 @@ export class CalendarService {
       const cfg = this.getConfig();
       const lists = await Promise.all(
         cfg.calendarIds.map((calendarId) =>
-          listMeetings(this.d.http, {
+          listEvents(this.d.http, {
             accessToken: token,
             calendarId,
             from: t - LOOK_BACK_MS,
@@ -360,10 +365,16 @@ export class CalendarService {
           }),
         ),
       );
-      const next = lists.flat().sort((a, b) => a.start - b.start || a.id.localeCompare(b.id));
-      const moved = JSON.stringify(next) !== JSON.stringify(this.meetings);
+      const next = lists
+        .flatMap((l) => l.meetings)
+        .sort((a, b) => a.start - b.start || a.id.localeCompare(b.id));
+      const holidays = dedupeHolidays(lists.flatMap((l) => l.holidays));
+      const moved =
+        JSON.stringify(next) !== JSON.stringify(this.meetings) ||
+        JSON.stringify(holidays) !== JSON.stringify(this.holidays);
       const hadError = this.lastError !== null;
       this.meetings = next;
+      this.holidays = holidays;
       this.lastSyncAt = t;
       this.lastError = null;
       if (moved || hadError) this.changed();
@@ -442,6 +453,9 @@ export class CalendarService {
       leadSeconds: cfg.leadSeconds,
       lookAheadDays: cfg.lookAheadDays,
       keyLeadSeconds: cfg.keyLeadSeconds,
+      holidays: on
+        ? this.holidays.filter((h) => h.date >= localDate(t) && h.date < localDate(until))
+        : [],
       now: t,
     };
   }
@@ -583,4 +597,24 @@ export class CalendarService {
   private changed(): void {
     this.d.bus.emit({ type: 'calendar.changed' });
   }
+}
+
+/** `YYYY-MM-DD` of `ms` in the server's time zone (holiday dates have none). */
+function localDate(ms: number): string {
+  const d = new Date(ms);
+  const p = (n: number) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
+}
+
+/** Sorted by date; the same holiday from two calendars (say, two languages of one region) is kept once. */
+function dedupeHolidays(list: Holiday[]): Holiday[] {
+  const seen = new Set<string>();
+  return [...list]
+    .sort((a, b) => a.date.localeCompare(b.date) || a.id.localeCompare(b.id))
+    .filter((h) => {
+      const k = `${h.date}|${h.title.toLowerCase()}`;
+      if (seen.has(k)) return false;
+      seen.add(k);
+      return true;
+    });
 }
