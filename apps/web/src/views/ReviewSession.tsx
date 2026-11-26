@@ -1,3 +1,4 @@
+import { MrSessionLink } from '@/components/mr/MrSessionLink';
 import { RunBranchButton } from '@/components/runBranch/RunBranchButton';
 import { ArrowLeft, ExternalLink, GitBranch, GitCommitHorizontal, MoveRight } from 'lucide-react';
 import { useEffect } from 'react';
@@ -229,6 +230,7 @@ export function MrReviewSession() {
           {!mr.repoId.startsWith('~') && (
             <ModeSwitch source={{ kind: 'mr', repoId: mr.repoId, iid: mr.iid }} />
           )}
+          <MrSessionLink repo={mr.repoId} iid={mr.iid} className="h-9 px-2.5" />
           <RunBranchButton repo={mr.repoId} branch={mr.sourceBranch} variant="icon" />
           <GitlabLink href={mr.webUrl} />
         </>

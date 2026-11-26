@@ -569,8 +569,9 @@ export class CockpitWorkflowService {
   }
 
   /**
-   * "Review / Fix with agent" on a reviewer's thread: a NEW session on the MR's branch, primed with the thread, the code
-   * it was left on and its attachments. The thread is re-read from GitLab here, never taken from the browser.
+   * "Review / Fix with agent" on a reviewer's thread: the agent session already working on this MR continues with
+   * the thread (unless `newSession`), else a NEW session on the MR's branch, primed with the thread, the code it was
+   * left on and its attachments. The thread is re-read from GitLab here, never taken from the browser.
    */
   async threadAgent(input: {
     repoId: string;
@@ -581,12 +582,16 @@ export class CockpitWorkflowService {
     model?: string | undefined;
     /** The thread's "Ask AI" chat so far, handed to the agent as context. */
     conversation?: readonly MrChatMessage[] | undefined;
+    /** Start a fresh session even when one already works on this MR. */
+    newSession?: boolean | undefined;
   }): Promise<{
     workspaceId: string;
     sessionId: string;
     branch: string;
     attachments: number;
     failedAttachments: number;
+    /** The MR's running session took the thread; no new session was started. */
+    reused: boolean;
   }> {
     const repoWorkspaceId = this.d.workspaces.forRepo(input.repoId);
     if (!repoWorkspaceId) {
@@ -656,9 +661,31 @@ export class CockpitWorkflowService {
       branchSynced: synced,
       ...(input.conversation?.length ? { conversation: input.conversation } : {}),
     });
-    const s = await this.d.sessions.startPreferred(workspaceId, {
-      ...(input.agent ? { kind: input.agent } : {}),
-      ...(input.model ? { model: input.model } : {}),
+    // The MR's own agent session, still running in this worktree and of the picked agent, continues.
+    const existing = input.newSession
+      ? undefined
+      : (await this.d.sessions.list())
+          .filter(
+            (x) =>
+              x.mr?.repoId === input.repoId &&
+              x.mr.iid === input.iid &&
+              x.workspaceId === workspaceId &&
+              (x.kind === 'claude' || x.kind === 'cursor') &&
+              (!input.agent || x.kind === input.agent) &&
+              (x.state !== 'exited' || x.restorable === true),
+          )
+          .sort((a, b) => b.startedAt - a.startedAt)[0];
+    const s =
+      existing ??
+      (await this.d.sessions.startPreferred(workspaceId, {
+        ...(input.agent ? { kind: input.agent } : {}),
+        ...(input.model ? { model: input.model } : {}),
+      }));
+    this.d.sessions.linkMr(s.id, {
+      repoId: input.repoId,
+      iid: input.iid,
+      discussionId: input.discussionId,
+      title: mr.title.slice(0, 300),
     });
     await this.d.sessions.prompt(s.id, prompt);
     return {
@@ -667,6 +694,7 @@ export class CockpitWorkflowService {
       branch: mr.sourceBranch,
       attachments: attachments.length,
       failedAttachments: failed.length,
+      reused: !!existing,
     };
   }
 
@@ -695,7 +723,7 @@ export class CockpitWorkflowService {
     }
     const card = this.linkedCard(input.repoId, input.iid);
     const refId = `${input.repoId}!${input.iid}`;
-    return this.reviseOnBranch(workspaceId, input, {
+    const r = await this.reviseOnBranch(workspaceId, input, {
       mr: { iid: live.iid, title: live.title, webUrl: live.webUrl ?? mr.webUrl },
       branch: live.sourceBranch,
       base: live.targetBranch,
@@ -703,6 +731,12 @@ export class CockpitWorkflowService {
       figmaOwner: card?.id ?? `mr:${refId}`,
       attachmentsFor: { kind: 'mr', refId },
     });
+    this.d.sessions.linkMr(r.sessionId, {
+      repoId: input.repoId,
+      iid: input.iid,
+      title: live.title.slice(0, 300),
+    });
+    return r;
   }
 
   /**

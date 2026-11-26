@@ -159,6 +159,8 @@ const ThreadAgentBody = z
       .optional(),
     /** The thread's "Ask AI" chat so far: context for the agent. */
     conversation: z.array(MrChatMessageSchema).max(MR_CHAT_MAX_HISTORY).optional(),
+    /** Start a fresh session even when one already works on this MR. */
+    newSession: z.boolean().optional(),
   })
   .strict();
 

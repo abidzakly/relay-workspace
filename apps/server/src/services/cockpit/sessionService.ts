@@ -6,6 +6,7 @@ import {
   type AgentModels,
   type CockpitSession,
   type ConversationCommand,
+  type SessionMrLink,
   type SessionStartInput,
   isConversationKind,
 } from '@relay/shared';
@@ -14,6 +15,7 @@ import type { Logger } from '../../util/logger';
 import type { AiService } from '../ai/aiService';
 import type { Notifier } from '../notifier';
 import { CockpitHostError, type CockpitHost } from './host';
+import type { MrSessionLinks } from './mrSessionLinks';
 import type { WorkspaceService } from './workspaces';
 
 /**
@@ -32,7 +34,11 @@ export interface TurnInfo {
   reviewed?: boolean;
 }
 
-export type SessionView = CockpitSession & { turn: TurnInfo | null };
+export type SessionView = CockpitSession & {
+  turn: TurnInfo | null;
+  /** The MR this agent session was started from (MR Detail ↔ Cockpit). */
+  mr?: SessionMrLink;
+};
 
 export interface SessionServiceDeps {
   host: CockpitHost;
@@ -45,6 +51,8 @@ export interface SessionServiceDeps {
   preferredAgent?: () => 'claude' | 'cursor';
   /** Settings' plan / execution models. Default: Opus 5.5 plans, Sonnet 5.5 (medium) executes. */
   agentModels?: () => AgentModels;
+  /** Which session works on which MR. */
+  mrLinks?: MrSessionLinks;
   /** Unused: Cursor sessions are conversations now and queue their first prompt. Kept so callers still compile. */
   cursorBootMs?: number;
   now?: () => number;
@@ -78,7 +86,19 @@ export class CockpitSessionService {
 
   async list(): Promise<SessionView[]> {
     const items = await this.d.host.sessions();
-    return items.map((s) => ({ ...s, turn: this.turns.get(s.id) ?? null }));
+    const links = this.d.mrLinks;
+    links?.prune(new Set(items.map((s) => s.id)));
+    return items.map((s) => {
+      const mr = links?.get(s.id);
+      return { ...s, turn: this.turns.get(s.id) ?? null, ...(mr ? { mr } : {}) };
+    });
+  }
+
+  /** Records that this agent session works on that MR (and thread): MR Detail and the Cockpit link to each other. */
+  linkMr(sessionId: string, link: SessionMrLink): void {
+    if (!this.d.mrLinks) return;
+    this.d.mrLinks.set(sessionId, link);
+    this.changed(sessionId);
   }
 
   /** `card`: the session works on that board card; the list shows its title. */
