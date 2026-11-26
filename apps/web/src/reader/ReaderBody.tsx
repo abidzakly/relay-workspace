@@ -43,9 +43,35 @@ const slug = (text: string) =>
     .replace(/^-|-$/g, '')
     .slice(0, 60) || 'section';
 
+const pad = (n: number) => String(n).padStart(2, '0');
+
+/**
+ * Splits the body into sheets, one per `h2` section (anything before the first `h2` is the first sheet). Each sheet
+ * is its own solid surface; with two or more, each carries its place, e.g. "02 / 05", shown by CSS. Runs once per
+ * inserted body: a body already split is left alone (Strict Mode runs the effect twice).
+ */
+function wrapSheets(root: HTMLElement) {
+  if (root.firstElementChild?.classList.contains('reader-sheet')) return;
+  const sheets: HTMLElement[] = [];
+  let sheet: HTMLElement | null = null;
+  for (const node of [...root.childNodes]) {
+    const startsSection = node instanceof HTMLElement && node.tagName === 'H2';
+    if (!sheet || (startsSection && sheet.childElementCount > 0)) {
+      sheet = document.createElement('section');
+      sheet.className = 'reader-sheet';
+      sheets.push(sheet);
+    }
+    sheet.append(node);
+  }
+  if (sheets.length > 1) {
+    sheets.forEach((s, i) => (s.dataset.n = `${pad(i + 1)} / ${pad(sheets.length)}`));
+  }
+  root.append(...sheets);
+}
+
 /**
  * A document's body: sanitized Markdown (or plain text), then two passes on the inserted DOM: heading ids for the
- * table of contents (set here, never taken from the document), and shiki for fenced code.
+ * table of contents (set here, never taken from the document), sheets per section, and shiki for fenced code.
  */
 export function ReaderBody({
   body,
@@ -78,6 +104,7 @@ export function ReaderBody({
       heads.push({ id: h.id, text, level: Number(h.tagName[1]) });
     }
     onHeadings(heads);
+    wrapSheets(root);
 
     let alive = true;
     for (const code of root.querySelectorAll<HTMLElement>('pre > code')) {
@@ -102,8 +129,8 @@ export function ReaderBody({
 
   if (html === null) {
     return (
-      <div ref={ref} className={cn('md md-reader whitespace-pre-wrap', className)}>
-        {body}
+      <div ref={ref} className={cn('md md-reader', className)}>
+        <div className="reader-sheet whitespace-pre-wrap">{body}</div>
       </div>
     );
   }

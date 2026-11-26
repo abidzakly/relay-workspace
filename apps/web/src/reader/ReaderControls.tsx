@@ -71,3 +71,76 @@ export function ReaderSizeSwitch({
     </div>
   );
 }
+
+const FONTS = [
+  { id: 'editorial', label: 'Serif headings', glyph: 'font-accent' },
+  { id: 'classic', label: 'Sans headings', glyph: 'font-sans font-semibold' },
+] as const;
+
+export type ReaderFont = (typeof FONTS)[number]['id'];
+
+const FONT_KEY = 'reader-font';
+
+const storedFont = (): ReaderFont => {
+  try {
+    const v = localStorage.getItem(FONT_KEY);
+    return FONTS.some((f) => f.id === v) ? (v as ReaderFont) : 'editorial';
+  } catch {
+    return 'editorial';
+  }
+};
+
+/**
+ * The reader's heading face, kept in this browser: `editorial` (Instrument Serif) or `classic` (the app's sans). It
+ * goes on the article as `data-font`.
+ */
+export function useReaderFont() {
+  const [font, setFont] = useState<ReaderFont>(storedFont);
+  const choose = (next: ReaderFont) => {
+    setFont(next);
+    try {
+      localStorage.setItem(FONT_KEY, next);
+    } catch {
+      // Private mode or full storage: the choice lasts for this visit only.
+    }
+  };
+  return { font, choose };
+}
+
+/** Two "Ag"s, serif and sans: the reader's heading face. */
+export function ReaderFontSwitch({
+  font,
+  onChange,
+}: {
+  font: ReaderFont;
+  onChange: (f: ReaderFont) => void;
+}) {
+  return (
+    <div
+      role="radiogroup"
+      aria-label="Heading font"
+      className="flex h-8 items-center rounded-control border border-hairline p-0.5"
+    >
+      {FONTS.map((f) => (
+        <button
+          key={f.id}
+          type="button"
+          role="radio"
+          aria-checked={font === f.id}
+          aria-label={f.label}
+          title={f.label}
+          onClick={() => onChange(f.id)}
+          className={cn(
+            'grid h-full w-8 place-items-center rounded-[2px] text-base leading-none transition-colors focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none',
+            f.glyph,
+            font === f.id
+              ? 'bg-primary text-primary-foreground'
+              : 'text-muted-foreground hover:text-foreground',
+          )}
+        >
+          Ag
+        </button>
+      ))}
+    </div>
+  );
+}

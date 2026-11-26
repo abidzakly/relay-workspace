@@ -27,7 +27,12 @@ import {
 } from '@/lib/readerApi';
 import { cn } from '@/lib/utils';
 import { ReaderBody, type Heading } from '@/reader/ReaderBody';
-import { ReaderSizeSwitch, useReaderSize } from '@/reader/ReaderControls';
+import {
+  ReaderFontSwitch,
+  ReaderSizeSwitch,
+  useReaderFont,
+  useReaderSize,
+} from '@/reader/ReaderControls';
 import { useActiveHeading } from '@/reader/useActiveHeading';
 
 const NO_HEADINGS: Heading[] = [];
@@ -238,6 +243,7 @@ function ReadView({ id, onBack }: { id: string; onBack: () => void }) {
   const onHeadings = useCallback((h: Heading[]) => setHeadings(h), []);
   const active = useActiveHeading(editing ? NO_HEADINGS : headings);
   const textSize = useReaderSize();
+  const headFont = useReaderFont();
 
   if (doc.isError) {
     return (
@@ -257,6 +263,7 @@ function ReadView({ id, onBack }: { id: string; onBack: () => void }) {
       <div className="mb-6 flex flex-wrap items-center gap-2">
         <BackLink onBack={onBack} />
         <span className="ml-auto" />
+        {!editing && <ReaderFontSwitch font={headFont.font} onChange={headFont.choose} />}
         {!editing && <ReaderSizeSwitch size={textSize.size} onChange={textSize.choose} />}
         {!editing && headings.length > 1 && <MobileToc headings={headings} active={active} />}
         <Button size="sm" variant="outline" onClick={() => setEditing((e) => !e)}>
@@ -269,6 +276,7 @@ function ReadView({ id, onBack }: { id: string; onBack: () => void }) {
         <div className="grid gap-12 lg:grid-cols-[minmax(0,1fr)_14rem]">
           <article
             className="min-w-0 pb-24"
+            data-font={headFont.font}
             style={{ '--reader-size': textSize.value } as CSSProperties}
           >
             <p className="mb-5 flex items-center gap-3 font-mono text-micro tracking-[0.06em] text-muted-foreground uppercase">
@@ -276,7 +284,14 @@ function ReadView({ id, onBack }: { id: string; onBack: () => void }) {
               {minutesOf(d.size)} min read · <TimeAgo at={d.updatedAt} />
             </p>
             {!/^\s{0,3}#\s/m.test(d.body.slice(0, 400)) && (
-              <h1 className="mb-8 max-w-[66ch] font-accent text-[2.6rem] leading-[1.05] tracking-[-0.01em] text-balance sm:text-5xl">
+              <h1
+                className={cn(
+                  'mb-8 max-w-[66ch] text-balance',
+                  headFont.font === 'classic'
+                    ? 'text-3xl leading-tight font-semibold tracking-tight sm:text-4xl'
+                    : 'font-accent text-[2.6rem] leading-[1.05] tracking-[-0.01em] sm:text-5xl',
+                )}
+              >
                 {d.title}
               </h1>
             )}
