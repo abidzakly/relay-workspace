@@ -577,9 +577,18 @@ export function ConversationView({ s }: { s: SessionView }) {
           variant="ghost"
           className="h-8 px-2"
           disabled={kill.isPending}
-          onClick={() => kill.mutate(s.id)}
+          aria-busy={kill.isPending}
+          onClick={() => {
+            setError(null);
+            kill.mutate(s.id, { onError: fail });
+          }}
         >
-          <X className="size-3.5" aria-hidden /> {exited ? 'Close' : 'End session'}
+          {kill.isPending ? (
+            <Loader2 className="size-3.5 motion-safe:animate-spin" aria-hidden />
+          ) : (
+            <X className="size-3.5" aria-hidden />
+          )}{' '}
+          {kill.isPending ? (exited ? 'Closing…' : 'Ending…') : exited ? 'Close' : 'End session'}
         </Button>
       </div>
 
