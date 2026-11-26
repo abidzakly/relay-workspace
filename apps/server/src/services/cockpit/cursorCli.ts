@@ -1,4 +1,5 @@
 import { spawnSync } from 'node:child_process';
+import { AI_CONCISE_STYLE } from '@relay/shared';
 import { launchSpec } from '../../util/platform';
 import { runJsonCli } from './claudeCli';
 import type { AiRunRequest } from './host';
@@ -37,8 +38,10 @@ export function cursorAvailability(refresh = false): { available: boolean; reaso
  * Composer reaches for its tools (glob, read) even in an empty folder, and every tool call is another model round
  * trip. The prompt already holds all the data, so it is told not to.
  */
-const NO_TOOLS =
-  'Answer directly from this message: everything you need is in it. Do NOT call any tools (no file reads, searches or shell).\n\n';
+const NO_TOOLS = `Answer directly from this message: everything you need is in it. Do NOT call any tools (no file reads, searches or shell).
+${AI_CONCISE_STYLE}
+
+`;
 
 /** The model from Settings > AI when it is a valid id, else the built-in one. */
 export function cursorModel(model: string | undefined): string {

@@ -2,6 +2,7 @@ import Anthropic from '@anthropic-ai/sdk';
 import { zodOutputFormat } from '@anthropic-ai/sdk/helpers/zod';
 import { z } from 'zod';
 import {
+  AI_CONCISE_STYLE,
   AI_JSON_INSTRUCTION,
   type AgentEffort,
   type AiEngine,
@@ -144,6 +145,7 @@ export class AnthropicApiProvider implements AiProvider {
       res = await this.client.messages.parse({
         model: req.model ?? AI_MODELS[req.tier],
         max_tokens: 16000,
+        system: AI_CONCISE_STYLE,
         messages: [{ role: 'user', content: req.prompt }],
         output_config: {
           format: zodOutputFormat(req.schema as unknown as z.ZodObject),
