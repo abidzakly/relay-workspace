@@ -270,3 +270,50 @@ export function versionInputError(mode: JobMode, input: string): string | null {
     ? 'Use X.Y.Z[-alpha-N][+build], or a bare number for the alpha number.'
     : 'Use X.Y.Z[-prerelease][+build].';
 }
+
+/** Each job step in words, for the live picture. */
+export const STEP_LABEL: Record<JobStepName, string> = {
+  PREFLIGHT: 'Preflight',
+  FIND_OPEN_MR: 'Find open MR',
+  SYNC_BASE: 'Sync base',
+  COMPUTE_VERSION: 'Version',
+  CREATE_BRANCH: 'Branch',
+  BUMP_PUBSPEC: 'Bump pubspec',
+  COMMIT: 'Commit',
+  PUSH: 'Push',
+  CREATE_MR: 'Open MR',
+  AWAIT_REVIEW: 'Review',
+  MERGE: 'Merge',
+  CLEANUP: 'Clean up',
+  TAG: 'Tag',
+  BUILD: 'Build',
+  UPLOAD: 'Upload',
+  SHARE: 'Share',
+  NOTION: 'Notion',
+  DONE: 'Done',
+};
+
+/** The job's own steps as stages, in order: what the live picture draws while a release runs. */
+export function jobStepStages(view: ReleaseJobView): Stage[] {
+  const cancelled = view.job.status === 'cancelled';
+  return [...view.steps]
+    .sort((a, b) => a.seq - b.seq)
+    .map((step): Stage => {
+      const label = STEP_LABEL[step.name];
+      if (isPlaceholder(step)) return { label, state: 'skipped', note: 'Not available yet' };
+      switch (step.status) {
+        case 'succeeded':
+          return { label, state: 'done', note: view.job.dryRun ? 'Simulated' : '' };
+        case 'skipped':
+          return { label, state: 'skipped', note: '' };
+        case 'failed':
+          return { label, state: 'failed', note: step.error ?? 'Failed' };
+        case 'running':
+          return { label, state: 'active', note: 'Working' };
+        case 'paused':
+          return { label, state: 'waiting', note: 'Waiting for you' };
+        case 'pending':
+          return { label, state: 'idle', note: cancelled ? 'Cancelled' : '' };
+      }
+    });
+}
