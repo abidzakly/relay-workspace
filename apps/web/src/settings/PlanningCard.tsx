@@ -1,12 +1,11 @@
+import { useState } from 'react';
 import type { GlobalConfigPublic } from '@relay/shared';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { Slider } from '@/components/ui/slider';
 import { Switch } from '@/components/ui/switch';
 import { Field, errorMap } from '@/components/Field';
 import { ApiError } from '@/lib/api';
 import { useSaveGlobal } from '@/lib/settingsApi';
-import { useDraft } from './drafts';
 import { ErrorAlert, SectionCard } from './SectionCard';
 
 export function toPlanningDraft(s: GlobalConfigPublic) {
@@ -29,11 +28,20 @@ const KPI_PRESETS: readonly { id: KpiPreset; label: string; hint: string }[] = [
   { id: 'bugRatio', label: 'Bug ratio', hint: 'At most a set share of bug cards each month.' },
 ];
 
+/** The slider's usual top; a larger saved capacity stretches it. */
+const CAPACITY_MAX = 160;
+
 /** Sprint capacity for the Sprint Atelier, and the KPI presets. */
 export function PlanningCard({ settings }: { settings: GlobalConfigPublic }) {
-  const initial = toPlanningDraft(settings);
-  const { draft, set, dirty } = useDraft(initial);
+  const saved = settings.sprint.capacityHours;
+  const [capacity, setCapacity] = useState(saved);
   const save = useSaveGlobal();
+  const saveCapacity = (hours: number) => {
+    if (hours === saved || hours <= 0) return;
+    save.mutate({
+      patch: (s) => ({ ...s, sprint: { ...s.sprint, capacityHours: hours } }),
+    });
+  };
   const errs = errorMap(save.error instanceof ApiError ? save.error.issues : []);
   return (
     <SectionCard
@@ -45,36 +53,23 @@ export function PlanningCard({ settings }: { settings: GlobalConfigPublic }) {
         <Field
           label="Sprint capacity (hours)"
           htmlFor="pl-cap"
-          hint="The Sprint Atelier fill line: estimated hours one sprint can hold."
+          hint="The Sprint Atelier fill line: estimated hours one sprint can hold. Saved when you let go."
           error={errs['sprint.capacityHours']}
         >
-          <Input
+          <Slider
             id="pl-cap"
-            inputMode="decimal"
-            value={draft.capacityHours}
-            onChange={(e) => set('capacityHours', e.target.value)}
+            min={1}
+            max={Math.max(CAPACITY_MAX, Math.ceil(saved))}
+            step={1}
+            value={capacity}
+            disabled={save.isPending}
+            format={(h) => `${h} h`}
+            onChange={setCapacity}
+            onCommit={saveCapacity}
           />
         </Field>
       </div>
       <ErrorAlert error={save.error && Object.keys(errs).length === 0 ? save.error : null} />
-      <div>
-        <Button
-          disabled={!dirty || save.isPending}
-          onClick={() =>
-            save.mutate({
-              patch: (s) => ({
-                ...s,
-                sprint: {
-                  ...s.sprint,
-                  capacityHours: Number(draft.capacityHours) || s.sprint.capacityHours,
-                },
-              }),
-            })
-          }
-        >
-          {save.isPending ? 'Saving…' : 'Save'}
-        </Button>
-      </div>
       <fieldset className="grid gap-3 border-t border-hairline pt-4">
         <legend className="type-micro text-muted-foreground">KPI presets</legend>
         {KPI_PRESETS.map((p) => (
