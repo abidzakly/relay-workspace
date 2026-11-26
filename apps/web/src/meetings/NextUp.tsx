@@ -14,7 +14,18 @@ import {
   timeFmt,
   type Row,
 } from './meetingView';
-import { IconActions, JoinButton, LiveDot, PriorityChip, ProgressRing, TagChip } from './parts';
+import {
+  canMark,
+  IconActions,
+  JoinButton,
+  LiveDot,
+  ModeChip,
+  PresenceActions,
+  PresenceBadge,
+  PriorityChip,
+  ProgressRing,
+  TagChip,
+} from './parts';
 import { PriorityMenu } from './PriorityMenu';
 
 /**
@@ -31,13 +42,19 @@ export function NextUp({
   onPick: (id: string) => void;
 }) {
   const reduced = useReducedMotion();
-  const m = rows.find((r) => r.phase === 'live') ?? rows.find((r) => r.phase !== 'over');
+  // The live one you have not marked yet comes first; then any live one; then the next.
+  const m =
+    rows.find((r) => r.phase === 'live' && !r.presence) ??
+    rows.find((r) => r.phase === 'live') ??
+    rows.find((r) => r.phase !== 'over');
   const keys = rows.filter((r) => r.priority === 'key' && r.id !== m?.id).slice(0, 6);
   if (!m) return null;
 
   const live = m.phase === 'live';
   const soon = m.phase === 'soon';
-  const lit = live || soon || m.priority === 'key';
+  // Marked as joined / in the room: the hero settles (the aura calms, the ring keeps running).
+  const settled = !!m.presence;
+  const lit = !settled && (live || soon || m.priority === 'key');
   const { tag, text } = splitTitle(m.title);
   const cd = countdown(live ? m.end - now : m.start - now);
 
@@ -61,9 +78,15 @@ export function NextUp({
           style={{
             background: `radial-gradient(42% 60% at 18% 30%, color-mix(in oklch, var(--emphasis) ${lit ? 26 : 9}%, transparent), transparent 70%), radial-gradient(40% 55% at 88% 90%, color-mix(in oklch, var(--terracotta) ${lit ? 18 : 6}%, transparent), transparent 70%)`,
           }}
-          animate={live && !reduced ? { opacity: [0.7, 1, 0.7], scale: [1, 1.04, 1] } : undefined}
+          animate={
+            live && !settled && !reduced
+              ? { opacity: [0.7, 1, 0.7], scale: [1, 1.04, 1] }
+              : { opacity: 1, scale: 1 }
+          }
           transition={
-            live && !reduced ? { duration: 5, ease: 'easeInOut', repeat: Infinity } : undefined
+            live && !settled && !reduced
+              ? { duration: 5, ease: 'easeInOut', repeat: Infinity }
+              : SPRING.settle
           }
         />
 
@@ -73,7 +96,7 @@ export function NextUp({
               <div className="relative grid place-items-center">
                 <ProgressRing start={m.start} end={m.end} now={now} size={64} stroke={4} />
                 <span className="absolute">
-                  <LiveDot live />
+                  <LiveDot live={!settled} />
                 </span>
               </div>
             ) : null}
@@ -81,10 +104,22 @@ export function NextUp({
               <span
                 className={cn(
                   'type-micro',
-                  live || soon ? 'text-emphasis' : 'text-muted-foreground',
+                  settled
+                    ? 'text-success'
+                    : live || soon
+                      ? 'text-emphasis'
+                      : 'text-muted-foreground',
                 )}
               >
-                {live ? 'Live now · ends in' : soon ? 'Starting in' : 'Next up in'}
+                {settled && live
+                  ? m.presence?.status === 'here'
+                    ? 'You’re in the room · ends in'
+                    : 'You’re in · ends in'
+                  : live
+                    ? 'Live now · ends in'
+                    : soon
+                      ? 'Starting in'
+                      : 'Next up in'}
               </span>
               <div className="flex items-baseline gap-2 tabular-nums">
                 <AnimatePresence mode="popLayout" initial={false}>
@@ -125,8 +160,15 @@ export function NextUp({
               {m.response === 'tentative' ? <span>You said maybe</span> : null}
               {m.calendarId !== 'primary' ? <span className="truncate">{m.calendarId}</span> : null}
             </p>
+            {m.mode !== 'unknown' || m.presence ? (
+              <div className="flex min-w-0 flex-wrap items-center gap-2">
+                <ModeChip m={m} className="max-w-full" />
+                <PresenceBadge m={m} />
+              </div>
+            ) : null}
             <div className="flex flex-wrap items-center gap-1.5 pt-1">
-              <JoinButton m={m} prominent={live || soon} size="default" />
+              <JoinButton m={m} prominent={(live || soon) && !settled} size="default" />
+              {canMark(m) ? <PresenceActions m={m} /> : null}
               <IconActions m={m} />
               <PriorityMenu meeting={m} />
             </div>

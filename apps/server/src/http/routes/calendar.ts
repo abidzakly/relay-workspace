@@ -1,6 +1,10 @@
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
-import { CalendarConfigUpdateSchema, MeetingPriorityBodySchema } from '@relay/shared';
+import {
+  CalendarConfigUpdateSchema,
+  MeetingPresenceBodySchema,
+  MeetingPriorityBodySchema,
+} from '@relay/shared';
 import type { AuditWriter } from '../../audit/auditLog';
 import { OAuthStateError, type CalendarService } from '../../services/calendar/calendarService';
 import { GoogleError } from '../../services/calendar/googleCalendar';
@@ -41,6 +45,7 @@ function callbackPage(ok: boolean, message: string): string {
  *  POST /api/calendar/refresh              re-read Google now
  *  POST /api/calendar/meetings/dismiss     { id, dismissed } local only
  *  POST /api/calendar/meetings/priority    { id, calendarId, seriesId, scope, level } local only
+ *  POST /api/calendar/meetings/presence    { id, status: joined | here | ended | null } local only
  */
 export function registerCalendarRoutes(
   app: FastifyInstance,
@@ -114,6 +119,11 @@ export function registerCalendarRoutes(
   app.post('/api/calendar/meetings/dismiss', async (req) => {
     const { id, dismissed } = parseWith(DismissBody, req.body);
     return calendar.dismiss(id, dismissed);
+  });
+
+  app.post('/api/calendar/meetings/presence', async (req) => {
+    const body = parseWith(MeetingPresenceBodySchema, req.body);
+    return calendar.setPresence(body);
   });
 
   app.post('/api/calendar/meetings/priority', async (req) => {

@@ -181,7 +181,7 @@ export async function revoke(http: HttpClient, token: string): Promise<void> {
 /** A meeting as Google has it: no local state (dismissed, priority) yet. */
 export type RawMeeting = Omit<
   Meeting,
-  'dismissed' | 'priority' | 'priorityReason' | 'prioritySource'
+  'dismissed' | 'presence' | 'priority' | 'priorityReason' | 'prioritySource'
 >;
 
 /** Event types that are not meetings. */
@@ -210,6 +210,40 @@ function joinUrlOf(ev: Record<string, unknown>): string | null {
   return null;
 }
 
+/** Any link, and the dial-in noise invitations put in the location ("Zoom Meeting", "Microsoft Teams Meeting"). */
+const ANY_URL = /https?:\/\/\S+/gi;
+const CALL_WORDS =
+  /^(?:google meet|meet|zoom(?: meeting)?|microsoft teams(?: meeting)?|teams(?: meeting)?|online|virtual|webex)$/i;
+
+/** The place in an invitation's location: links and call-service names dropped, what is left trimmed. Pure. */
+export function placeOf(location: unknown): string | null {
+  if (typeof location !== 'string') return null;
+  const parts = location
+    .replace(ANY_URL, ' ')
+    .split(/[;\n]+/)
+    .map((p) => p.replace(/\s+/g, ' ').replace(/^[\s,.-]+|[\s,.-]+$/g, ''))
+    .filter((p) => p && !CALL_WORDS.test(p));
+  const place = parts.join(' · ').slice(0, 200);
+  return place || null;
+}
+
+/** Which call service a join link belongs to. */
+export function providerOf(url: string | null): Meeting['provider'] {
+  if (!url) return null;
+  const host = new URL(url).hostname;
+  if (host === 'meet.google.com') return 'meet';
+  if (host === 'zoom.us' || host.endsWith('.zoom.us')) return 'zoom';
+  if (host === 'teams.microsoft.com' || host === 'teams.live.com') return 'teams';
+  return 'other';
+}
+
+export function modeOf(joinUrl: string | null, place: string | null): Meeting['mode'] {
+  if (joinUrl && place) return 'hybrid';
+  if (joinUrl) return 'online';
+  if (place) return 'onsite';
+  return 'unknown';
+}
+
 /** One Calendar v3 event -> a meeting, or null when it is not one to alert about. Pure. */
 export function toMeeting(calendarId: string, raw: unknown): RawMeeting | null {
   const ev = rec(raw);
@@ -227,12 +261,17 @@ export function toMeeting(calendarId: string, raw: unknown): RawMeeting | null {
     if (r === 'declined') return null;
     if (r === 'accepted' || r === 'tentative' || r === 'needsAction') response = r;
   }
+  const joinUrl = joinUrlOf(ev);
+  const place = placeOf(ev.location);
   return {
     id: `${calendarId}|${id}`.slice(0, 600),
     title: (str(ev.summary) ?? '(No title)').slice(0, 300),
     start,
     end,
-    joinUrl: joinUrlOf(ev),
+    joinUrl,
+    mode: modeOf(joinUrl, place),
+    place,
+    provider: providerOf(joinUrl),
     htmlLink: safeExternalUrl(ev.htmlLink),
     calendarId,
     seriesId: str(ev.recurringEventId)?.slice(0, 400) ?? null,

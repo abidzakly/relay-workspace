@@ -3,8 +3,11 @@ import {
   CalendarConfigSchema,
   markKeyOne,
   markKeySeries,
+  MeetingPresenceSchema,
   PriorityMarksSchema,
   resolvePriority,
+  type MeetingPresence,
+  type MeetingPresenceBody,
   type MeetingPriorityBody,
   type PriorityMarks,
   type CalendarConfig,
@@ -36,6 +39,7 @@ import {
  *   state.calendar.config     client id, calendar ids, lead time
  *   state.calendar.account    the connected Google account's e-mail
  *   state.calendar.dismissed  meeting id -> its end (pruned once it is over)
+ *   state.calendar.presence   meeting id -> { status, at, end }: joined / here / ended (pruned once it is over)
  *   state.calendar.marks      hand-set priorities (`one:<id>` / `series:<calendarId>|<seriesId>` -> level)
  *   secret.gcal.clientSecret  the OAuth client secret        (encrypted)
  *   secret.gcal.refreshToken  the refresh token              (encrypted)
@@ -49,6 +53,14 @@ export const CALENDAR_CLIENT_SECRET_KEY = 'gcal.clientSecret';
 const CONFIG = CALENDAR_CONFIG_KEY;
 const ACCOUNT = 'calendar.account';
 const DISMISSED = 'calendar.dismissed';
+const PRESENCE = 'calendar.presence';
+
+interface PresenceMark {
+  status: MeetingPresence;
+  at: number;
+  /** The meeting's end, to prune the mark once it is over. */
+  end: number;
+}
 /** Hand-set priorities. Also read by the config backup. */
 export const CALENDAR_MARKS_KEY = 'calendar.marks';
 const CLIENT_SECRET = CALENDAR_CLIENT_SECRET_KEY;
@@ -369,6 +381,26 @@ export class CalendarService {
     return this.d.config.getState<Record<string, number>>(DISMISSED) ?? {};
   }
 
+  /** Your marks (joined / here / ended), without the ones whose meeting is over. */
+  private presenceMap(): Record<string, PresenceMark> {
+    const raw = this.d.config.getState<Record<string, PresenceMark>>(PRESENCE) ?? {};
+    const t = this.now();
+    const out: Record<string, PresenceMark> = {};
+    for (const [id, p] of Object.entries(raw)) {
+      if (p && MeetingPresenceSchema.safeParse(p.status).success && p.end > t) out[id] = p;
+    }
+    return out;
+  }
+
+  /** The alert and the start push leave a meeting alone once it is dismissed or marked. */
+  private quiet(
+    id: string,
+    dismissed: Record<string, number>,
+    presence: Record<string, PresenceMark>,
+  ) {
+    return dismissed[id] !== undefined || presence[id] !== undefined;
+  }
+
   private marks(): PriorityMarks {
     const parsed = PriorityMarksSchema.safeParse(this.d.config.getState(CALENDAR_MARKS_KEY) ?? {});
     return parsed.success ? parsed.data : {};
@@ -382,6 +414,7 @@ export class CalendarService {
     const t = this.now();
     const cfg = this.getConfig();
     const dismissed = this.dismissedMap();
+    const presence = this.presenceMap();
     const marks = this.marks();
     const on = this.enabled() && this.connected();
     const until = t + cfg.lookAheadDays * DAY_MS;
@@ -392,6 +425,9 @@ export class CalendarService {
             .map((m) => ({
               ...this.withPriority(m, cfg, marks),
               dismissed: dismissed[m.id] !== undefined,
+              presence: presence[m.id]
+                ? { status: presence[m.id]!.status, at: presence[m.id]!.at }
+                : null,
             }))
         : [],
       connected: this.connected(),
@@ -442,16 +478,32 @@ export class CalendarService {
     return this.list();
   }
 
+  /**
+   * Marks what happened (joined, in the room, ended), or with `null` clears it. Kept until the meeting is over; the
+   * alert and the start push leave a marked meeting alone. Local only: nothing is written to Google.
+   */
+  setPresence(body: MeetingPresenceBody): MeetingList {
+    const t = this.now();
+    const m = this.meetings.find((x) => x.id === body.id);
+    const map = this.presenceMap();
+    if (body.status === null) delete map[body.id];
+    else if (m) map[body.id] = { status: body.status, at: t, end: m.end };
+    this.d.config.setState(PRESENCE, map);
+    this.changed();
+    return this.list();
+  }
+
   // ───────────────────────────── start notifications ─────────────────────────────
 
   private notifyStarted(): void {
     if (!this.d.notifier || !this.enabled()) return;
     const t = this.now();
     const dismissed = this.dismissedMap();
+    const presence = this.presenceMap();
     for (const m of this.meetings) {
       if (m.start > t || m.end <= t || t - m.start > NOTIFY_GRACE_MS) continue;
       const key = `meeting:${m.id}:${m.start}`;
-      if (dismissed[m.id] !== undefined || this.notified.has(key)) continue;
+      if (this.quiet(m.id, dismissed, presence) || this.notified.has(key)) continue;
       this.notified.add(key);
       this.d.notifier.notifyCockpit({
         event: 'meetingStarted',
@@ -476,10 +528,12 @@ export class CalendarService {
     const t = this.now();
     const cfg = this.getConfig();
     const marks = this.marks();
+    const presence = this.presenceMap();
     const timeFmt = new Intl.DateTimeFormat(undefined, { hour: '2-digit', minute: '2-digit' });
     for (const raw of this.meetings) {
       const at = raw.start - REMIND_BEFORE_MS;
       if (t < at || t - at > NOTIFY_GRACE_MS) continue;
+      if (presence[raw.id]?.status === 'ended') continue;
       const m = this.withPriority(raw, cfg, marks);
       if (m.priority !== 'key') continue;
       const key = `meeting-tomorrow:${m.id}:${m.start}`;
