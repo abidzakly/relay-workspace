@@ -4,6 +4,8 @@ import {
   MR_DRAFT_EVENTS,
   MR_STATE_EVENTS,
   MrMergeRequestSchema,
+  MrNoteDeleteRequestSchema,
+  MrNoteEditRequestSchema,
   MrNoteRequestSchema,
   MrUploadRequestSchema,
   MrReplyRequestSchema,
@@ -30,6 +32,8 @@ const ReviewParamsSchema = z.object({
  *  - POST /api/mrs/:repo/:iid/resolve  { discussionId, resolved }
  *  - POST /api/mrs/:repo/:iid/comment  { position, body }  (new thread on a diff line, Code Reviewer)
  *  - POST /api/mrs/:repo/:iid/note     { body }            (new top-level comment, MR drawer)
+ *  - POST /api/mrs/:repo/:iid/note/edit    { discussionId, noteId, body }  (my own comment only)
+ *  - POST /api/mrs/:repo/:iid/note/delete  { discussionId, noteId }        (my own comment only)
  *  - POST /api/mrs/:repo/:iid/upload   { filename, type, data }  (an image for a comment, base64)
  *  - POST /api/mrs/:repo/:iid/close    (no body; 409 `mr_state_changed` when it is not open any more)
  *  - POST /api/mrs/:repo/:iid/reopen   (no body; 409 `mr_state_changed` when it is not closed any more)
@@ -60,6 +64,18 @@ export function registerMrActionRoutes(app: FastifyInstance, deps: { actions: Mr
     const { repo, iid } = parseWith(ReviewParamsSchema, req.params);
     const body = parseWith(MrNoteRequestSchema, req.body);
     return wrap(() => deps.actions.note(repo, iid, body));
+  });
+
+  app.post('/api/mrs/:repo/:iid/note/edit', async (req) => {
+    const { repo, iid } = parseWith(ReviewParamsSchema, req.params);
+    const body = parseWith(MrNoteEditRequestSchema, req.body);
+    return wrap(() => deps.actions.editNote(repo, iid, body));
+  });
+
+  app.post('/api/mrs/:repo/:iid/note/delete', async (req) => {
+    const { repo, iid } = parseWith(ReviewParamsSchema, req.params);
+    const body = parseWith(MrNoteDeleteRequestSchema, req.body);
+    return wrap(() => deps.actions.deleteNote(repo, iid, body));
   });
 
   // An image is up to 5 MB, ~6.7 MB as base64 JSON: above the app's 1 MB default.

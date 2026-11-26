@@ -149,6 +149,7 @@ export function Composer({
   onCancel,
   autoFocus,
   className,
+  initialValue,
 }: {
   repo: string;
   iid: number;
@@ -161,8 +162,10 @@ export function Composer({
   onCancel?: () => void;
   autoFocus?: boolean;
   className?: string;
+  /** Starting text, e.g. a comment being edited. */
+  initialValue?: string;
 }) {
-  const [text, setText] = useState('');
+  const [text, setText] = useState(initialValue ?? '');
   const [tab, setTab] = useState<'write' | 'preview'>('write');
   const [more, setMore] = useState(false);
   const [drag, setDrag] = useState(false);

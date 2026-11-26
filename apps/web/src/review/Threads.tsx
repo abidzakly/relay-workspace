@@ -4,6 +4,7 @@ import { Check, CornerDownRight, RotateCcw } from 'lucide-react';
 import { ThreadAgentActions } from '@/components/ThreadAgentActions';
 import { Composer } from '@/components/composer/Composer';
 import { Markdown } from '@/components/Markdown';
+import { useNoteEditing } from '@/components/mr/NoteEditing';
 import { useUserLabel } from '@/components/MrBits';
 import { TimeAgo } from '@/components/TimeAgo';
 import { describeError } from '@/lib/api';
@@ -41,6 +42,46 @@ function DryRunNote({ show }: { show: boolean }) {
     <p className="text-xs text-muted-foreground">
       Dry-run: simulated and logged in the audit log, nothing was sent to GitLab.
     </p>
+  );
+}
+
+/** One comment in a Code Reviewer thread; mine can be edited or deleted. */
+function ReviewNote({
+  n,
+  repo,
+  iid,
+  discussionId,
+  interactive,
+  indent,
+}: {
+  n: ReviewDiscussion['notes'][number];
+  repo: string;
+  iid: number;
+  discussionId: string;
+  interactive: boolean;
+  indent: boolean;
+}) {
+  const userLabel = useUserLabel();
+  const change = useNoteEditing({ repo, iid, discussionId, note: n });
+  const editable = interactive && change.canChange;
+  return (
+    <li className={cn('flex min-w-0 gap-2.5', indent && 'pl-1')}>
+      <Avatar name={n.author} />
+      <div className="grid min-w-0 flex-1 gap-0.5">
+        <div className="flex items-center gap-2 text-xs">
+          <span className="truncate font-semibold">
+            {n.author ? userLabel(n.author) : n.id < 0 ? 'me' : 'unknown'}
+          </span>
+          <TimeAgo at={n.createdAt} className="text-muted-foreground" />
+          {n.edited && <span className="text-muted-foreground">· Edited</span>}
+          {editable && <span className="ml-auto">{change.actions}</span>}
+        </div>
+        {(editable && change.editor) || (
+          <Markdown source={n.body} repo={repo} className="text-sm" />
+        )}
+        {editable && change.extra}
+      </div>
+    </li>
   );
 }
 
@@ -90,18 +131,15 @@ export function ThreadCard({
     >
       <ol className="grid gap-3">
         {d.notes.map((n, i) => (
-          <li key={n.id} className={cn('flex min-w-0 gap-2.5', i > 0 && 'pl-1')}>
-            <Avatar name={n.author} />
-            <div className="grid min-w-0 flex-1 gap-0.5">
-              <div className="flex items-baseline gap-2 text-xs">
-                <span className="truncate font-semibold">
-                  {n.author ? userLabel(n.author) : n.id < 0 ? 'me' : 'unknown'}
-                </span>
-                <TimeAgo at={n.createdAt} className="text-muted-foreground" />
-              </div>
-              <Markdown source={n.body} repo={repo} className="text-sm" />
-            </div>
-          </li>
+          <ReviewNote
+            key={n.id}
+            n={n}
+            repo={repo}
+            iid={iid}
+            discussionId={d.id}
+            interactive={interactive}
+            indent={i > 0}
+          />
         ))}
       </ol>
       {interactive && (

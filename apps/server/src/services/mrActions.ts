@@ -6,6 +6,9 @@ import {
   type MrDraftEvent,
   type MrDraftResult,
   type MrMergeResult,
+  type MrNoteChangeResult,
+  type MrNoteDeleteRequest,
+  type MrNoteEditRequest,
   type MrNoteRequest,
   type MrNoteResult,
   type MrUploadRequest,
@@ -43,9 +46,11 @@ import type { UndoHandler } from './undoEngine';
 import { extRepoConfig, isExtRepo, repoOrExt, reviewerIdentity } from './reviewTarget';
 import {
   applyDiscussionNotes,
+  deleteCachedNote,
   getCachedDiscussionNotes,
   getCachedMr,
   insertOwnNote,
+  updateCachedNoteBody,
   upsertMrSummaries,
 } from './mrStore';
 
@@ -422,6 +427,139 @@ export class MrActions {
           ? { id: n.noteId, author: n.author, body: n.body, createdAt: n.createdAt, unread: false }
           : null,
       };
+    } catch (e) {
+      return mapGitlabError(e);
+    }
+  }
+
+  /**
+   * Only my own comments can be edited or deleted (GitLab lets a maintainer delete anyone's: Relay does not). Live,
+   * the note is read from GitLab right before the write; in dry-run the cached author is checked when known.
+   */
+  private async ownNote(
+    repoId: string,
+    iid: number,
+    discussionId: string,
+    noteId: number,
+    api: GitlabDiscussionsApi | null,
+  ): Promise<{ body: string } | null> {
+    const mine = new Set(this.d.config.myUsernames());
+    const reviewer = reviewerIdentity(this.d.config)?.username;
+    if (reviewer) mine.add(reviewer.toLowerCase());
+    let note: { author: string | null; body: string } | undefined;
+    if (api) {
+      note = (await api.get(iid, discussionId)).notes.find((n) => n.noteId === noteId);
+      if (!note) throw new MrActionError(404, 'note_not_found', 'This comment no longer exists.');
+    } else {
+      note = getCachedDiscussionNotes(this.d.store, repoId, iid, discussionId).find(
+        (n) => n.noteId === noteId,
+      );
+      if (!note) return null;
+    }
+    if (!note.author || !mine.has(note.author.toLowerCase())) {
+      throw new MrActionError(403, 'not_your_note', 'You can only change your own comments.');
+    }
+    return { body: note.body };
+  }
+
+  /** Edits one of my comments. Audited, NOT undoable (the old body is kept in the audit log). */
+  async editNote(repoId: string, iid: number, req: MrNoteEditRequest): Promise<MrNoteChangeResult> {
+    this.context(repoId, iid);
+    const dry = this.d.config.isDryRun();
+    const api = dry ? null : this.api(repoId);
+    const body = req.body.trim();
+    try {
+      const before = await this.ownNote(repoId, iid, req.discussionId, req.noteId, api);
+      const out = await guardedWrite(
+        { dryRun: this.d.config, audit: this.d.audit, log: this.d.log },
+        {
+          actor: 'user',
+          action: 'mr.note.edit',
+          targetType: 'mr',
+          targetId: mrTargetId(repoId, iid),
+          // Reached only from the user's "Save" on their own comment.
+          confirmed: true,
+          before: {
+            discussionId: req.discussionId,
+            noteId: req.noteId,
+            body: before ? before.body.slice(0, AUDIT_BODY_MAX) : null,
+          },
+          after: {
+            discussionId: req.discussionId,
+            noteId: req.noteId,
+            body: body.slice(0, AUDIT_BODY_MAX),
+          },
+          reversible: false,
+          run: () => api!.updateNote(iid, req.discussionId, req.noteId, body),
+        },
+      );
+      const n = out.result ?? null;
+      if (!out.dryRun) {
+        if (!isExtRepo(repoId)) {
+          updateCachedNoteBody(
+            this.d.store,
+            repoId,
+            req.noteId,
+            n?.body ?? body,
+            n?.updatedAt ?? Date.now(),
+          );
+        }
+        this.changed(repoId, iid);
+      }
+      return {
+        dryRun: out.dryRun,
+        auditId: out.audit.id,
+        note: n
+          ? {
+              id: n.noteId,
+              author: n.author,
+              body: n.body,
+              createdAt: n.createdAt,
+              unread: false,
+              edited: true,
+            }
+          : null,
+      };
+    } catch (e) {
+      return mapGitlabError(e);
+    }
+  }
+
+  /** Deletes one of my comments. Audited (with its body), NOT undoable. */
+  async deleteNote(
+    repoId: string,
+    iid: number,
+    req: MrNoteDeleteRequest,
+  ): Promise<MrNoteChangeResult> {
+    this.context(repoId, iid);
+    const dry = this.d.config.isDryRun();
+    const api = dry ? null : this.api(repoId);
+    try {
+      const before = await this.ownNote(repoId, iid, req.discussionId, req.noteId, api);
+      const out = await guardedWrite(
+        { dryRun: this.d.config, audit: this.d.audit, log: this.d.log },
+        {
+          actor: 'user',
+          action: 'mr.note.delete',
+          targetType: 'mr',
+          targetId: mrTargetId(repoId, iid),
+          // Reached only after the user confirmed "Delete comment".
+          confirmed: true,
+          before: {
+            discussionId: req.discussionId,
+            noteId: req.noteId,
+            body: before ? before.body.slice(0, AUDIT_BODY_MAX) : null,
+          },
+          after: { discussionId: req.discussionId, noteId: req.noteId, deleted: true },
+          reversible: false,
+          run: () => api!.deleteNote(iid, req.discussionId, req.noteId),
+        },
+      );
+      if (!out.dryRun) {
+        if (!isExtRepo(repoId)) deleteCachedNote(this.d.store, repoId, req.noteId);
+        this.changed(repoId, iid);
+      }
+      return { dryRun: out.dryRun, auditId: out.audit.id, note: null };
     } catch (e) {
       return mapGitlabError(e);
     }

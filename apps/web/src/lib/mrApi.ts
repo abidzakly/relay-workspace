@@ -10,6 +10,7 @@ import {
   type MrMergeResult,
   type MrStateChangeResult,
   type MrStateEvent,
+  type MrNoteChangeResult,
   type MrNoteResult,
   type MrReplyResult,
   type MrResolveResult,
@@ -142,6 +143,79 @@ export function useResolve(repo: string, iid: number) {
           key,
           patchThreads(previous, v.discussionId, (t) => ({ ...t, resolved: v.resolved })),
         );
+        return { previous };
+      },
+      onError: (_e, _v, ctx) => {
+        if (ctx?.previous) qc.setQueryData(key, ctx.previous);
+      },
+      onSettled: () => {
+        void qc.invalidateQueries({ queryKey: key });
+      },
+    },
+  );
+}
+
+/**
+ * Edit or delete one of my comments. Optimistic on the MR drawer's cache (rolled back on error); both the drawer and
+ * the Code Reviewer refetch afterwards, so GitLab's answer wins. Not undoable.
+ */
+export function useEditNote(repo: string, iid: number) {
+  const qc = useQueryClient();
+  const key = mrKeys.detail(repo, iid);
+  return useMutation<
+    MrNoteChangeResult,
+    Error,
+    { discussionId: string; noteId: number; body: string },
+    Snapshot
+  >({
+    mutationFn: (v) => post<MrNoteChangeResult>(`${mrPath(repo, iid)}/note/edit`, v),
+    onMutate: async (v) => {
+      await qc.cancelQueries({ queryKey: key });
+      const previous = qc.getQueryData<MrDetail>(key);
+      qc.setQueryData<MrDetail | undefined>(
+        key,
+        patchThreads(previous, v.discussionId, (t) => ({
+          ...t,
+          notes: t.notes.map((n) =>
+            n.id === v.noteId ? { ...n, body: v.body.trim(), edited: true } : n,
+          ),
+        })),
+      );
+      return { previous };
+    },
+    onError: (_e, _v, ctx) => {
+      if (ctx?.previous) qc.setQueryData(key, ctx.previous);
+    },
+    onSettled: () => {
+      void qc.invalidateQueries({ queryKey: key });
+    },
+  });
+}
+
+export function useDeleteNote(repo: string, iid: number) {
+  const qc = useQueryClient();
+  const key = mrKeys.detail(repo, iid);
+  return useMutation<MrNoteChangeResult, Error, { discussionId: string; noteId: number }, Snapshot>(
+    {
+      mutationFn: (v) => post<MrNoteChangeResult>(`${mrPath(repo, iid)}/note/delete`, v),
+      onMutate: async (v) => {
+        await qc.cancelQueries({ queryKey: key });
+        const previous = qc.getQueryData<MrDetail>(key);
+        if (previous) {
+          qc.setQueryData<MrDetail>(key, {
+            ...previous,
+            discussions: {
+              ...previous.discussions,
+              threads: previous.discussions.threads
+                .map((t) =>
+                  t.id === v.discussionId
+                    ? { ...t, notes: t.notes.filter((n) => n.id !== v.noteId) }
+                    : t,
+                )
+                .filter((t) => t.notes.length > 0),
+            },
+          });
+        }
         return { previous };
       },
       onError: (_e, _v, ctx) => {

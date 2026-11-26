@@ -11,6 +11,8 @@ import { HttpNetworkError, type HttpClient, type HttpResponse } from './httpClie
  *  - `GET  /projects/:id/merge_requests/:iid/discussions/:discussion_id`               (read)
  *  - `POST /projects/:id/merge_requests/:iid/discussions/:discussion_id/notes` {body}  (WRITE: reply)
  *  - `PUT  /projects/:id/merge_requests/:iid/discussions/:discussion_id` {resolved}    (WRITE: resolve)
+ *  - `PUT    …/discussions/:discussion_id/notes/:note_id` {body}                         (WRITE: edit a note)
+ *  - `DELETE …/discussions/:discussion_id/notes/:note_id`                                (WRITE: delete a note)
  * Shapes follow GitLab's documented REST v4 and are UNVERIFIED against the live instance (no sample was
  * attached) (no live sample was checked). Writes are never retried (`GitlabClient.write`) and must only be called from a
  * `guardedWrite` (dry-run + audit). Errors never carry the token, headers or bodies.
@@ -104,6 +106,30 @@ export class GitlabDiscussionsApi {
     const res = await this.call(() => this.client.write('POST', path, { body }), path);
     const mapped = mapDiscussions(this.repoId, iid, [{ id: discussionId, notes: [res.json] }]);
     return mapped?.notes[0] ?? null;
+  }
+
+  /**
+   * Changes a note's body. A WRITE: call only through `guardedWrite`.
+   * Returns the note as GitLab reports it afterwards, or null when that answer could not be mapped (the edit WAS made).
+   */
+  async updateNote(
+    iid: number,
+    discussionId: string,
+    noteId: number,
+    body: string,
+  ): Promise<Note | null> {
+    if (!Number.isInteger(noteId) || noteId <= 0) throw new Error('invalid note id');
+    const path = `${this.base(iid, discussionId)}/notes/${noteId}`;
+    const res = await this.call(() => this.client.write('PUT', path, { body }), path);
+    const mapped = mapDiscussions(this.repoId, iid, [{ id: discussionId, notes: [res.json] }]);
+    return mapped?.notes[0] ?? null;
+  }
+
+  /** Deletes a note. A WRITE: call only through `guardedWrite`. */
+  async deleteNote(iid: number, discussionId: string, noteId: number): Promise<void> {
+    if (!Number.isInteger(noteId) || noteId <= 0) throw new Error('invalid note id');
+    const path = `${this.base(iid, discussionId)}/notes/${noteId}`;
+    await this.call(() => this.client.write('DELETE', path), path);
   }
 
   /**
