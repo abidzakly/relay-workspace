@@ -631,10 +631,15 @@
  * Reader: long-form reading, set like an editorial page. A measure of about 66 characters, sans body at a size the
  * reader picks (`--reader-size`, reader/ReaderControls.tsx), Instrument Serif for the big headings, and room above
  * every heading for the contents link that jumps there. Dream eases the body off pure ink to cut glare.
+ * Each `h2` section sits on its own solid sheet (`.reader-sheet`, reader/ReaderBody.tsx), so the paper grid never
+ * shows through the text and every section reads as one piece. `data-font='classic'` swaps the serif for the sans.
  */
 .md.md-reader {
   --reader-ink: var(--foreground);
-  max-width: 66ch;
+  --sheet-pad: clamp(1.25rem, 5vw, 3.5rem);
+  display: grid;
+  gap: 1.5rem;
+  max-width: calc(66ch + 2 * var(--sheet-pad));
   font-size: var(--reader-size, 1.125rem);
   line-height: 1.72;
   color: var(--reader-ink);
@@ -645,8 +650,28 @@
 .dark .md.md-reader {
   --reader-ink: color-mix(in oklch, var(--foreground) 88%, var(--background));
 }
-.md.md-reader > * + * {
+.md.md-reader .reader-sheet {
+  padding: var(--sheet-pad);
+  background: var(--card);
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-surface, 0.5rem);
+  box-shadow: 0 1px 2px rgb(var(--elevation) / 0.04);
+}
+/* The sheet's place in the document, e.g. "02 / 05". */
+.md.md-reader .reader-sheet[data-n]::before {
+  content: attr(data-n);
+  display: block;
+  margin-bottom: 1.2rem;
+  font-family: var(--font-mono);
+  font-size: 0.6875rem;
+  letter-spacing: 0.08em;
+  color: var(--muted-foreground);
+}
+.md.md-reader .reader-sheet > * + * {
   margin-top: 1.15em;
+}
+.md.md-reader .reader-sheet > :first-child {
+  margin-top: 0;
 }
 .md.md-reader :is(h1, h2, h3, h4) {
   scroll-margin-top: 1.5rem;
@@ -666,13 +691,6 @@
 .md.md-reader h2 {
   font-size: 1.85em;
   margin-top: 2.1em;
-  padding-top: 0.9em;
-  border-top: 1px solid var(--hairline);
-}
-.md.md-reader :is(h1, hr) + h2 {
-  border-top: 0;
-  padding-top: 0;
-  margin-top: 1.2em;
 }
 .md.md-reader h3 {
   font-size: 1.12em;
@@ -692,8 +710,8 @@
   margin-top: 0.6em;
 }
 /* The opening paragraph reads as a lead. */
-.md.md-reader > p:first-child,
-.md.md-reader > h1:first-child + p {
+.md.md-reader > .reader-sheet:first-child > p:first-child,
+.md.md-reader > .reader-sheet:first-child > h1:first-child + p {
   font-size: 1.14em;
   line-height: 1.6;
   color: var(--foreground);
@@ -752,7 +770,7 @@
   white-space: pre;
 }
 .md.md-reader pre:not(.shiki) {
-  background: var(--card);
+  background: var(--muted);
 }
 .md.md-reader :is(pre, .shiki, table, img, figure) {
   margin-block: 1.6em;
@@ -795,6 +813,24 @@
   white-space: pre;
   letter-spacing: 0.4em;
   color: var(--muted-foreground);
+}
+/* Classic: the sans headings and plain quotes from before the editorial look. */
+[data-font='classic'] .md.md-reader :is(h1, h2) {
+  font-family: var(--font-sans);
+  font-weight: 600;
+  line-height: 1.25;
+}
+[data-font='classic'] .md.md-reader h1 {
+  font-size: 1.8em;
+}
+[data-font='classic'] .md.md-reader h2 {
+  font-size: 1.35em;
+}
+[data-font='classic'] .md.md-reader blockquote {
+  font-family: inherit;
+  font-size: 1em;
+  font-style: italic;
+  color: var(--reader-ink);
 }
 .md.md-reader ::selection {
   background: color-mix(in oklch, var(--terracotta) 32%, transparent);
