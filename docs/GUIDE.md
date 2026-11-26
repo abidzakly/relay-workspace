@@ -8,7 +8,7 @@ The dashboard runs on your own machine. There are no accounts and nothing is hos
 
 | Needed for      | Install                                                                           |
 | --------------- | --------------------------------------------------------------------------------- |
-| Everything      | Node 22+, pnpm 12 (`corepack enable`), git                                        |
+| Everything      | Node 22+, pnpm 12 (`corepack enable`), git (Git for Windows on Windows)           |
 | Release scripts | `glab` (GitLab CLI, logged in), `jq`. Flutter apps: `flutter` or `fvm`            |
 | Builds          | Flutter (or fvm) and the Android SDK                                              |
 | Test Bench      | The Figma desktop app (see section 7), an Android phone with USB debugging, `adb` |
@@ -24,6 +24,8 @@ cp .env.example .env && chmod 600 .env
 node -e "console.log(require('crypto').randomBytes(32).toString('base64'))"   # paste as MASTER_KEY in .env
 pnpm build && pnpm start
 ```
+
+On Windows (PowerShell), use `Copy-Item .env.example .env` for the second line and `pnpm build; pnpm start` for the last. See section 9.
 
 Open `http://127.0.0.1:3000` (use `127.0.0.1`, not `localhost`).
 
@@ -155,27 +157,30 @@ It listens on `127.0.0.1:3002` only and refuses any request without the token. S
 
 ## 9. Windows
 
-Relay runs on macOS, Linux and Windows. On Windows there are two ways:
+Relay runs natively on Windows, with the same features as on macOS and Linux. WSL is not needed.
 
-|                                                                                        | Native Windows                                              | WSL (Linux inside Windows) |
-| -------------------------------------------------------------------------------------- | ----------------------------------------------------------- | -------------------------- |
-| MR Inbox, Code Review, Reviews, Board, Sync Health, KPI, Sprints, Notifications, Audit | Yes                                                         | Yes                        |
-| Release, native engine                                                                 | Yes                                                         | Yes                        |
-| Release scripts (custom release command), Builds, Cockpit, Test Bench                  | No: they run shell scripts and Flutter and Claude launchers | Yes                        |
+1. Install Node 22 or newer and [Git for Windows](https://git-scm.com/download/win).
+2. In PowerShell, run `corepack enable`. If it fails with `EPERM` (Node under `C:\Program Files` needs an administrator shell for it), run `npm i -g pnpm@12` instead.
+3. Clone Relay, then run `pnpm install`.
+4. Run `Copy-Item .env.example .env`. Generate the key with the same `node -e …` line as in section 2 and paste it as `MASTER_KEY` in `.env`.
+5. Run `pnpm build; pnpm start`, then open `http://127.0.0.1:3000`.
 
-On first start, Windows asks which you want. **Continue on Windows** switches the WSL-only features off; each one says why on its page and in Settings.
+Install the tools for the features you use, as on any system (section 1):
 
-To use WSL:
+- **Builds:** Flutter (or fvm) and the Android SDK.
+- **Cockpit:** the Claude CLI or Cursor's CLI.
+- **Test Bench:** `adb`.
 
-1. In PowerShell as administrator, run `wsl --install`, then restart.
-2. Open Ubuntu. Install Node 22, then `corepack enable` for pnpm.
-3. Clone Relay inside your Linux home (for example `~/relay`), **not** under `/mnt/c`: file access across the boundary is slow and file permissions break.
-4. `pnpm install`, `pnpm build && pnpm start`.
-5. Open `http://127.0.0.1:3000` in your Windows browser. WSL forwards localhost to Windows.
+Relay finds their `.bat` and `.cmd` launchers on `PATH`. The Cockpit terminal opens PowerShell.
 
-Install the WSL-side tools there too: git, `glab`, `jq` and Flutter for releases and builds, and the Claude CLI for the Cockpit. The Figma desktop app stays on Windows; the bridge reaches it on `127.0.0.1:1994`.
+Differences from macOS and Linux:
 
-Workspace and clone folders accept `~/…` on every system, and full paths such as `C:\Users\you\Work\app` on native Windows.
+- **Release** runs with the native engine. The custom release command (`vu` and the other scripts in `tools/bin`) is bash, so it is unavailable on Windows. The native engine does the same release: version MR, merge, tag, build, and hand-off to QA.
+- **File permissions:** `chmod 600` does not apply. `.env`, `data/` and the key files are protected by the access rules of your user folder, so keep Relay under `%USERPROFILE%`.
+
+Workspace and clone folders accept `~/…` and `~\…` on every system, and full paths such as `C:\Users\you\Work\app`.
+
+WSL still works if you prefer it: clone Relay inside your Linux home (not under `/mnt/c`) and follow the macOS/Linux steps there.
 
 ## 10. When something goes wrong
 
@@ -183,5 +188,5 @@ Workspace and clone folders accept `~/…` on every system, and full paths such 
 - **A Reviews row says Polled.** Read its "Why?". It links to the webhook that would make it live.
 - **A release asks for values.** Fill them in once; they are kept in Settings > Repos > Release scripts.
 - **Settings > Release scripts lists tools as "Not installed".** Install them (section 1) and reload.
-- **A page says it cannot run here.** You are on Windows without WSL: see section 9.
+- **The custom release engine is unavailable on Windows.** Use the native engine (Settings > General > Safety & engine): see section 9.
 - **Anything else.** The Troubleshooting section of [REFERENCE.md](REFERENCE.md#troubleshooting), and the Audit page for what was really sent.

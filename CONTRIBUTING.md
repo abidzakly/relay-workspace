@@ -9,7 +9,7 @@ You need Node 22 or newer and pnpm (the version pinned in `package.json`).
 ```bash
 corepack enable
 pnpm install
-cp .env.example .env && chmod 600 .env   # then set MASTER_KEY, see docs/GUIDE.md
+cp .env.example .env && chmod 600 .env   # then set MASTER_KEY, see docs/GUIDE.md (Windows: docs/GUIDE.md section 9)
 pnpm dev                                  # server and web app with reload
 ```
 

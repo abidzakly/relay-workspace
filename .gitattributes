@@ -1,0 +1,3 @@
+# Keep LF everywhere, also in a Windows checkout (Git for Windows defaults to core.autocrlf=true). The bash scripts in
+# tools/bin and docker/ break with CRLF, and Prettier expects LF.
+* text=auto eol=lf
