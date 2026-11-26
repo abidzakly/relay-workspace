@@ -203,7 +203,8 @@ export function threadPrompt(i: {
       : `Your task: help me review this comment. Do NOT change any file and do not commit.
 - Read the code involved and explain what the reviewer means.
 - Say whether the reviewer is right, with your reasons from the code.
-- Propose the fix you would make, or a reply if no change is needed. Wait for my decision.`;
+- Propose the fix you would make, or a reply if no change is needed. Wait for my decision.
+- Keep it short: conclusion first, then the reason in 1-3 sentences. No step-by-step narration.`;
   const attachments = [
     ...(i.attachments.length > 0
       ? [

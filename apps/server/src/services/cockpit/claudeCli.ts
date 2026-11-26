@@ -2,6 +2,7 @@ import { spawn, spawnSync } from 'node:child_process';
 import { mkdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { AI_CONCISE_STYLE } from '@relay/shared';
 import { launchSpec } from '../../util/platform';
 import { CockpitHostError, type AiRunRequest } from './host';
 
@@ -72,7 +73,7 @@ const LEAN_ARGS = [
   '',
   '--no-session-persistence',
   '--system-prompt',
-  'You are a precise assistant for code review and merge requests. Follow the user message exactly.',
+  `You are a precise assistant for code review and merge requests. Follow the user message exactly.\n${AI_CONCISE_STYLE}`,
 ];
 
 export function runClaudeCli(req: AiRunRequest): Promise<{ text: string }> {
