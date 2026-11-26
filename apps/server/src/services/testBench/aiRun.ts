@@ -37,6 +37,13 @@ import type { TestBenchService } from './testBench';
 const RUN_MAX_MS = 45 * 60_000;
 const HUMAN_WAIT_MS = 10 * 60_000;
 const VM_RE = /Dart VM Service[^\n]*?available at:\s*(http:\/\/127\.0\.0\.1:\d+\/[^\s]*)/;
+/**
+ * `flutter run` output as plain lines: no escape sequences or carriage returns. Windows' ConPTY re-renders the output
+ * with cursor moves and colour codes, which could otherwise split the VM service line.
+ */
+const plainPty = (t: string) =>
+  // eslint-disable-next-line no-control-regex
+  t.replace(/\x1b\[[0-9;?]*[A-Za-z]|\x1b\][^\x07]*\x07/g, '').replace(/\r/g, '');
 /** Actions per AC or regression check before the server marks it blocked and moves on. */
 const AC_BUDGET = 25;
 const NOTES_MAX = 40;
@@ -756,7 +763,7 @@ export class AiRunService {
         (e) => {
           if (e.t === 'data') {
             text += e.data;
-            if (VM_RE.test(text)) abort.abort();
+            if (VM_RE.test(plainPty(text))) abort.abort();
           }
         },
         abort.signal,
@@ -766,7 +773,7 @@ export class AiRunService {
     } finally {
       clearTimeout(t);
     }
-    const http = VM_RE.exec(text)?.[1];
+    const http = VM_RE.exec(plainPty(text))?.[1];
     if (!http) return null;
     return `${http.replace(/^http/, 'ws').replace(/\/?$/, '/')}ws`;
   }

@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { copyFile, lstat, mkdir, readdir, readFile, rename, rm, stat } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
+import { IS_WINDOWS } from '../util/platform';
 import {
   FLAVOR_RE,
   isSafeVersion,
@@ -157,7 +158,9 @@ export function artifactFileName(
   ext: 'apk' | 'aab',
 ): string {
   // eslint-disable-next-line no-control-regex
-  const safeName = appName.replace(/[/\\]/g, '-').replace(/[\u0000-\u001f\u007f]/g, '');
+  let safeName = appName.replace(/[/\\]/g, '-').replace(/[\u0000-\u001f\u007f]/g, '');
+  // Windows refuses these in file names (a `:` would even write an alternate data stream instead).
+  if (IS_WINDOWS) safeName = safeName.replace(/[:*?"<>|]/g, '-');
   return `${safeName} ${flavorLabel(flavor)} v${version}.${ext}`;
 }
 

@@ -1,10 +1,11 @@
 import { execFile } from 'node:child_process';
 import { existsSync } from 'node:fs';
+import { homedir } from 'node:os';
 
 /**
  * The computer's own "choose a folder" dialog, for Settings > Workspaces. Runs where the folders are: in-process when
  * the dashboard runs on the Mac, inside the host agent when the dashboard runs in Docker. macOS uses AppleScript's
- * `choose folder`, Linux `zenity`. Anything else (or no desktop session) answers `unsupported` and the form falls back
+ * `choose folder`, Linux `zenity`, Windows PowerShell's `FolderBrowserDialog`. Anything else (or no desktop session) answers `unsupported` and the form falls back
  * to typing the path. Only one dialog is open at a time; a second click waits for the same answer.
  */
 
@@ -27,6 +28,18 @@ const MAC_SCRIPT = [
   'end run',
 ];
 
+// The start folder comes in through an environment variable, never spliced into the script. A topmost owner form brings
+// the dialog in front of the browser. Cancel exits 1.
+const WINDOWS_SCRIPT = [
+  'Add-Type -AssemblyName System.Windows.Forms',
+  '[Console]::OutputEncoding = [System.Text.Encoding]::UTF8',
+  '$d = New-Object System.Windows.Forms.FolderBrowserDialog',
+  `$d.Description = '${PROMPT}'`,
+  '$d.SelectedPath = $env:RELAY_PICK_START',
+  '$owner = New-Object System.Windows.Forms.Form -Property @{ TopMost = $true }',
+  "if ($d.ShowDialog($owner) -eq 'OK') { [Console]::Out.Write($d.SelectedPath) } else { exit 1 }",
+].join('; ');
+
 let pending: Promise<NativeFolderPick> | null = null;
 
 export function pickFolderNative(startAt: string | undefined): Promise<NativeFolderPick> {
@@ -37,7 +50,7 @@ export function pickFolderNative(startAt: string | undefined): Promise<NativeFol
 }
 
 function run(startAt: string | undefined): Promise<NativeFolderPick> {
-  const start = startAt && existsSync(startAt) ? startAt : (process.env.HOME ?? '/');
+  const start = startAt && existsSync(startAt) ? startAt : homedir();
   if (process.platform === 'darwin') {
     return exec(
       'osascript',
@@ -58,6 +71,14 @@ function run(startAt: string | undefined): Promise<NativeFolderPick> {
       (code) => code === 1,
     );
   }
+  if (process.platform === 'win32') {
+    return exec(
+      'powershell.exe',
+      ['-NoProfile', '-NonInteractive', '-STA', '-Command', WINDOWS_SCRIPT],
+      (code) => code === 1,
+      { RELAY_PICK_START: start },
+    );
+  }
   return Promise.resolve({
     status: 'unsupported',
     reason: 'No folder dialog on this system yet.',
@@ -68,9 +89,16 @@ function exec(
   cmd: string,
   args: string[],
   isCancel: (code: number | null, stderr: string) => boolean,
+  env?: Record<string, string>,
 ): Promise<NativeFolderPick> {
   return new Promise((resolve) => {
-    execFile(cmd, args, { timeout: PICK_TIMEOUT_MS, encoding: 'utf8' }, (err, stdout, stderr) => {
+    const opts = {
+      timeout: PICK_TIMEOUT_MS,
+      encoding: 'utf8' as const,
+      windowsHide: true,
+      ...(env ? { env: { ...process.env, ...env } } : {}),
+    };
+    execFile(cmd, args, opts, (err, stdout, stderr) => {
       if (!err) {
         const path = stdout.trim().replace(/(.)\/+$/, '$1');
         resolve(path ? { status: 'picked', path } : { status: 'cancelled' });

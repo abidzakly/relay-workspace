@@ -48,8 +48,8 @@ export interface FeatureInfo {
   /** Page paths this feature owns (prefix match on a `/` boundary). */
   routes: readonly string[];
   /**
-   * Runs macOS/Linux tools (shell scripts, `.cmd` launchers, process groups). On Windows it needs WSL; run natively on
-   * Windows it is switched off and says why.
+   * Runs only on macOS/Linux (shell scripts). Run natively on Windows it is switched off and says why. No feature needs
+   * it today: Cockpit, Test Bench and Builds start their `.cmd`/`.bat` launchers through `launchSpec` there.
    */
   needsPosix?: true;
   /** Reads Notion cards. Without a Notion connection the page says so instead of showing empty data. */
@@ -93,7 +93,6 @@ export const FEATURES: readonly FeatureInfo[] = [
     label: 'Cockpit',
     description: 'Coding agent sessions on your cards, in their own worktrees.',
     routes: ['/cockpit'],
-    needsPosix: true,
   },
   {
     id: 'testBench',
@@ -101,7 +100,6 @@ export const FEATURES: readonly FeatureInfo[] = [
     label: 'Test Bench',
     description: 'Check a running app against its Figma frames.',
     routes: ['/test-bench'],
-    needsPosix: true,
   },
   {
     id: 'release',
@@ -116,7 +114,6 @@ export const FEATURES: readonly FeatureInfo[] = [
     label: 'Builds',
     description: 'Flutter builds, uploads and the build queue.',
     routes: ['/builds'],
-    needsPosix: true,
   },
   {
     id: 'syncHealth',
@@ -189,7 +186,7 @@ export function featuresForMobileRelease(features: Features, releasesMobileApp: 
   };
 }
 
-/** Features that need WSL when the server runs natively on Windows. */
+/** Features that cannot run when the server runs natively on Windows (none today). */
 export const POSIX_FEATURES: readonly FeatureId[] = FEATURES.filter((f) => f.needsPosix).map(
   (f) => f.id,
 );
@@ -200,9 +197,9 @@ export type OsKind = (typeof OS_KINDS)[number];
 
 export interface SystemInfo {
   os: OsKind;
-  /** Running inside WSL (Linux on Windows): every feature works. */
+  /** Running inside WSL (Linux on Windows). Optional: every feature also runs on Windows itself. */
   wsl: boolean;
-  /** Features that cannot run here and why (empty on macOS, Linux and WSL). */
+  /** Features that cannot run here and why (empty unless a feature sets `needsPosix`). */
   unsupported: { id: FeatureId; reason: string }[];
   /** The edition whose presets were loaded (`editions/<name>/presets.json`), or null. */
   edition: string | null;

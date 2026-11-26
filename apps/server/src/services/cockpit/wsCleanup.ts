@@ -263,7 +263,7 @@ export async function tmpCleanupApply(names: readonly string[]): Promise<Cleanup
   const failed: CleanupApplyResult['failed'] = [];
   for (const name of names) {
     try {
-      if (!tmpKind(name) || name.includes('/')) throw new Error('not a cockpit temp file');
+      if (!tmpKind(name) || /[/\\]/.test(name)) throw new Error('not a cockpit temp file');
       const st = await lstat(join(root, name));
       if (st.isSymbolicLink()) throw new Error('symlink');
       await rm(join(root, name), { recursive: true, force: true });

@@ -22,7 +22,7 @@ import {
 import type { ConfigStore } from '../config/store';
 import type { EventBus } from '../sync/eventBus';
 import type { Logger } from '../util/logger';
-import { which } from '../util/platform';
+import { IS_WINDOWS, which } from '../util/platform';
 
 /**
  * Release script settings (`tools/bin`). ONE source of truth: values typed in the dashboard win, otherwise each field
@@ -38,8 +38,13 @@ const VALUES_STATE = 'scripts.values';
 const WRITTEN_STATE = 'scripts.writtenAt';
 const secretName = (key: string) => `scripts.${key}`;
 const FIELDS = new Map(SCRIPT_FIELDS.map((f) => [f.key, f]));
-/** Tools the scripts call. Missing ones are listed in Settings, never fatal here. */
-const TOOLS = ['glab', 'git', 'jq', 'flutter'] as const;
+/**
+ * Tools the scripts call. Missing ones are listed in Settings, never fatal here. On Windows the scripts do not run (the
+ * custom engine is bash), so only what the native engine itself starts is listed: glab and jq are not needed there.
+ */
+const TOOLS = IS_WINDOWS
+  ? (['git', 'flutter'] as const)
+  : (['glab', 'git', 'jq', 'flutter'] as const);
 
 /** Writes the env file where the scripts run: this machine, or the Mac behind the host agent. */
 export interface ScriptEnvWriter {

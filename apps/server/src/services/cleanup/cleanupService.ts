@@ -1,6 +1,7 @@
 import { execFile } from 'node:child_process';
 import { lstat, readdir, realpath, rm } from 'node:fs/promises';
 import { join, sep } from 'node:path';
+import { IS_WINDOWS } from '../../util/platform';
 import { desc, eq, inArray } from 'drizzle-orm';
 import type { CleanupCandidate, CleanupResult, CleanupScan } from '@relay/shared';
 import type { AuditWriter } from '../../audit/auditLog';
@@ -538,12 +539,25 @@ async function entry(root: string, rel: string): Promise<FsEntry | null> {
 }
 
 function duBytes(path: string): Promise<number> {
+  if (IS_WINDOWS) return walkBytes(path);
   return new Promise((resolve) => {
     execFile('du', ['-sk', path], { timeout: 60_000 }, (err, stdout) => {
       const kb = Number(String(stdout).split(/\s+/)[0]);
       resolve(err || !Number.isFinite(kb) ? 0 : kb * 1024);
     });
   });
+}
+
+/** Total size of the files under `dir`, without following links. For Windows, which has no `du`. Never throws. */
+async function walkBytes(dir: string): Promise<number> {
+  let total = 0;
+  const entries = await readdir(dir, { withFileTypes: true }).catch(() => []);
+  for (const e of entries) {
+    const p = join(dir, e.name);
+    if (e.isDirectory()) total += await walkBytes(p);
+    else if (e.isFile()) total += (await lstat(p).catch(() => null))?.size ?? 0;
+  }
+  return total;
 }
 
 /** Removes `<root>/<rel>` only when its real path is strictly inside the real root and it is not a symlink. */

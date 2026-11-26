@@ -1,5 +1,4 @@
 import { BranchesService } from './services/branches/branchesService';
-import { homedir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { AuditWriter } from './audit/auditLog';
 import { SecretBox } from './config/crypto';
@@ -84,6 +83,7 @@ import { EventBus } from './sync/eventBus';
 import { Poller } from './sync/poller';
 import { SyncEngine } from './sync/syncEngine';
 import { createLogger } from './util/logger';
+import { expandHome } from './util/platform';
 
 /**
  * Boots: DB + migrations -> config store (needs MASTER_KEY) -> private dashboard (127.0.0.1:3000)
@@ -208,13 +208,7 @@ async function main(): Promise<void> {
     : null;
   const gitDeps = {
     log,
-    clonesRoot: env.CLONES_DIR
-      ? resolve(
-          env.CLONES_DIR.startsWith('~/')
-            ? join(homedir(), env.CLONES_DIR.slice(2))
-            : env.CLONES_DIR,
-        )
-      : defaultClonesRoot(),
+    clonesRoot: env.CLONES_DIR ? resolve(expandHome(env.CLONES_DIR)) : defaultClonesRoot(),
     auth: (repoId: string) => {
       const repo = store.getRepo(repoId);
       return repo ? { cloneUrl: repo.cloneUrl, token: repo.gitlab.token ?? null } : null;

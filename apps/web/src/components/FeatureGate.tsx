@@ -17,7 +17,7 @@ export function FeatureGate({ children }: { children: ReactNode }) {
   const unsupported = useUnsupported();
   const settings = useSettings().data;
   const owners = featuresOfPath(pathname);
-  // Cannot run on this machine at all (Windows without WSL): say so, whatever the switch says.
+  // Cannot run on this machine at all (a `needsPosix` feature on native Windows): say so, whatever the switch says.
   const why =
     owners.length > 0 && owners.every((id) => unsupported.has(id))
       ? unsupported.get(owners[0]!)

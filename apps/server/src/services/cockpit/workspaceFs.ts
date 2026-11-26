@@ -17,7 +17,7 @@ import { dirname, isAbsolute, join, normalize, resolve, sep } from 'node:path';
 import type { DiffFile } from '@relay/shared';
 import { childEnv } from '../gitExec';
 import { CockpitHostError } from './host';
-import { expandHome } from '../../util/platform';
+import { expandHome, IS_WINDOWS } from '../../util/platform';
 
 /**
  * Workspace = a directory on the user's Mac, NOT a bot clone. Every call
@@ -43,8 +43,13 @@ export function parseWorkspaceRoots(raw: string | undefined): string[] {
   return [...new Set(list)];
 }
 
-const inside = (child: string, parent: string): boolean =>
-  child === parent || child.startsWith(parent.endsWith(sep) ? parent : parent + sep);
+// Windows paths are case-insensitive: `resolve` and `realpath` may spell the same drive or folder differently.
+const fold = (p: string) => (IS_WINDOWS ? p.toLowerCase() : p);
+const inside = (rawChild: string, rawParent: string): boolean => {
+  const child = fold(rawChild);
+  const parent = fold(rawParent);
+  return child === parent || child.startsWith(parent.endsWith(sep) ? parent : parent + sep);
+};
 
 /** Real path of a workspace directory, or `ws_not_allowed`. */
 export async function guardWorkspace(rawPath: string, roots: readonly string[]): Promise<string> {

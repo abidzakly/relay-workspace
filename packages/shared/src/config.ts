@@ -278,8 +278,9 @@ const globalCommon = {
     .object({
       releasesMobileApp: z.boolean().nullable().default(null),
       /**
-       * Windows only, asked first: `native` = keep running on Windows with the WSL-only features off, `wsl` = the user
-       * moves the install into WSL. null = not asked (or not Windows).
+       * The answer to the first-start question older versions asked on Windows: `native` = keep running on Windows
+       * with the WSL-only features off, `wsl` = move the install into WSL. No longer asked or read (every feature runs
+       * on Windows now); kept so stored settings still parse.
        */
       windowsMode: z.enum(['native', 'wsl']).nullable().default(null),
     })
