@@ -6,6 +6,7 @@ import type { ReviewDeskService } from '../services/reviewDesk';
 import { registerReviewsRoutes } from './routes/reviews';
 import { registerCalendarRoutes } from './routes/calendar';
 import { registerOAuthRoutes } from './routes/oauth';
+import { registerGitlabPickerRoutes } from './routes/gitlabPickers';
 import type { OAuthHub } from '../services/oauth/oauthHub';
 import type { CalendarService } from '../services/calendar/calendarService';
 import Fastify, { type FastifyBaseLogger, type FastifyInstance } from 'fastify';
@@ -271,6 +272,7 @@ export async function buildDashboardApp(opts: DashboardAppOptions): Promise<Fast
     if (opts.calendar) registerCalendarRoutes(app, { calendar: opts.calendar, audit: opts.audit });
     if (opts.oauth)
       registerOAuthRoutes(app, { oauth: opts.oauth, store: opts.store, http, audit: opts.audit });
+    registerGitlabPickerRoutes(app, { oauth: opts.oauth, store: opts.store, http });
     if (opts.scripts) registerScriptRoutes(app, { scripts: opts.scripts, audit: opts.audit });
     registerSystemRoutes(app, opts.presets ?? NO_PRESETS);
     registerCardActionRoutes(app, { actions: cardActions });
