@@ -69,8 +69,54 @@ export const GitlabProjectOptionSchema = z.object({
   name: z.string(),
   httpUrlToRepo: z.string(),
   defaultBranch: z.string().nullable(),
+  /** The project's own path (last part of `pathWithNamespace`), for a repo id. Absent in older payloads. */
+  path: z.string().optional(),
+  sshUrlToRepo: z.string().nullable().optional(),
+  webUrl: z.string().nullable().optional(),
 });
 export type GitlabProjectOption = z.infer<typeof GitlabProjectOptionSchema>;
+
+/**
+ * Body of the GitLab picker reads (Add repository wizard). Which token reads GitLab: `token` (a project access token
+ * pasted in the wizard, never stored by the read), else the saved repo's own token (`repoId`), else the GitLab
+ * sign-in or the personal token, by mode.
+ */
+export const GitlabPickerBodySchema = z.object({
+  token: z.string().min(1).max(4096).optional(),
+  repoId: z.string().min(1).max(64).optional(),
+  projectId: z.number().int().positive().optional(),
+  search: z.string().max(100).optional(),
+});
+export type GitlabPickerBody = z.infer<typeof GitlabPickerBodySchema>;
+
+/** The GitLab user behind the token: fills the commit identity, the username and the default assignee. */
+export const GitlabMeSchema = z.object({
+  username: z.string(),
+  name: z.string().nullable(),
+  /** The address commits should carry: GitLab's commit email, else the public email, else the account email. */
+  email: z.string().nullable(),
+});
+export type GitlabMe = z.infer<typeof GitlabMeSchema>;
+
+/** A member of a GitLab project (reviewers, assignee). */
+export const GitlabMemberSchema = z.object({
+  username: z.string(),
+  name: z.string(),
+  avatarUrl: z.string().nullable(),
+  /** GitLab access level: 30 Developer, 40 Maintainer, 50 Owner. */
+  accessLevel: z.number().int(),
+});
+export type GitlabMember = z.infer<typeof GitlabMemberSchema>;
+
+/** What Relay can read from a project's tree for its Flutter build settings. */
+export const GitlabFlutterHintsSchema = z.object({
+  /** Flavors from `lib/main_<flavor>.dart`. */
+  flavors: z.array(z.string()),
+  /** `name:` in pubspec.yaml, when there is one. */
+  appName: z.string().nullable(),
+  isFlutter: z.boolean(),
+});
+export type GitlabFlutterHints = z.infer<typeof GitlabFlutterHintsSchema>;
 
 /** One column of a Notion data source, for the setup wizard. */
 export const NotionSchemaPropSchema = z.object({

@@ -322,6 +322,9 @@ export function registerOAuthRoutes(
           name: str(o.name) ?? path,
           httpUrlToRepo: url,
           defaultBranch: str(o.default_branch) ?? null,
+          path: str(o.path) ?? path.slice(path.lastIndexOf('/') + 1),
+          sshUrlToRepo: str(o.ssh_url_to_repo) ?? null,
+          webUrl: str(o.web_url) ?? null,
         },
       ];
     });
