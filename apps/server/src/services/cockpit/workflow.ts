@@ -8,8 +8,10 @@ import {
   type CardStartAttachment,
   type CommitMessageResult,
   type DeckSource,
+  type ExplainThreadChatResult,
   type ExplainThreadResult,
   isSafeBranchName,
+  type MrChatMessage,
   parseFigmaUrl,
   type RunBranchResult,
 } from '@relay/shared';
@@ -27,6 +29,7 @@ import { extractLinks, openLinks } from './linkContext';
 import { GitlabService } from '../gitlabService';
 import type { HttpClient } from '../httpClient';
 import { mapGitlabError } from '../mrActions';
+import { renderChatHistory } from '../mrCreate';
 import { listCards } from '../notionStore';
 import type { ReadyForMrService } from '../readyForMr';
 import { threadCode } from '../threadCode';
@@ -501,6 +504,7 @@ export class CockpitWorkflowService {
   /**
    * "Explain with AI" on a reviewer's thread: does the comment fit what the MR's commits and changes do, and what to
    * tell the reviewer. Read-only and needs no workspace; the thread is re-read from GitLab, never taken from the browser.
+   * With a `question` it is a follow-up in the thread's "Ask AI" chat instead: the answer continues `history`.
    */
   async threadExplain(input: {
     repoId: string;
@@ -508,7 +512,9 @@ export class CockpitWorkflowService {
     discussionId: string;
     /** Extra context from the user; links in it are opened. */
     context?: string | undefined;
-  }): Promise<ExplainThreadResult> {
+    question?: string | undefined;
+    history?: readonly MrChatMessage[] | undefined;
+  }): Promise<ExplainThreadResult | ExplainThreadChatResult> {
     const mr = this.d.store.db
       .select()
       .from(mrs)
@@ -525,8 +531,10 @@ export class CockpitWorkflowService {
       svc.compare(mr.targetBranch, mr.sourceBranch).catch(() => null),
     ]);
     const code = discussion.position ? threadCode(discussion.position, diffs?.files ?? null) : null;
-    const links = input.context
-      ? await openLinks(extractLinks(input.context), {
+    const question = input.question?.trim();
+    const linkText = question ?? input.context;
+    const links = linkText
+      ? await openLinks(extractLinks(linkText), {
           http: this.d.http,
           gitlabHost: svc.host,
           gitlabItem: (path, kind, iid) => svc.getIssuable(path, kind, iid),
@@ -542,6 +550,20 @@ export class CockpitWorkflowService {
       ...(input.context?.trim() ? { context: input.context.trim() } : {}),
       links,
     });
+    if (question) {
+      const { output, generatedBy } = await this.d.ai.run('explain-thread-chat', {
+        mr: vars.mr!,
+        thread: vars.thread!,
+        code: vars.code!,
+        commits: vars.commits!,
+        changes: vars.changes!,
+        comments: vars.comments!,
+        links: vars.links!,
+        question,
+        history: renderChatHistory(input.history ?? []),
+      });
+      return { ...output, generatedBy };
+    }
     const { output, generatedBy } = await this.d.ai.run('explain-thread', vars);
     return { ...output, generatedBy };
   }
@@ -557,6 +579,8 @@ export class CockpitWorkflowService {
     mode: ThreadAgentMode;
     agent?: 'claude' | 'cursor' | undefined;
     model?: string | undefined;
+    /** The thread's "Ask AI" chat so far, handed to the agent as context. */
+    conversation?: readonly MrChatMessage[] | undefined;
   }): Promise<{
     workspaceId: string;
     sessionId: string;
@@ -630,6 +654,7 @@ export class CockpitWorkflowService {
       attachments,
       failedAttachments: failed,
       branchSynced: synced,
+      ...(input.conversation?.length ? { conversation: input.conversation } : {}),
     });
     const s = await this.d.sessions.startPreferred(workspaceId, {
       ...(input.agent ? { kind: input.agent } : {}),

@@ -11,7 +11,9 @@ import {
   DeckStateSaveRequestSchema,
   BranchNameSchema,
   DISCUSSION_ID_RE,
+  MrChatMessageSchema,
   MrChatRequestSchema,
+  MR_CHAT_MAX_HISTORY,
   ReviewExplainRequestSchema,
   ReviewProposeRequestSchema,
   MrCreateRequestSchema,
@@ -155,6 +157,8 @@ const ThreadAgentBody = z
       .string()
       .regex(/^[a-z0-9.-]{1,64}$/i)
       .optional(),
+    /** The thread's "Ask AI" chat so far: context for the agent. */
+    conversation: z.array(MrChatMessageSchema).max(MR_CHAT_MAX_HISTORY).optional(),
   })
   .strict();
 
@@ -195,6 +199,9 @@ const ThreadExplainBody = z
     discussionId: z.string().regex(DISCUSSION_ID_RE),
     /** Extra context from the user: free text, may contain links. */
     context: z.string().max(8_000).optional(),
+    /** A follow-up in the thread's "Ask AI" chat; links in it are opened. Unset = the first explanation. */
+    question: z.string().trim().min(1).max(8_000).optional(),
+    history: z.array(MrChatMessageSchema).max(MR_CHAT_MAX_HISTORY).optional(),
   })
   .strict();
 
