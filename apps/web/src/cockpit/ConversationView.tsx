@@ -5,11 +5,19 @@ import {
   CircleStop,
   Layers,
   Loader2,
+  Paperclip,
   SendHorizontal,
   Sparkles,
   X,
 } from 'lucide-react';
-import { useEffect, useRef, useState, type KeyboardEvent } from 'react';
+import {
+  useEffect,
+  useRef,
+  useState,
+  type ClipboardEvent,
+  type DragEvent,
+  type KeyboardEvent,
+} from 'react';
 import { Link } from 'react-router';
 import { agentModelLabel, type ConversationCommand, type ConversationMode } from '@relay/shared';
 import { Markdown } from '@/components/Markdown';
@@ -25,6 +33,16 @@ import { describeError } from '@/lib/api';
 import { sendInput, sendPrompt, useKillSession, type SessionView } from '@/lib/sessionApi';
 import { IS_MAC } from '@/lib/shortcuts';
 import { cn } from '@/lib/utils';
+import {
+  addFiles,
+  ATTACH_FILES_MAX,
+  AttachmentList,
+  removeFile,
+  revokePreviews,
+  toAttachments,
+  useRevokeOnUnmount,
+  type AttachFile,
+} from './attachments';
 import { MrBackLink } from './MrBackLink';
 import { useCoarsePointer } from '@/workspace/useMedia';
 
@@ -422,12 +440,19 @@ function Editor({
   placeholder: string;
   /** Small while a decision waits above it, so the decision stays the one thing to look at. */
   size: 'small' | 'normal' | 'large';
-  onSend: (text: string) => void;
+  /** Resolves true once the message (and its files) reached the agent. */
+  onSend: (text: string, files: readonly AttachFile[]) => Promise<boolean>;
 }) {
   const key = `cockpit-draft:${sessionId}`;
   const [text, setText] = useState(() => readDraft(key));
+  const [files, setFiles] = useState<AttachFile[]>([]);
+  const [fileError, setFileError] = useState<string | null>(null);
+  const [sending, setSending] = useState(false);
+  const [dragging, setDragging] = useState(false);
   const touch = useCoarsePointer();
   const ref = useRef<HTMLTextAreaElement>(null);
+  const picker = useRef<HTMLInputElement>(null);
+  useRevokeOnUnmount(files);
   useEffect(() => {
     const el = ref.current;
     if (!el) return;
@@ -438,11 +463,44 @@ function Editor({
     setText(v);
     writeDraft(key, v);
   };
+  const add = (list: Iterable<File>) => {
+    const r = addFiles(files, list);
+    setFileError(r.error);
+    setFiles(r.files);
+  };
+  const onPaste = (e: ClipboardEvent) => {
+    const pasted = [...e.clipboardData.files];
+    if (pasted.length === 0) return;
+    e.preventDefault();
+    add(pasted);
+  };
+  const onDrop = (e: DragEvent) => {
+    e.preventDefault();
+    setDragging(false);
+    add(e.dataTransfer.files);
+  };
+  const canSend = !sending && (!!text.trim() || files.length > 0);
   const submit = () => {
-    const t = text.trim();
-    if (!t) return;
-    onSend(t);
+    if (!canSend) return;
+    const t = text.trim() || 'See the attached files.';
+    const sent = files;
     change('');
+    if (sent.length === 0) {
+      void onSend(t, sent);
+      return;
+    }
+    // Files stay on screen until they reached the agent, so a failed send can be retried.
+    setSending(true);
+    void onSend(t, sent).then((ok) => {
+      setSending(false);
+      if (!ok) {
+        if (t !== 'See the attached files.') change(t);
+        return;
+      }
+      revokePreviews(sent);
+      setFiles((cur) => cur.filter((f) => !sent.includes(f)));
+      setFileError(null);
+    });
   };
   const onKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
@@ -451,13 +509,35 @@ function Editor({
     }
   };
   return (
-    <div className="rounded-surface border bg-card shadow-rest transition-shadow focus-within:shadow-lift focus-within:ring-1 focus-within:ring-ring/40">
+    <div
+      className={cn(
+        'rounded-surface border bg-card shadow-rest transition-shadow focus-within:shadow-lift focus-within:ring-1 focus-within:ring-ring/40',
+        dragging && 'border-foreground bg-accent/50',
+      )}
+      onDragOver={(e) => {
+        if (!e.dataTransfer.types.includes('Files')) return;
+        e.preventDefault();
+        setDragging(true);
+      }}
+      onDragLeave={() => setDragging(false)}
+      onDrop={onDrop}
+    >
+      {files.length > 0 && (
+        <div className="px-4 pt-3">
+          <AttachmentList
+            files={files}
+            onRemove={(id) => setFiles((cur) => removeFile(cur, id))}
+            disabled={sending}
+          />
+        </div>
+      )}
       <textarea
         ref={ref}
         value={text}
         rows={size === 'small' ? 1 : size === 'large' ? 5 : 3}
         onChange={(e) => change(e.target.value)}
         onKeyDown={onKeyDown}
+        onPaste={onPaste}
         placeholder={placeholder}
         aria-label="Message to the agent"
         className="block max-h-[40dvh] w-full resize-none overflow-y-auto bg-transparent px-4 pt-3.5 pb-1 text-base leading-7 outline-none placeholder:text-muted-foreground"
@@ -468,10 +548,44 @@ function Editor({
             {IS_MAC ? '⌘↵' : 'Ctrl+Enter'} to send
           </span>
         )}
+        {fileError && <span className="text-xs text-destructive">{fileError}</span>}
         <span className="ml-auto" />
+        <Button
+          type="button"
+          size="sm"
+          variant="ghost"
+          className="rounded-xl px-2"
+          aria-label="Attach files"
+          title={`Attach files (paste or drop works too). ${ATTACH_FILES_MAX} max, 5 MB each.`}
+          disabled={sending || files.length >= ATTACH_FILES_MAX}
+          onClick={() => picker.current?.click()}
+        >
+          <Paperclip className="size-4" aria-hidden />
+        </Button>
+        <input
+          ref={picker}
+          type="file"
+          multiple
+          className="hidden"
+          onChange={(e) => {
+            if (e.target.files) add(e.target.files);
+            e.target.value = '';
+          }}
+        />
         <MicButton onText={(t) => change(text ? `${text} ${t}` : t)} />
-        <Button size="sm" className="rounded-xl" disabled={!text.trim()} onClick={submit}>
-          <SendHorizontal className="size-4" aria-hidden /> Send
+        <Button
+          size="sm"
+          className="rounded-xl"
+          disabled={!canSend}
+          aria-busy={sending}
+          onClick={submit}
+        >
+          {sending ? (
+            <Loader2 className="size-4 motion-safe:animate-spin" aria-hidden />
+          ) : (
+            <SendHorizontal className="size-4" aria-hidden />
+          )}{' '}
+          Send
         </Button>
       </div>
     </div>
@@ -504,10 +618,16 @@ export function ConversationView({ s }: { s: SessionView }) {
     setError(null);
     void sendInput(s.id, JSON.stringify(c)).catch(fail);
   };
-  const onSend = (text: string) => {
+  const onSend = async (text: string, files: readonly AttachFile[]): Promise<boolean> => {
     setError(null);
     stick.current = true;
-    void sendPrompt(s.id, text).catch(fail);
+    try {
+      await sendPrompt(s.id, text, files.length > 0 ? await toAttachments(files) : undefined);
+      return true;
+    } catch (e) {
+      fail(e);
+      return false;
+    }
   };
 
   return (

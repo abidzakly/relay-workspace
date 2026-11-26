@@ -1,5 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import type {
+  CardStartAttachment,
   CockpitSession,
   FlutterDevice,
   FlutterRunMode,
@@ -86,8 +87,12 @@ export function useStartSession() {
 
 export const sendInput = (id: string, data: string) =>
   post<{ ok: boolean }>(`/api/cockpit/sessions/${e(id)}/input`, { data });
-export const sendPrompt = (id: string, data: string) =>
-  post<{ checkpoint: number | null }>(`/api/cockpit/sessions/${e(id)}/prompt`, { data });
+/** A chat message; `attachments` are files the agent opens (saved next to the workspace, never committed). */
+export const sendPrompt = (id: string, data: string, attachments?: CardStartAttachment[]) =>
+  post<{ checkpoint: number | null }>(`/api/cockpit/sessions/${e(id)}/prompt`, {
+    data,
+    ...(attachments && attachments.length > 0 ? { attachments } : {}),
+  });
 export const resizeSession = (id: string, cols: number, rows: number) =>
   post<{ ok: boolean }>(`/api/cockpit/sessions/${e(id)}/resize`, { cols, rows });
 
