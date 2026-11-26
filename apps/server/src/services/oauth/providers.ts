@@ -19,6 +19,8 @@ export const GOOGLE_FEATURE_SCOPES: Record<GoogleFeature, string> = {
   calendar: 'https://www.googleapis.com/auth/calendar.events.readonly',
   drive: 'https://www.googleapis.com/auth/drive.file',
 };
+/** Lists the calendars (names and ids only), so they are picked instead of typed. */
+export const CALENDAR_LIST_SCOPE = 'https://www.googleapis.com/auth/calendar.calendarlist.readonly';
 const GOOGLE_BASE_SCOPES = ['openid', 'email'];
 /** Merge requests, comments, approvals, webhooks and git over HTTPS all need `api`. */
 const GITLAB_SCOPES = 'api';

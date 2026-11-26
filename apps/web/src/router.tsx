@@ -46,6 +46,9 @@ const NotionSetup = lazy(() =>
 const GitlabSetup = lazy(() =>
   import('@/views/GitlabSetup').then((m) => ({ default: m.GitlabSetup })),
 );
+const GoogleSetup = lazy(() =>
+  import('@/views/GoogleSetup').then((m) => ({ default: m.GoogleSetup })),
+);
 const ReviewDesk = lazy(() =>
   import('@/views/ReviewDesk').then((m) => ({ default: m.ReviewDesk })),
 );
@@ -81,6 +84,14 @@ function HomeIndex() {
 
 export const router = createBrowserRouter([
   // The full-screen Notion setup (Connect mode): no layout.
+  {
+    path: '/setup/google',
+    element: (
+      <Suspense fallback={null}>
+        <GoogleSetup />
+      </Suspense>
+    ),
+  },
   {
     path: '/setup/gitlab',
     element: (

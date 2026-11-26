@@ -11,6 +11,7 @@ import { useSaveGlobal, useTestDrive } from '@/lib/settingsApi';
 import { useDraft } from './drafts';
 import { OAuthConnect } from './OAuthConnect';
 import { ErrorAlert } from './SectionCard';
+import { DriveKeyUpload } from './googleParts';
 import { Advanced, ExtLink, Steps, Ui } from './SetupGuide';
 
 export function toDriveDraft(s: GlobalConfigPublic) {
@@ -77,8 +78,9 @@ export function DriveSection({
               In Drive, share each repo’s folder with the service account’s email (
               <code>…@….iam.gserviceaccount.com</code>) as <Ui>Editor</Ui>.
             </li>
-            <li>Put the key file’s path below and save.</li>
+            <li>Choose that key file here: Relay stores it at the key path below.</li>
           </Steps>
+          <DriveKeyUpload />
           <Field
             label="Service-account key file"
             htmlFor="dr-key"

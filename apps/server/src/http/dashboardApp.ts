@@ -7,6 +7,7 @@ import { registerReviewsRoutes } from './routes/reviews';
 import { registerCalendarRoutes } from './routes/calendar';
 import { registerOAuthRoutes } from './routes/oauth';
 import { registerGitlabPickerRoutes } from './routes/gitlabPickers';
+import { registerDriveSetupRoutes } from './routes/driveSetup';
 import type { OAuthHub } from '../services/oauth/oauthHub';
 import type { CalendarService } from '../services/calendar/calendarService';
 import Fastify, { type FastifyBaseLogger, type FastifyInstance } from 'fastify';
@@ -191,6 +192,11 @@ export async function buildDashboardApp(opts: DashboardAppOptions): Promise<Fast
     http: opts.http ?? new HttpClient({ log: opts.log }),
     rootDir: opts.rootDir ?? findRepoRoot(),
     ...(opts.now ? { now: opts.now } : {}),
+  });
+  registerDriveSetupRoutes(app, {
+    store: opts.store,
+    http: opts.http ?? new HttpClient({ log: opts.log }),
+    rootDir: opts.rootDir ?? findRepoRoot(),
   });
   if (opts.cache) {
     registerStateRoutes(app, {

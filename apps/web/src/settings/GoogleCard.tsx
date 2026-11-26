@@ -1,5 +1,6 @@
 import { useQueryClient } from '@tanstack/react-query';
 import { Link } from 'react-router';
+import { Button } from '@/components/ui/button';
 import type { GlobalConfigPublic } from '@relay/shared';
 import { useSaveGlobal } from '@/lib/settingsApi';
 import { CalendarSection } from './CalendarCard';
@@ -42,6 +43,14 @@ export function GoogleCard({ settings }: { settings: GlobalConfigPublic }) {
       }
     >
       <ErrorAlert error={save.error} />
+      <div className="flex flex-wrap items-center gap-3 text-sm">
+        <Button asChild size="sm" variant="outline">
+          <Link to="/setup/google">Set up Google</Link>
+        </Button>
+        <span className="text-muted-foreground">
+          A guided walk: sign-in, which calendars to read, and Drive for builds.
+        </span>
+      </div>
       <Part
         title="Calendar"
         lede="Reads your meetings (read-only) for the floating alert and the Meetings page."

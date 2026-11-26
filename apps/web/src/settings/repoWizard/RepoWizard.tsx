@@ -42,6 +42,7 @@ import {
   repoToDraft,
   type RepoDraft,
 } from '../repoDraft';
+import { DriveFolderList } from '../googleParts';
 import { ErrorAlert } from '../SectionCard';
 import { Advanced, ExtLink, Steps, Ui } from '../SetupGuide';
 import {
@@ -1056,6 +1057,7 @@ function DriveChoice({
       </div>
       {mode === 'existing' ? (
         <div className="grid gap-2">
+          {serviceAccount ? <DriveFolderList value={folderId} onPick={onInput} /> : null}
           <div className="flex flex-wrap gap-2">
             <Input
               aria-label="Drive folder link"

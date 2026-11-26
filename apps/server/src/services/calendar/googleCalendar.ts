@@ -1,6 +1,7 @@
 import { createHash, randomBytes } from 'node:crypto';
 import { safeExternalUrl, type Meeting } from '@relay/shared';
 import type { HttpClient } from '../httpClient';
+import { CALENDAR_LIST_SCOPE } from '../oauth/providers';
 
 /**
  * Google OAuth 2.0 (installed-app flow: PKCE + loopback redirect) and Calendar v3 `events.list`, as plain REST through
@@ -18,6 +19,7 @@ export const CALENDAR_SCOPES = [
   'openid',
   'email',
   'https://www.googleapis.com/auth/calendar.events.readonly',
+  CALENDAR_LIST_SCOPE,
 ].join(' ');
 
 /** A Google error worded for a person. Never carries a token or a response body. */
