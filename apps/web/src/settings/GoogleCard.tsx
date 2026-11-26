@@ -27,6 +27,7 @@ export function GoogleCard({ settings }: { settings: GlobalConfigPublic }) {
   return (
     <SectionCard
       id="google"
+      brand="google"
       title="Google: Calendar & Drive"
       description={
         advanced

@@ -40,6 +40,7 @@ export function GitlabCard({ settings }: { settings: GlobalConfigPublic }) {
   return (
     <SectionCard
       id="gitlab"
+      brand="gitlab"
       title="GitLab & public URL"
       description={
         advanced

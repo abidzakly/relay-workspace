@@ -37,6 +37,7 @@ export function AiCard({ settings }: { settings: GlobalConfigPublic }) {
   return (
     <SectionCard
       id="ai"
+      brand="ai"
       title="AI engines"
       description="Claude answers first; Cursor takes over when Claude fails (for example when its usage limit is spent)."
       action={
