@@ -15,6 +15,20 @@ export const settings: Messages<typeof en> = {
     'Pastikan server berjalan (<0>pnpm dev</0>) dan <1>MASTER_KEY</1> sudah diisi di <2>.env</2>.',
   noMatch: 'Tidak ada pengaturan yang cocok dengan “{{query}}”.',
   notSet: 'Belum diisi: {{items}}',
+  backupCard: {
+    secretsHint:
+      'Mati: token, secret webhook dan secret Release script tidak ikut, dan kamu isi lagi setelah restore. Login (Connect) tidak pernah keluar dari mesin ini. Nyala: semuanya disegel di file, dan hanya passphrase ini yang bisa membukanya. Passphrase tidak bisa dipulihkan.',
+    alsoIncluded:
+      'File ini juga menyimpan nilai Release script, folder di Workspaces dan preferensi browser ini (bahasa, tema, suara).',
+    none: 'tidak ada',
+    workspacesAdded: 'Workspace ditambahkan: {{names}}',
+    workspacesSkippedTitle: 'Folder workspace tidak ada di sini',
+    workspacesSkipped:
+      '{{list}} tidak ditambahkan. Daftarkan di Workspaces setelah foldernya ada di mesin ini.',
+    uiPrefs: 'Preferensi browser (bahasa, tema…): dipulihkan di browser ini',
+    imported:
+      'Config berhasil diimpor. Beberapa hal tidak pernah ikut di file (login, secret tanpa passphrase, key Drive, folder workspace yang tidak ada di sini, notifikasi browser ini); daftar di bawah menunjukkan apa yang masih kurang di sini.',
+  },
   groups: {
     general: 'Umum',
     connections: 'Koneksi',

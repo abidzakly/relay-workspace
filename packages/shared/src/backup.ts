@@ -55,6 +55,12 @@ export const ConfigExportFileSchema = z.strictObject({
   calendar: z.record(z.string(), z.unknown()).optional(),
   /** Meetings marked Key / Normal / Quiet by hand. Absent in older files. */
   calendarMarks: z.record(z.string(), z.unknown()).optional(),
+  /** Settings > Release scripts, the typed (non-secret) values. Absent in older files. */
+  scripts: z.record(z.string(), z.unknown()).optional(),
+  /** Folders registered in Settings > Workspaces (no worktrees). Absent in older files. */
+  workspaces: z.array(z.record(z.string(), z.unknown())).max(200).optional(),
+  /** Browser preferences (language, theme…), added by the browser that exported. Absent in older files. */
+  ui: z.record(z.string(), z.unknown()).optional(),
 });
 export type ConfigExportFile = z.infer<typeof ConfigExportFileSchema>;
 
@@ -97,6 +103,12 @@ export const ConfigImportPreviewSchema = z.object({
   secretCount: z.int().nonnegative(),
   /** Fields the file lacks (made by an older version): they take their defaults. */
   defaulted: z.array(z.string()).default([]),
+  /** Workspaces in the file whose folder is a git checkout here, and not registered yet. */
+  workspacesAdded: z.array(z.string()).default([]),
+  /** Workspaces in the file whose folder is missing here (or not usable): left out. */
+  workspacesSkipped: z.array(z.object({ name: z.string(), absPath: z.string() })).default([]),
+  /** The file carries browser preferences; this browser applies them after the import. */
+  uiPrefs: z.boolean().default(false),
 });
 export type ConfigImportPreview = z.infer<typeof ConfigImportPreviewSchema>;
 

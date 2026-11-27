@@ -13,6 +13,21 @@ export const settings = {
     'Make sure the server is running (<0>pnpm dev</0>) and <1>MASTER_KEY</1> is set in <2>.env</2>.',
   noMatch: 'No setting matches “{{query}}”.',
   notSet: 'Not set: {{items}}',
+  /** Settings > Data > Backup & export. */
+  backupCard: {
+    secretsHint:
+      'Off: tokens, webhook secrets and Release script secrets are left out, and you enter them again after a restore. Sign-ins (Connect) never leave this machine. On: they are sealed in the file, and only this passphrase opens them. It cannot be recovered.',
+    alsoIncluded:
+      'The file also holds the Release script values, the folders under Workspaces and this browser’s preferences (language, theme, sound).',
+    none: 'none',
+    workspacesAdded: 'Workspaces added: {{names}}',
+    workspacesSkippedTitle: 'Workspace folders not found here',
+    workspacesSkipped:
+      '{{list}} will not be added. Register them under Workspaces once the folder is on this machine.',
+    uiPrefs: 'Browser preferences (language, theme…): restored in this browser',
+    imported:
+      'Config imported. Some things never travel in the file (sign-ins, secrets without a passphrase, the Drive key, workspace folders missing here, this browser’s notifications); the list below shows what is still missing here.',
+  },
   /** Keyed by `SETTINGS_GROUPS[].id`. */
   groups: {
     general: 'General',
