@@ -1,3 +1,4 @@
+import { useTranslation } from 'react-i18next';
 import { Bell, BellOff, Send } from 'lucide-react';
 import {
   NOTIFICATION_EVENTS,
@@ -79,6 +80,7 @@ const BROWSER_BADGE: Record<string, string> = {
 
 /** Per-event toggles + ignoreOwn (saved at once) and the push status / test for this browser. */
 export function NotificationsCard({ settings }: { settings: GlobalConfigPublic }) {
+  const { t } = useTranslation();
   const save = useSaveGlobal();
   const push = useBrowserPush();
   const test = useSendTestPush();
@@ -104,7 +106,7 @@ export function NotificationsCard({ settings }: { settings: GlobalConfigPublic }
     <SectionCard
       id="notifications"
       title="Notifications"
-      description="Web Push to this browser, even with the tab closed (the browser process must be running)."
+      description={t('settings.descriptions.notifications')}
       action={
         <Badge variant={push.kind === 'on' ? 'default' : 'secondary'}>
           {push.kind === 'on' ? <Bell className="size-3" /> : <BellOff className="size-3" />}

@@ -1,3 +1,4 @@
+import { useTranslation } from 'react-i18next';
 import { ArrowRight, Bot, ChevronDown } from 'lucide-react';
 import { useState, type ReactNode } from 'react';
 import {
@@ -43,6 +44,7 @@ function choiceSummary(c: AiModelChoice): string | null {
  * a coding session uses, then the features that go their own way.
  */
 export function AiCard({ settings }: { settings: GlobalConfigPublic }) {
+  const { t } = useTranslation();
   const save = useSaveGlobal();
   const open = useAiCheckStore((s) => s.setOpen);
   const patchModels = (p: Partial<GlobalConfigPublic['agentModels']>) =>
@@ -65,7 +67,7 @@ export function AiCard({ settings }: { settings: GlobalConfigPublic }) {
       id="ai"
       brand="ai"
       title="AI engines"
-      description="Claude answers first; the API and then Cursor take over when it fails (for example when its usage limit is spent)."
+      description={t('settings.descriptions.ai')}
       action={
         <Button variant="outline" onClick={() => open(true)}>
           <Bot aria-hidden="true" />

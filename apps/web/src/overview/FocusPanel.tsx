@@ -1,4 +1,5 @@
 import { Link } from 'react-router';
+import { useTranslation } from 'react-i18next';
 import { FocusList, useFocusCount } from '@/kpi/TodaysFocus';
 import { Panel } from './Panel';
 
@@ -7,10 +8,13 @@ export const FOCUS_LIMIT = 5;
 /** "3 of 7", or just the count when nothing is cut. */
 export function FocusCount() {
   const count = useFocusCount(FOCUS_LIMIT);
+  const { t } = useTranslation();
   if (!count) return null;
   return (
     <span className="text-xs text-muted-foreground tabular-nums">
-      {count.total > count.shown ? `${count.shown} of ${count.total}` : count.total}
+      {count.total > count.shown
+        ? t('overview.focusOf', { shown: count.shown, total: count.total })
+        : count.total}
     </span>
   );
 }

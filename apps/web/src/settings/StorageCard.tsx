@@ -1,3 +1,4 @@
+import { useTranslation } from 'react-i18next';
 import { HardDrive, Loader2, ScanSearch, Trash2 } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import type {
@@ -42,6 +43,7 @@ const sum = (list: readonly CleanupCandidate[]) => list.reduce((n, c) => n + (c.
  * on the server before it deletes it.
  */
 export function StorageCard({ settings }: { settings: GlobalConfigPublic }) {
+  const { t } = useTranslation();
   const save = useSaveGlobal();
   const last = useCleanupLast();
   const scan = useCleanupScan();
@@ -98,7 +100,7 @@ export function StorageCard({ settings }: { settings: GlobalConfigPublic }) {
     <SectionCard
       id="storage"
       title="Storage"
-      description="Cleans what the dashboard and the Cockpit leave on disk, by fixed rules (no AI). Your own files and working copies are never touched."
+      description={t('settings.descriptions.storage')}
       action={
         <Button variant="outline" onClick={runScan} disabled={scan.isPending || apply.isPending}>
           {scan.isPending ? (

@@ -11,6 +11,9 @@ import {
 } from 'lucide-react';
 import { useEffect, useId, useMemo, useRef, useState, type KeyboardEvent } from 'react';
 import { useNavigate } from 'react-router';
+import { useTranslation } from 'react-i18next';
+import { LANGS } from '@/i18n';
+import { navLabel } from '@/i18n/labels';
 import { BULK_READY_MAX_CARDS } from '@relay/shared';
 import { useAiCheckStore } from '@/components/AiCheck';
 import { bulkReadyCandidates, buildBoard, columnFor, NO_FILTER } from '@/board/model';
@@ -37,33 +40,18 @@ import { useUiStore, type AsciiMode, type CoreMode, type CoreScope, type Theme }
 const RESULT_LIMIT = 50;
 const LIVE_MR_BOOST = 3;
 
-const KIND: Record<PaletteKind, { tag: string; icon: LucideIcon }> = {
-  view: { tag: 'View', icon: Compass },
-  action: { tag: 'Action', icon: Zap },
-  card: { tag: 'Card', icon: FileText },
-  mr: { tag: 'MR', icon: GitPullRequest },
-  write: { tag: 'Asks first', icon: GitMerge },
+const KIND_ICON: Record<PaletteKind, LucideIcon> = {
+  view: Compass,
+  action: Zap,
+  card: FileText,
+  mr: GitPullRequest,
+  write: GitMerge,
 };
 
-const THEMES: { value: Theme; label: string }[] = [
-  { value: 'system', label: 'System' },
-  { value: 'light', label: 'Light' },
-  { value: 'dark', label: 'Dark' },
-];
-const MODES: { value: CoreMode; label: string }[] = [
-  { value: 'S', label: 'Ship' },
-  { value: 'A', label: 'Rings' },
-  { value: 'B', label: 'Blocks' },
-];
-const SCOPES: { value: CoreScope; label: string }[] = [
-  { value: 'cycle', label: 'Current release cycle' },
-  { value: 'all', label: 'All-time' },
-];
-const ASCII: { value: AsciiMode; label: string }[] = [
-  { value: 'off', label: 'Off' },
-  { value: 'full', label: 'Full scene' },
-  { value: 'text', label: 'Text ring' },
-];
+const THEMES: Theme[] = ['system', 'light', 'dark'];
+const MODES: CoreMode[] = ['S', 'A', 'B'];
+const SCOPES: CoreScope[] = ['cycle', 'all'];
+const ASCII: AsciiMode[] = ['off', 'full', 'text'];
 
 function item(
   fields: Pick<PaletteItem, 'id' | 'kind' | 'label' | 'run'> & Partial<PaletteItem>,
@@ -103,6 +91,7 @@ function PaletteBody({ confirmWrite, bulkReady }: WriteOpeners) {
   const [active, setActive] = useState(0);
   const enterDown = useRef(false);
   const listId = useId();
+  const { t } = useTranslation();
 
   const dryRun = settingsQ.data?.dryRun;
   const readyStatus = settingsQ.data?.notion.readyStatus;
@@ -120,8 +109,8 @@ function PaletteBody({ confirmWrite, bulkReady }: WriteOpeners) {
       item({
         id: `view:${nav.to}`,
         kind: 'view',
-        label: nav.label,
-        keywords: 'go open view',
+        label: navLabel(t, nav.to, nav.label),
+        keywords: `go open view ${nav.label}`,
         shortcut: `g ${nav.chord}`,
         run: () => void navigate(nav.to),
       }),
@@ -131,8 +120,8 @@ function PaletteBody({ confirmWrite, bulkReady }: WriteOpeners) {
       item({
         id: 'refresh',
         kind: 'action',
-        label: 'Refresh data',
-        hint: 'Sync GitLab and Notion now',
+        label: t('palette.refresh'),
+        hint: t('palette.refreshHint'),
         keywords: 'reload update sync',
         shortcut: 'r',
         run: refreshData,
@@ -142,8 +131,8 @@ function PaletteBody({ confirmWrite, bulkReady }: WriteOpeners) {
       item({
         id: 'ai-check',
         kind: 'action',
-        label: 'Check AI connection',
-        hint: 'Test Claude and Cursor now',
+        label: t('palette.aiCheck'),
+        hint: t('palette.aiCheckHint'),
         keywords: 'ai claude cursor engine fallback limit status test',
         run: () => useAiCheckStore.getState().setOpen(true),
       }),
@@ -154,8 +143,12 @@ function PaletteBody({ confirmWrite, bulkReady }: WriteOpeners) {
         item({
           id: 'dry-run',
           kind: 'action',
-          label: next ? 'Turn dry-run on' : 'Turn dry-run off (writes become real)',
-          hint: saving ? 'Saving…' : `Dry-run is ${dryRun ? 'on' : 'off'}. Saved and audited`,
+          label: next ? t('palette.dryRunOn') : t('palette.dryRunOff'),
+          hint: saving
+            ? t('palette.saving')
+            : dryRun
+              ? t('palette.dryRunIsOn')
+              : t('palette.dryRunIsOff'),
           keywords: 'dryrun safety simulate toggle settings',
           keepOpen: true,
           run: () => {
@@ -178,56 +171,68 @@ function PaletteBody({ confirmWrite, bulkReady }: WriteOpeners) {
         item({
           id: 'bulk-ready',
           kind: 'write',
-          label: `Bulk Ready to Test (${ids.length})…`,
-          hint: 'All Complete or merged cards',
+          label: t('palette.bulkReady', { count: ids.length }),
+          hint: t('palette.bulkReadyHint'),
           keywords: 'notion status move',
           run: () => bulkReady(ids),
         }),
       );
     }
 
-    for (const { value, label } of THEMES) {
+    for (const value of THEMES) {
       out.push(
         item({
           id: `theme:${value}`,
           kind: 'action',
-          label: `Theme: ${label}`,
+          label: t('palette.themeItem', { label: t(`palette.theme.${value}` as const) }),
           keywords: 'appearance color mode',
           current: ui.theme === value,
           run: () => ui.setTheme(value),
         }),
       );
     }
-    for (const { value, label } of MODES) {
+    for (const lang of LANGS) {
+      out.push(
+        item({
+          id: `lang:${lang.id}`,
+          kind: 'action',
+          label: t('palette.langItem', { label: lang.label }),
+          keywords: 'language bahasa english indonesia',
+          current: ui.lang === lang.id,
+          run: () => ui.setLang(lang.id),
+        }),
+      );
+    }
+    for (const value of MODES) {
       out.push(
         item({
           id: `mode:${value}`,
           kind: 'action',
-          label: `3D mode: ${label}`,
+          label: t('palette.modeItem', { label: t(`palette.mode.${value}` as const) }),
           keywords: `core mode ${value}`,
           current: ui.mode3d === value,
           run: () => ui.setMode3d(value),
         }),
       );
     }
-    for (const { value, label } of SCOPES) {
+    for (const value of SCOPES) {
       out.push(
         item({
           id: `scope:${value}`,
           kind: 'action',
-          label: `3D scope: ${label}`,
+          label: t('palette.scopeItem', { label: t(`palette.scope.${value}` as const) }),
           keywords: 'core progress',
           current: ui.scope === value,
           run: () => ui.setScope(value),
         }),
       );
     }
-    for (const { value, label } of ASCII) {
+    for (const value of ASCII) {
       out.push(
         item({
           id: `ascii:${value}`,
           kind: 'action',
-          label: `ASCII: ${label}`,
+          label: t('palette.asciiItem', { label: t(`palette.ascii.${value}` as const) }),
           keywords: 'core 3d rendering text',
           current: ui.ascii === value,
           run: () => ui.setAscii(value),
@@ -238,7 +243,7 @@ function PaletteBody({ confirmWrite, bulkReady }: WriteOpeners) {
       item({
         id: 'help',
         kind: 'action',
-        label: 'Keyboard shortcuts',
+        label: t('palette.shortcuts'),
         keywords: 'help keys',
         shortcut: '?',
         run: () => setHelpOpen(true),
@@ -250,16 +255,16 @@ function PaletteBody({ confirmWrite, bulkReady }: WriteOpeners) {
         item({
           id: 'branches:run',
           kind: 'action',
-          label: 'Run a branch…',
-          hint: 'Any branch, local or remote, on a test device',
+          label: t('palette.runBranch'),
+          hint: t('palette.runBranchHint'),
           keywords: 'test device phone run checkout branch quick',
           run: () => void navigate('/branches'),
         }),
         item({
           id: 'branches:mr',
           kind: 'write',
-          label: 'Create MR for a branch…',
-          hint: 'Pick a branch on the Branches page',
+          label: t('palette.createMr'),
+          hint: t('palette.createMrHint'),
           keywords: 'merge request new create mr branch',
           run: () => void navigate('/branches?filter=nomr'),
         }),
@@ -271,8 +276,8 @@ function PaletteBody({ confirmWrite, bulkReady }: WriteOpeners) {
           item({
             id: `branches:${repo.id}`,
             kind: 'view',
-            label: `Branches of ${repo.name}`,
-            hint: 'Run, review or create an MR',
+            label: t('palette.branchesOf', { name: repo.name }),
+            hint: t('palette.branchesOfHint'),
             keywords: `branch run checkout ${repo.id}`,
             searchOnly: true,
             run: () => void navigate(`/branches/${encodeURIComponent(repo.id)}`),
@@ -283,8 +288,8 @@ function PaletteBody({ confirmWrite, bulkReady }: WriteOpeners) {
         item({
           id: `release:${repo.id}`,
           kind: 'write',
-          label: `Release ${repo.name}…`,
-          hint: 'Opens the release form',
+          label: t('palette.releaseRepo', { name: repo.name }),
+          hint: t('palette.releaseRepoHint'),
           keywords: `update version train ${repo.id}`,
           searchOnly: true,
           run: () => void navigate(`/release?repo=${encodeURIComponent(repo.id)}`),
@@ -295,7 +300,7 @@ function PaletteBody({ confirmWrite, bulkReady }: WriteOpeners) {
     const repoName = new Map((reposQ.data ?? []).map((r) => [r.id, r.name] as const));
     for (const card of scopedState?.cards ?? []) {
       if (card.archived) continue;
-      const details = [card.status ?? 'no status', card.type].filter(Boolean).join(' · ');
+      const details = [card.status ?? t('palette.noStatus'), card.type].filter(Boolean).join(' · ');
       const keywords = [card.branchName, ...card.assignees].filter(Boolean).join(' ');
       out.push(
         item({
@@ -313,7 +318,7 @@ function PaletteBody({ confirmWrite, bulkReady }: WriteOpeners) {
           item({
             id: `ready:${card.id}`,
             kind: 'write',
-            label: `Move to ${readyStatus}…: ${card.title}`,
+            label: t('palette.moveTo', { status: readyStatus, title: card.title }),
             hint: details,
             keywords,
             searchOnly: true,
@@ -333,7 +338,7 @@ function PaletteBody({ confirmWrite, bulkReady }: WriteOpeners) {
           id: `mr:${mr.repoId}:${mr.iid}`,
           kind: 'mr',
           label: `!${mr.iid} ${mr.title}`,
-          hint: `${repo} · ${mr.state}${mr.draft ? ' · draft' : ''}`,
+          hint: `${repo} · ${mr.state}${mr.draft ? ` · ${t('palette.draft')}` : ''}`,
           keywords,
           searchOnly: true,
           boost: live ? LIVE_MR_BOOST : 0,
@@ -345,8 +350,8 @@ function PaletteBody({ confirmWrite, bulkReady }: WriteOpeners) {
           item({
             id: `review:${mr.repoId}:${mr.iid}`,
             kind: 'mr',
-            label: `Review !${mr.iid}: ${mr.title}`,
-            hint: `${repo}. Opens the Code Reviewer`,
+            label: t('palette.reviewMr', { iid: mr.iid, title: mr.title }),
+            hint: t('palette.reviewMrHint', { repo }),
             keywords,
             searchOnly: true,
             run: () => {
@@ -367,8 +372,8 @@ function PaletteBody({ confirmWrite, bulkReady }: WriteOpeners) {
           item({
             id: `merge:${mr.repoId}:${mr.iid}`,
             kind: 'write',
-            label: `Merge !${mr.iid}…: ${mr.title}`,
-            hint: `${repo}. Opens the merge dialog`,
+            label: t('palette.mergeMr', { iid: mr.iid, title: mr.title }),
+            hint: t('palette.mergeMrHint', { repo }),
             keywords,
             searchOnly: true,
             run: () => void navigate(path, { state: MR_OPEN_MERGE_STATE }),
@@ -392,6 +397,7 @@ function PaletteBody({ confirmWrite, bulkReady }: WriteOpeners) {
     setHelpOpen,
     confirmWrite,
     bulkReady,
+    t,
   ]);
 
   const results = useMemo(() => rankItems(items, query, RESULT_LIMIT), [items, query]);
@@ -435,15 +441,13 @@ function PaletteBody({ confirmWrite, bulkReady }: WriteOpeners) {
 
   return (
     <DialogContent className="top-[12vh] flex max-h-[76vh] w-[calc(100%-2rem)] max-w-xl translate-y-0 flex-col gap-0 overflow-hidden p-0">
-      <DialogTitle className="sr-only">Command palette</DialogTitle>
-      <DialogDescription className="sr-only">
-        Search views, cards and merge requests, or run an action. Arrow keys choose, Enter runs.
-      </DialogDescription>
+      <DialogTitle className="sr-only">{t('palette.title')}</DialogTitle>
+      <DialogDescription className="sr-only">{t('palette.description')}</DialogDescription>
       <div className="flex items-center gap-2 border-b px-3 pr-10">
         <Search className="size-4 shrink-0 text-muted-foreground" />
         <input
           role="combobox"
-          aria-label="Search commands"
+          aria-label={t('palette.searchLabel')}
           aria-expanded
           aria-controls={listId}
           aria-activedescendant={activeId}
@@ -451,7 +455,7 @@ function PaletteBody({ confirmWrite, bulkReady }: WriteOpeners) {
           autoComplete="off"
           spellCheck={false}
           value={query}
-          placeholder="Search cards, MRs, views and actions…"
+          placeholder={t('palette.placeholder')}
           className="h-11 w-full min-w-0 bg-transparent text-sm outline-none placeholder:text-muted-foreground"
           onChange={(e) => {
             setQuery(e.target.value);
@@ -461,9 +465,15 @@ function PaletteBody({ confirmWrite, bulkReady }: WriteOpeners) {
           onKeyUp={onKeyUp}
         />
       </div>
-      <ul id={listId} role="listbox" aria-label="Results" className="min-h-0 overflow-y-auto p-1">
+      <ul
+        id={listId}
+        role="listbox"
+        aria-label={t('palette.results')}
+        className="min-h-0 overflow-y-auto p-1"
+      >
         {results.map((row, index) => {
-          const { icon: Icon, tag } = KIND[row.kind];
+          const Icon = KIND_ICON[row.kind];
+          const tag = t(`palette.kind.${row.kind}` as const);
           return (
             <li
               key={row.id}
@@ -485,30 +495,34 @@ function PaletteBody({ confirmWrite, bulkReady }: WriteOpeners) {
                   <span className="block truncate text-xs text-muted-foreground">{row.hint}</span>
                 )}
               </span>
-              {row.current && <Check className="size-4 shrink-0" aria-label="current" />}
+              {row.current && (
+                <Check className="size-4 shrink-0" aria-label={t('palette.current')} />
+              )}
               {row.shortcut && <Kbd>{row.shortcut}</Kbd>}
               <span className="shrink-0 text-xs text-muted-foreground">{tag}</span>
             </li>
           );
         })}
         {results.length === 0 && (
-          <li className="px-2 py-6 text-center text-sm text-muted-foreground">No matches.</li>
+          <li className="px-2 py-6 text-center text-sm text-muted-foreground">
+            {t('palette.noMatches')}
+          </li>
         )}
       </ul>
       <div className="grid gap-2 border-t px-3 py-2 text-xs text-muted-foreground empty:hidden">
         {save.isError && (
           <Alert variant="destructive">
-            <AlertTitle>Dry-run was not changed</AlertTitle>
+            <AlertTitle>{t('palette.dryRunNotChanged')}</AlertTitle>
             <AlertDescription>{describeError(save.error)}</AlertDescription>
           </Alert>
         )}
         {stateQ.isPending && (
           <p className="flex items-center gap-2">
-            <Loader2 className="size-3 motion-safe:animate-spin" /> Loading cards and MRs…
+            <Loader2 className="size-3 motion-safe:animate-spin" /> {t('palette.loading')}
           </p>
         )}
-        {listError && <p>Cards and MRs are unavailable: {describeError(listError)}</p>}
-        {!query.trim() && stateQ.isSuccess && <p>Type to search cards and MRs.</p>}
+        {listError && <p>{t('palette.unavailable', { error: describeError(listError) })}</p>}
+        {!query.trim() && stateQ.isSuccess && <p>{t('palette.typeToSearch')}</p>}
       </div>
     </DialogContent>
   );
@@ -517,13 +531,14 @@ function PaletteBody({ confirmWrite, bulkReady }: WriteOpeners) {
 /** Opens the palette without a keyboard. */
 export function CommandButton({ compact = false }: { compact?: boolean }) {
   const setOpen = usePaletteStore((s) => s.setPaletteOpen);
+  const { t } = useTranslation();
   if (compact) {
     return (
       <Button
         variant="ghost"
         size="icon"
-        aria-label="Open command palette"
-        title={`Search and commands (${PALETTE_KEY_LABEL})`}
+        aria-label={t('palette.open')}
+        title={t('palette.openTitle', { key: PALETTE_KEY_LABEL })}
         onClick={() => setOpen(true)}
       >
         <Search />
@@ -538,7 +553,7 @@ export function CommandButton({ compact = false }: { compact?: boolean }) {
       onClick={() => setOpen(true)}
     >
       <span className="flex items-center gap-2">
-        <Search /> Search
+        <Search /> {t('palette.search')}
       </span>
       <Kbd>{PALETTE_KEY_LABEL}</Kbd>
     </Button>

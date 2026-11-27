@@ -1,5 +1,6 @@
 import type { ReactNode } from 'react';
 import { Link } from 'react-router';
+import { Trans, useTranslation } from 'react-i18next';
 import { ArrowRight } from 'lucide-react';
 import { NoIdentityNotice } from '@/components/MonthFilter';
 import { CoreStage, useBacklogPromotion } from '@/core3d/CoreStage';
@@ -57,11 +58,12 @@ function CoverLine({
  */
 export function Cover({ data }: { data: OverviewData }) {
   const kpiPresets = useKpiPresets();
-  const ed = edition();
+  const { t, i18n } = useTranslation();
+  const ed = edition(new Date(), i18n.language);
   const promotion = useBacklogPromotion();
   const model = data.release.model;
   const s = model ? releaseSummary(model) : null;
-  const h = headline(model, data.actions.center, data.offDuty);
+  const h = headline(model, data.actions.center, data.offDuty, t, i18n.language);
   const ready = useReadyForMr().data?.items ?? [];
   const focus = useFocusCount(FOCUS_LIMIT);
   const game = useGamification().data;
@@ -86,12 +88,15 @@ export function Cover({ data }: { data: OverviewData }) {
       <div className="cv-layer">
         <header className="cv-mast">
           <span className="cv-meta">
-            No. {ed.no}
+            {t('overview.editionNo', { no: ed.no })}
             <br />
-            printed {ed.printed}
+            {t('overview.printed', { printed: ed.printed })}
           </span>
           <h1 className="cv-title">
-            The <span className="type-accent font-normal normal-case">Relay</span>
+            <Trans
+              i18nKey="overview.masthead"
+              components={[<span key="relay" className="type-accent font-normal normal-case" />]}
+            />
           </h1>
           <span className="cv-meta text-right">
             {ed.dateLine.split(', ')[0]}
@@ -105,7 +110,7 @@ export function Cover({ data }: { data: OverviewData }) {
         </div>
 
         {/* left: the cover lines */}
-        <nav className="cv-left" aria-label="Cover">
+        <nav className="cv-left" aria-label={t('overview.cover.nav')}>
           <CoverLine kicker={h.kicker} to="/release">
             {h.before} <span className="type-accent font-normal">{h.accent}</span>
             {h.after}
@@ -116,38 +121,51 @@ export function Cover({ data }: { data: OverviewData }) {
             </p>
           )}
           {ready.length > 0 && ready[0] && (
-            <CoverLine kicker="Classifieds" to={mrCreatePath(ready[0].repoId, ready[0].branch)}>
-              {ready.length} branch{ready.length === 1 ? '' : 'es'} want
-              {ready.length === 1 ? 's' : ''} an <span className="type-accent font-normal">MR</span>
+            <CoverLine
+              kicker={t('overview.classifieds')}
+              to={mrCreatePath(ready[0].repoId, ready[0].branch)}
+            >
+              <Trans
+                i18nKey="overview.cover.branches"
+                count={ready.length}
+                components={[<span key="mr" className="type-accent font-normal" />]}
+              />
             </CoverLine>
           )}
           {level && (
-            <CoverLine kicker="Standings">
-              Level {level.level},{' '}
-              <span className="type-accent font-normal">{level.xpToNext} XP</span> to go
+            <CoverLine kicker={t('overview.standings')}>
+              <Trans
+                i18nKey="overview.cover.level"
+                values={{ level: level.level, xp: level.xpToNext }}
+                components={[<span key="xp" className="type-accent font-normal" />]}
+              />
             </CoverLine>
           )}
           {model && model.dust.length > 0 && (
             <p className="text-xs text-muted-foreground">
-              {model.dust.length} backlog grain{model.dust.length === 1 ? '' : 's'} drift round the
-              crystal: pick one to move it to Next Up.
+              {t('overview.cover.dust', { count: model.dust.length })}
             </p>
           )}
           <NoIdentityNotice />
         </nav>
 
         {/* right: inside this issue */}
-        <aside className="cv-right" aria-label="Needs attention">
+        <aside className="cv-right" aria-label={t('overview.needsAttention')}>
           <p className="flex items-baseline justify-between border-b-[3px] border-foreground pb-1">
-            <span className="type-micro">Inside · needs you</span>
+            <span className="type-micro">{t('overview.cover.inside')}</span>
             <span className="font-mono text-xs tabular-nums">
               {String(center.total).padStart(2, '0')}
             </span>
           </p>
-          {data.actions.loading && <p className="text-sm text-muted-foreground">Loading…</p>}
+          {data.actions.loading && (
+            <p className="text-sm text-muted-foreground">{t('overview.loading')}</p>
+          )}
           {!data.actions.loading && center.total === 0 && (
             <p className="text-2xl leading-tight font-semibold tracking-[-0.03em]">
-              Nothing <span className="type-accent font-normal">needs</span> you.
+              <Trans
+                i18nKey="overview.cover.nothing"
+                components={[<span key="needs" className="type-accent font-normal" />]}
+              />
             </p>
           )}
           <ol className="grid">
@@ -182,7 +200,10 @@ export function Cover({ data }: { data: OverviewData }) {
                     {String(focus.total).padStart(2, '0')}
                   </span>
                   <span className="flex-1 text-lg leading-tight font-semibold tracking-[-0.02em]">
-                    On today&apos;s <span className="type-accent font-normal">agenda</span>
+                    <Trans
+                      i18nKey="overview.cover.agenda"
+                      components={[<span key="agenda" className="type-accent font-normal" />]}
+                    />
                   </span>
                   <ArrowRight
                     aria-hidden
@@ -197,11 +218,11 @@ export function Cover({ data }: { data: OverviewData }) {
         {/* the barcode strip: the KPIs */}
         <footer className="cv-foot">
           {skyOn && report && (
-            <Link to="/kpi" className="cv-sky" aria-label="KPI picture, open the KPI page">
+            <Link to="/kpi" className="cv-sky" aria-label={t('overview.kpiPicture')}>
               <KpiSky compact report={report} presets={kpiPresets} onPick={() => undefined} />
             </Link>
           )}
-          <Link to="/kpi" className="cv-kpis" aria-label="KPI, open the full table">
+          <Link to="/kpi" className="cv-kpis" aria-label={t('overview.cover.kpiTable')}>
             {report ? (
               kpiItems(report.scorecard, kpiPresets).map((item) => (
                 <span key={item.key} className="grid min-w-0 gap-0.5">
@@ -218,13 +239,15 @@ export function Cover({ data }: { data: OverviewData }) {
                 </span>
               ))
             ) : (
-              <span className="text-sm text-muted-foreground">KPI loading…</span>
+              <span className="text-sm text-muted-foreground">
+                {t('overview.cover.kpiLoading')}
+              </span>
             )}
           </Link>
           <div className="flex items-end gap-3">
             <Barcode seed={ed.no} />
             <span className="font-mono text-2xs leading-tight text-muted-foreground uppercase">
-              Issue {ed.no}
+              {t('overview.issue', { no: ed.no })}
               <br />
               {ed.short}
             </span>

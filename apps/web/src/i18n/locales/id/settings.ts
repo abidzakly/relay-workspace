@@ -1,0 +1,101 @@
+import type { Messages } from '../../types';
+import type { settings as en } from '../en/settings';
+
+export const settings: Messages<typeof en> = {
+  title: 'Pengaturan',
+  searchLabel: 'Cari pengaturan',
+  searchPlaceholder: 'Cari pengaturan  /',
+  clearSearch: 'Hapus pencarian',
+  tabsLabel: 'Grup pengaturan',
+  expandAll: 'Buka semua',
+  collapseAll: 'Lipat semua',
+  loading: 'Memuat pengaturan…',
+  loadError: 'Pengaturan tidak bisa dimuat',
+  loadErrorHint:
+    'Pastikan server berjalan (<0>pnpm dev</0>) dan <1>MASTER_KEY</1> sudah diisi di <2>.env</2>.',
+  noMatch: 'Tidak ada pengaturan yang cocok dengan “{{query}}”.',
+  notSet: 'Belum diisi: {{items}}',
+  groups: {
+    general: 'Umum',
+    connections: 'Koneksi',
+    repositories: 'Repo',
+    planning: 'Perencanaan',
+    data: 'Data',
+    browser: 'Browser ini',
+  },
+  sections: {
+    features: 'Fitur',
+    safety: 'Keamanan & mesin',
+    notifications: 'Notifikasi',
+    gitlab: 'GitLab & URL publik',
+    reviewer: 'Akses reviewer',
+    notion: 'Notion',
+    google: 'Google: Kalender & Drive',
+    ai: 'Mesin AI',
+    'ai-prompts': 'Prompt AI',
+    repos: 'Repositori',
+    workspaces: 'Workspace',
+    scripts: 'Skrip rilis',
+    webhooks: 'Kesehatan webhook',
+    planning: 'Perencanaan',
+    storage: 'Penyimpanan',
+    backup: 'Cadangan & ekspor',
+    appearance: 'Tampilan & inti 3D',
+    visuals: 'Visual halaman',
+  },
+  descriptions: {
+    features:
+      'Matikan yang tidak kamu pakai. {{count}} dari {{total}} nyala. Tidak ada yang dihapus saat fitur dimatikan.',
+    safety:
+      'Dry-run mencatat apa yang AKAN dilakukan sebuah penulisan tanpa memanggil GitLab, Notion, atau Drive.',
+    notifications:
+      'Web Push ke browser ini, bahkan saat tab ditutup (proses browser harus tetap berjalan).',
+    ai: 'Claude menjawab lebih dulu; API lalu Cursor mengambil alih saat Claude gagal (misalnya saat batas pemakaiannya habis).',
+    repos:
+      'Satu entri per proyek GitLab. Hanya repo yang dinyalakan “Di papan” yang menaruh kartunya di Papan. “Uji koneksi” mengecek GitLab, mengirim satu pengiriman uji sungguhan ke webhook repo, dan mengecek folder Drive-nya, memakai konfigurasi yang tersimpan.',
+    workspaces:
+      'Folder repo di komputer ini untuk Cockpit (agent, terminal, editor, jalankan app). Harus berada di dalam HOST_AGENT_WORKSPACE_ROOTS (default ~/Work).',
+    scripts:
+      'Pengaturan untuk vu, mrc, vcheck, nts, dan reauthor. Hanya ditanyakan saat rilis membutuhkannya; disimpan juga untuk dijalankan dari terminal.',
+    webhooks:
+      'Pengiriman terakhir per repo, dari database lokal. Polling tetap menangkap apa pun yang terlewat oleh webhook.',
+    planning: 'Kapasitas sprint untuk Sprint Atelier.',
+    storage:
+      'Membersihkan sisa dashboard dan Cockpit di disk, dengan aturan tetap (tanpa AI). File dan working copy milikmu tidak pernah disentuh.',
+    backup: 'Hanya dilayani oleh dashboard privat ini, tidak pernah lewat alamat webhook publik.',
+    appearance: 'Hanya disimpan di browser ini.',
+    visuals:
+      'Gambar dan gestur di tiap halaman. Semua tombol dan daftar tetap ada. Hanya disimpan di browser ini.',
+  },
+  appearance: {
+    language: 'Bahasa',
+    landing: 'Halaman awal',
+    landingScene: 'Living Workspace — dunia 3D (default)',
+    landingClassic: 'Klasik — sidebar + Ringkasan',
+    coreView: 'Tampilan inti Ringkasan',
+    coreS: 'Kristal: pecahan berkumpul seiring kartu berjalan',
+    coreA: 'Cincin: pecahan di satu orbit',
+    coreB: 'Pecah: inti terbuka jadi kepingannya',
+    theme: 'Tema',
+    themeSystem: 'Sistem',
+    themeLight: 'Terang',
+    themeDark: 'Gelap',
+    scope: 'Cakupan progres',
+    scopeCycle: 'Siklus rilis saat ini',
+    scopeAll: 'Sepanjang waktu',
+    ascii: 'Render ASCII',
+    asciiOff: 'Mati',
+    asciiFull: 'Seluruh adegan',
+    asciiTone: 'Nada ASCII',
+    toneColor: 'Berwarna',
+    toneDull: 'Redup',
+    fps: 'Batas frame rate 3D',
+    fpsNone: 'Tanpa batas',
+    fps60: '60 FPS',
+    fps30: '30 FPS',
+    sound: 'Suara',
+    soundHint: 'Suara marimba dan kayu saat dapat hadiah. Mati sampai kamu nyalakan.',
+    haptics: 'Getaran',
+    hapticsHint: 'Getaran kecil saat dapat hadiah, di perangkat yang mendukung.',
+  },
+};

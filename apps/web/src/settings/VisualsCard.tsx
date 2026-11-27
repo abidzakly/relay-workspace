@@ -1,3 +1,4 @@
+import { useTranslation } from 'react-i18next';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
 import { useUiStore, type VisualPage } from '@/store/ui';
@@ -38,16 +39,13 @@ const PAGES: { page: VisualPage; name: string; what: string; other: boolean }[] 
 
 /** Page visuals: one switch per page, and one for every page except Release and Builds. Browser-local. */
 export function VisualsCard() {
+  const { t } = useTranslation();
   const visuals = useUiStore((s) => s.visuals);
   const otherVisuals = useUiStore((s) => s.otherVisuals);
   const setVisual = useUiStore((s) => s.setVisual);
   const setOtherVisuals = useUiStore((s) => s.setOtherVisuals);
   return (
-    <SectionCard
-      id="visuals"
-      title="Page visuals"
-      description="The pictures and gestures on each page. Every button and list stays either way. Stored in this browser only."
-    >
+    <SectionCard id="visuals" title="Page visuals" description={t('settings.descriptions.visuals')}>
       <div className="flex items-center justify-between gap-3 rule-row pt-4 first:border-0 first:pt-0">
         <div className="grid gap-0.5">
           <Label htmlFor="vis-other">Visuals on other pages</Label>

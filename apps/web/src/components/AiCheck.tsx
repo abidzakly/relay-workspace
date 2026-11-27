@@ -1,5 +1,6 @@
 import { Bot, Loader2, RefreshCw } from 'lucide-react';
 import { create } from 'zustand';
+import { useTranslation } from 'react-i18next';
 import type { AiEngineStatus, ConnectionTestResult } from '@relay/shared';
 import { ConnectionChecklist } from '@/components/ConnectionChecklist';
 import { Button } from '@/components/ui/button';
@@ -71,9 +72,19 @@ export function AiStatusButton({
 }) {
   const status = useAiStatus();
   const setOpen = useAiCheckStore((s) => s.setOpen);
-  const view = status.data
-    ? ENGINE[status.data.engine]
-    : { label: 'AI…', tone: 'text-muted-foreground', hint: 'Checking the AI engine.' };
+  const { t } = useTranslation();
+  const engine = status.data?.engine;
+  const view = engine
+    ? {
+        tone: ENGINE[engine].tone,
+        label: t(`shell.ai.${engine}` as const),
+        hint: t(`shell.ai.${engine}Hint` as const),
+      }
+    : {
+        label: t('shell.ai.checking'),
+        tone: 'text-muted-foreground',
+        hint: t('shell.ai.checkingHint'),
+      };
   return (
     <Button
       variant="ghost"
@@ -83,8 +94,8 @@ export function AiStatusButton({
         view.tone,
         className,
       )}
-      title={`${view.hint} Click to test the connection.`}
-      aria-label={`AI engine: ${view.label}. Check connection`}
+      title={t('shell.ai.title', { hint: view.hint })}
+      aria-label={t('shell.ai.label', { label: view.label })}
       onClick={() => setOpen(true)}
     >
       <Bot aria-hidden="true" className={compact ? undefined : 'size-3.5'} />

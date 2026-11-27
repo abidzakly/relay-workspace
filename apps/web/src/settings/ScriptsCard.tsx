@@ -1,3 +1,4 @@
+import { useTranslation } from 'react-i18next';
 import { useState } from 'react';
 import { SCRIPT_FIELDS, SCRIPT_TOOLS, type ScriptNeed } from '@relay/shared';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
@@ -34,6 +35,7 @@ function setDraftKey(d: Record<string, string | null>, k: string, v: string | nu
  * one env file the scripts read, so a terminal run and a dashboard run use the same values.
  */
 export function ScriptsCard() {
+  const { t } = useTranslation();
   const q = useScripts();
   const save = useSaveScripts();
   const [draft, setDraft] = useState<Record<string, string | null>>({});
@@ -48,7 +50,7 @@ export function ScriptsCard() {
     <SectionCard
       id="scripts"
       title="Release scripts"
-      description="Settings for vu, mrc, vcheck, nts and reauthor. Asked only when a release needs them; kept for terminal runs too."
+      description={t('settings.descriptions.scripts')}
     >
       {s && (
         <div className="grid gap-1 text-xs text-muted-foreground">

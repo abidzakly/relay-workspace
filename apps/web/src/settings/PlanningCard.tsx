@@ -1,3 +1,4 @@
+import { useTranslation } from 'react-i18next';
 import { useEffect, useState } from 'react';
 import type { GlobalConfigPublic } from '@relay/shared';
 import { Label } from '@/components/ui/label';
@@ -26,6 +27,7 @@ const KPI_PRESETS: readonly { id: KpiPreset; label: string; hint: string }[] = [
 
 /** Sprint capacity for the Sprint Atelier, and the KPI presets. */
 export function PlanningCard({ settings }: { settings: GlobalConfigPublic }) {
+  const { t } = useTranslation();
   const saved = settings.sprint.capacityHours;
   const save = useSaveGlobal();
   const [justSaved, setJustSaved] = useState(false);
@@ -43,11 +45,7 @@ export function PlanningCard({ settings }: { settings: GlobalConfigPublic }) {
   };
   const errs = errorMap(save.error instanceof ApiError ? save.error.issues : []);
   return (
-    <SectionCard
-      id="planning"
-      title="Planning"
-      description="Sprint capacity for the Sprint Atelier."
-    >
+    <SectionCard id="planning" title="Planning" description={t('settings.descriptions.planning')}>
       <Field
         label="Sprint capacity"
         htmlFor="pl-cap"

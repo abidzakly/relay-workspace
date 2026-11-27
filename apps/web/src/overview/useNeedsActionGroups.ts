@@ -1,3 +1,4 @@
+import { useTranslation } from 'react-i18next';
 import { mineSets, monthKey, verdictIsMine } from '@/lib/cardScope';
 import { useKpiFocus } from '@/lib/kpiApi';
 import { useMrInbox } from '@/lib/mrApi';
@@ -27,6 +28,7 @@ export function useNeedsActionGroups() {
   const focus = useKpiFocus(FOCUS_LIMIT);
   const settings = useSettings();
   const repos = useRepos();
+  const { t } = useTranslation();
 
   const verdicts = state.data?.health.verdicts ?? [];
   // Someone else's card or MR is not mine to fix.
@@ -47,23 +49,33 @@ export function useNeedsActionGroups() {
   const names = new Map((repos.data ?? []).map((r) => [r.id, r.name] as const));
 
   const groups: ActionGroup[] = [
-    { id: 'mismatches', title: 'Mismatches', to: '/sync', rows: mismatchRows(myVerdicts) },
+    {
+      id: 'mismatches',
+      title: t('overview.groups.mismatches'),
+      to: '/sync',
+      rows: mismatchRows(myVerdicts),
+    },
     {
       id: 'mrs',
-      title: 'MRs waiting on you',
+      title: t('overview.groups.mrs'),
       to: '/mrs',
       rows: waitingMrRows(items),
     },
     {
       id: 'pipelines',
-      title: 'Failed pipelines',
+      title: t('overview.groups.pipelines'),
       to: '/mrs',
       rows: failedPipelineRows(items, settings.data?.gitlab.myUsername),
     },
-    { id: 'sla', title: 'SLA risks', to: '/kpi', rows: slaRows(focus.data?.rows ?? []) },
+    {
+      id: 'sla',
+      title: t('overview.groups.sla'),
+      to: '/kpi',
+      rows: slaRows(focus.data?.rows ?? []),
+    },
     {
       id: 'release',
-      title: 'Awaiting release',
+      title: t('overview.groups.release'),
       to: '/release',
       rows: releaseRows(
         state.data?.pendingReleases.items ?? [],

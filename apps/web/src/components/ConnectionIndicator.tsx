@@ -1,3 +1,4 @@
+import { useTranslation } from 'react-i18next';
 import { Loader2, Wifi, WifiOff } from 'lucide-react';
 import { useSseStore } from '@/lib/sseState';
 import { cn } from '@/lib/utils';
@@ -13,30 +14,36 @@ export function ConnectionIndicator({ className }: { className?: string }) {
   const state = useSseStore((s) => s.state);
   const attempt = useSseStore((s) => s.attempt);
   const lastEventAt = useSseStore((s) => s.lastEventAt);
+  const { t } = useTranslation();
 
   const offline = state === 'reconnecting' && attempt >= OFFLINE_AFTER_ATTEMPTS;
   const view =
     state === 'live'
       ? {
-          label: 'Live',
+          label: t('shell.connection.live'),
           Icon: Wifi,
           tone: 'text-success',
-          hint: 'Updates are pushed as they happen.',
+          hint: t('shell.connection.liveHint'),
         }
       : offline
         ? {
-            label: 'Offline',
+            label: t('shell.connection.offline'),
             Icon: WifiOff,
             tone: 'text-destructive',
-            hint: 'The dashboard server is not reachable. Retrying; data refreshes every 30 s meanwhile.',
+            hint: t('shell.connection.offlineHint'),
           }
         : {
-            label: state === 'connecting' ? 'Connecting…' : 'Reconnecting…',
+            label:
+              state === 'connecting'
+                ? t('shell.connection.connecting')
+                : t('shell.connection.reconnecting'),
             Icon: Loader2,
             tone: 'text-warning',
-            hint: 'Live updates are paused; data refreshes every 30 s meanwhile.',
+            hint: t('shell.connection.pausedHint'),
           };
-  const last = lastEventAt ? ` Last update ${new Date(lastEventAt).toLocaleTimeString()}.` : '';
+  const last = lastEventAt
+    ? t('shell.connection.lastUpdate', { time: new Date(lastEventAt).toLocaleTimeString() })
+    : '';
 
   return (
     <div

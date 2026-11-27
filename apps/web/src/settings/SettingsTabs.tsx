@@ -1,5 +1,7 @@
 import { useLayoutEffect, useRef, useState, type KeyboardEvent } from 'react';
 import { motion } from 'motion/react';
+import { useTranslation } from 'react-i18next';
+import { settingsGroupLabel } from '@/i18n/labels';
 import { SPRING } from '@/lib/motion/presets';
 import { cn } from '@/lib/utils';
 import { SETTINGS_GROUPS, type SettingsGroupId } from './sections';
@@ -25,6 +27,7 @@ export function SettingsTabs({
   attention: Partial<Record<SettingsGroupId, string>>;
 }) {
   const refs = useRef(new Map<SettingsGroupId, HTMLButtonElement>());
+  const { t } = useTranslation();
   const [line, setLine] = useState<{ x: number; width: number } | null>(null);
   // Glide the row only after the first paint: a deep link lands on its tab at once, while the page itself scrolls.
   const settled = useRef(false);
@@ -47,12 +50,12 @@ export function SettingsTabs({
       }
     };
     measure();
-    const t = setTimeout(() => (settled.current = true), 500);
+    const timer = setTimeout(() => (settled.current = true), 500);
     const ro = new ResizeObserver(measure);
     ro.observe(btn);
     if (row) ro.observe(row);
     return () => {
-      clearTimeout(t);
+      clearTimeout(timer);
       ro.disconnect();
     };
   }, [active]);
@@ -80,7 +83,7 @@ export function SettingsTabs({
   return (
     <div
       role="tablist"
-      aria-label="Settings groups"
+      aria-label={t('settings.tabsLabel')}
       onKeyDown={onKeyDown}
       className={cn(
         'relative flex min-w-0 gap-1 overflow-x-auto transition-opacity duration-300',
@@ -110,7 +113,7 @@ export function SettingsTabs({
               selected ? 'text-foreground' : 'text-muted-foreground hover:text-foreground',
             )}
           >
-            {g.label}
+            {settingsGroupLabel(t, g.id, g.label)}
             {note && (
               <>
                 <span aria-hidden className="size-1.5 rounded-full bg-warning" />

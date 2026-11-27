@@ -1,3 +1,4 @@
+import { useTranslation } from 'react-i18next';
 import { NavLink, Outlet } from 'react-router';
 import { AiCheckDialog, AiStatusButton } from '@/components/AiCheck';
 import { CommandButton, CommandPalette } from '@/components/CommandPalette';
@@ -13,6 +14,8 @@ import { PaperGrid } from '@/components/PaperGrid';
 import { RewardLayer } from '@/components/RewardLayer';
 import { SoundToggle } from '@/components/SoundToggle';
 import { ThemeSync } from '@/components/ThemeSync';
+import { LangSync } from '@/i18n/LangSync';
+import { navLabel } from '@/i18n/labels';
 import { FloatingThemeSwitch } from '@/components/FloatingThemeSwitch';
 import { ThemeToggle } from '@/components/ThemeToggle';
 import { XpChip } from '@/components/XpChip';
@@ -30,10 +33,12 @@ export function Layout() {
   useServiceWorkerNavigation();
   const homeMode = useUiStore((s) => s.homeMode);
   const nav = useEnabledNav();
+  const { t } = useTranslation();
   if (homeMode === 'scene') {
     return (
       <>
         <ThemeSync />
+        <LangSync />
         <CommandPalette />
         <AiCheckDialog />
         <OnboardingDialog />
@@ -51,6 +56,7 @@ export function Layout() {
     <div className="relative flex min-h-screen flex-col md:flex-row">
       <PaperGrid />
       <ThemeSync />
+      <LangSync />
       <CommandPalette />
       <AiCheckDialog />
       <OnboardingDialog />
@@ -77,7 +83,7 @@ export function Layout() {
           <CommandButton />
         </div>
         <nav
-          aria-label="Main"
+          aria-label={t('nav.main')}
           className="flex gap-0 overflow-x-auto px-2 pb-2 md:flex-1 md:flex-col md:overflow-y-auto md:px-0 md:pb-4"
         >
           {items.map(({ to, label, end }, i) => (
@@ -97,7 +103,7 @@ export function Layout() {
                   <span className="hidden w-6 tabular-nums md:inline">
                     ({String(i + 1).padStart(2, '0')})
                   </span>
-                  <span className="flex-1">{label}</span>
+                  <span className="flex-1">{navLabel(t, to, label)}</span>
                   <span
                     aria-hidden
                     className={cn(
@@ -128,7 +134,7 @@ export function Layout() {
             <NotificationBell />
             <SoundToggle />
           </div>
-          <span className="type-micro text-muted-foreground">127.0.0.1 only</span>
+          <span className="type-micro text-muted-foreground">{t('shell.localOnly')}</span>
         </div>
       </aside>
       <PageSwap enabled>

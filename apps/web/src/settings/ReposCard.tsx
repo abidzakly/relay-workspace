@@ -1,3 +1,4 @@
+import { useTranslation } from 'react-i18next';
 import { useState } from 'react';
 import { Pencil, Plus, Trash2, Zap } from 'lucide-react';
 import type { GlobalConfigPublic, RepoConfigPublic } from '@relay/shared';
@@ -115,6 +116,7 @@ function RepoRow({
 }
 
 export function ReposCard({ settings }: { settings: GlobalConfigPublic }) {
+  const { t } = useTranslation();
   const repos = useRepos();
   const del = useDeleteRepo();
   const [dialog, setDialog] = useState<{ open: boolean; repo: RepoConfigPublic | undefined }>({
@@ -127,7 +129,7 @@ export function ReposCard({ settings }: { settings: GlobalConfigPublic }) {
     <SectionCard
       id="repos"
       title="Repositories"
-      description="One entry per GitLab project. Only repos switched “On the board” put their cards on the Board. “Test connection” checks GitLab, sends a real test delivery to the repo's webhook, and checks its Drive folder, using the saved config."
+      description={t('settings.descriptions.repos')}
       action={
         <Button onClick={() => setDialog({ open: true, repo: undefined })}>
           <Plus />
