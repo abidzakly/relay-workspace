@@ -19,6 +19,7 @@ import {
   type DragEvent,
   type KeyboardEvent,
 } from 'react';
+import { useTranslation } from 'react-i18next';
 import { Link } from 'react-router';
 import { agentModelLabel, type ConversationCommand, type ConversationMode } from '@relay/shared';
 import { Markdown } from '@/components/Markdown';
@@ -55,11 +56,13 @@ import {
 } from './ChatExport';
 import { BenchBackLink } from './BenchBackLink';
 import { MrBackLink } from './MrBackLink';
+import { PhaseTrack, phaseOf, phaseProgress } from './PhaseTrack';
 import { useCoarsePointer } from '@/workspace/useMedia';
 
 /**
- * An agent session (Claude or Cursor) as a calm document: one reading column, the agent's words as prose, tool activity folded into a quiet
- * line, and at most one decision at a time. The editor at the bottom behaves like an editor: Enter is a new line.
+ * An agent session (Claude or Cursor) as a calm document on the Cockpit's focus sheet: a progress track on top, one
+ * reading column, the agent's words as coloured prose, tool activity folded into a quiet line, earlier turns folded
+ * away, and at most one decision at a time. The editor at the bottom behaves like an editor: Enter is a new line.
  */
 
 const MODE_LABEL: Record<ConversationMode, string> = {
@@ -82,6 +85,8 @@ function modelOptions(current: string | null) {
 
 /** Long prompts (a card's rules, a whole review thread) start folded. */
 const USER_FOLD_LINES = 6;
+/** Turns shown open; older ones fold behind one "Show earlier turns" button. */
+const OPEN_TURNS = 2;
 
 function statusOf(s: SessionView, mode: ConversationMode, deciding: boolean) {
   if (s.state === 'exited' && s.restorable)
@@ -97,12 +102,14 @@ function statusOf(s: SessionView, mode: ConversationMode, deciding: boolean) {
   return { label: 'Your turn', dot: 'bg-moss' };
 }
 
-function UserBlock({ text }: { text: string }) {
+function UserBlock({ text, turn }: { text: string; turn: number }) {
+  const { t } = useTranslation();
   const lines = text.split('\n');
   const long = lines.length > USER_FOLD_LINES;
   const [open, setOpen] = useState(false);
   return (
-    <div className="rounded-xl bg-muted/60 px-4 py-3 text-base leading-7">
+    <div className="rounded-surface border border-emphasis/15 bg-emphasis/[0.06] px-4 py-3 text-base leading-7">
+      <p className="type-micro text-emphasis">{t('cockpit.turn.you', { n: turn })}</p>
       <p className="break-words whitespace-pre-wrap">
         {long && !open ? `${lines.slice(0, USER_FOLD_LINES).join('\n')}…` : text}
       </p>
@@ -149,7 +156,7 @@ function ToolsLine({ tools }: { tools: DocTool[] }) {
   const failed = tools.filter((t) => t.state === 'error').length;
   return (
     <details className="group text-sm text-muted-foreground">
-      <summary className="flex cursor-pointer list-none items-center gap-1.5 rounded-md py-1 hover:text-foreground [&::-webkit-details-marker]:hidden">
+      <summary className="inline-flex max-w-full cursor-pointer list-none items-center gap-1.5 rounded-full border border-dashed border-border px-3 py-1 hover:border-foreground/30 hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none [&::-webkit-details-marker]:hidden">
         {running ? (
           <Loader2 className="size-3.5 shrink-0 motion-safe:animate-spin" aria-hidden />
         ) : (
@@ -161,11 +168,14 @@ function ToolsLine({ tools }: { tools: DocTool[] }) {
         <span>{toolsLine(tools)}</span>
         {failed > 0 && <span className="text-destructive">· {failed} failed</span>}
       </summary>
-      <ul className="mt-1 grid gap-1 border-l pl-4">
+      <ul className="mt-2 grid gap-1 rounded-surface bg-muted/60 px-4 py-2.5">
         {tools.map((t) => (
           <li key={t.id} className="min-w-0">
             <span
-              className={cn('[overflow-wrap:anywhere]', t.state === 'error' && 'text-destructive')}
+              className={cn(
+                'font-mono text-xs [overflow-wrap:anywhere]',
+                t.state === 'error' && 'text-destructive',
+              )}
             >
               {t.summary}
             </span>
@@ -317,7 +327,7 @@ function AskCard({ ask, onCommand }: { ask: DocAsk; onCommand: (c: ConversationC
   if (ask.outcome) {
     return (
       <div className="grid gap-2">
-        {ask.plan && <Markdown source={ask.plan} className="text-base leading-7" />}
+        {ask.plan && <Markdown source={ask.plan} className="ck-prose" />}
         <p className="text-sm text-muted-foreground">
           {ask.ask === 'permission' ? `${ask.summary}: ` : ''}
           {ASK_DONE_LABEL[ask.outcome]}
@@ -334,11 +344,11 @@ function AskCard({ ask, onCommand }: { ask: DocAsk; onCommand: (c: ConversationC
   }) => onCommand({ type: 'answer', id: ask.id, ...a });
   return (
     <section
-      className="grid gap-3 rounded-surface border border-primary/40 bg-primary/5 p-4"
+      className="grid gap-3 rounded-surface border border-emphasis/35 bg-emphasis/[0.07] p-4 shadow-rest"
       aria-label={ask.summary}
     >
-      <p className="text-sm font-medium">{ask.summary}</p>
-      {ask.plan && <Markdown source={ask.plan} className="text-base leading-7" />}
+      <p className="text-sm font-semibold text-emphasis">{ask.summary}</p>
+      {ask.plan && <Markdown source={ask.plan} className="ck-prose" />}
       {ask.detail && (
         <pre className="overflow-x-auto rounded-lg bg-muted p-2.5 font-mono text-xs whitespace-pre-wrap [overflow-wrap:anywhere]">
           {ask.detail}
@@ -365,18 +375,21 @@ function AskCard({ ask, onCommand }: { ask: DocAsk; onCommand: (c: ConversationC
 
 function Block({
   item,
+  turn,
   onCommand,
 }: {
   item: DocItem;
+  /** This item's turn number (1 for the first message). */
+  turn: number;
   onCommand: (c: ConversationCommand) => void;
 }) {
   switch (item.kind) {
     case 'user': {
       const mode = exportModeOf(item.text);
-      return mode ? <ExportRequestChip mode={mode} /> : <UserBlock text={item.text} />;
+      return mode ? <ExportRequestChip mode={mode} /> : <UserBlock text={item.text} turn={turn} />;
     }
     case 'text':
-      return <Markdown source={item.text} className="text-base leading-7" />;
+      return <Markdown source={item.text} className="ck-prose" />;
     case 'tools':
       return <ToolsLine tools={item.tools} />;
     case 'ask':
@@ -537,7 +550,7 @@ function Editor({
   return (
     <div
       className={cn(
-        'rounded-surface border bg-card shadow-rest transition-shadow focus-within:shadow-lift focus-within:ring-1 focus-within:ring-ring/40',
+        'rounded-surface border bg-popover shadow-rest transition-shadow focus-within:shadow-lift focus-within:ring-1 focus-within:ring-ring/40',
         dragging && 'border-foreground bg-accent/50',
       )}
       onDragOver={(e) => {
@@ -560,7 +573,7 @@ function Editor({
       <textarea
         ref={ref}
         value={text}
-        rows={size === 'small' ? 1 : size === 'large' ? 5 : 3}
+        rows={size === 'small' ? 1 : size === 'large' ? 5 : 2}
         onChange={(e) => change(e.target.value)}
         onKeyDown={onKeyDown}
         onPaste={onPaste}
@@ -619,8 +632,10 @@ function Editor({
 }
 
 export function ConversationView({ s, returnTo }: { s: SessionView; returnTo?: string | null }) {
+  const { t } = useTranslation();
   const doc = useConversation(s.id);
   const kill = useKillSession();
+  const [showEarlier, setShowEarlier] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const scroller = useRef<HTMLDivElement>(null);
   const stick = useRef(true);
@@ -632,6 +647,17 @@ export function ConversationView({ s, returnTo }: { s: SessionView; returnTo?: s
   const working = !exited && s.state === 'running';
   const turn = s.turn;
   const empty = doc.items.length === 0;
+  const phase = phaseOf(s, doc.items, doc.mode);
+  // Turn number of each item, and where the open turns start: earlier ones fold behind one button.
+  const turns: number[] = [];
+  const starts: number[] = [];
+  doc.items.forEach((it, i) => {
+    if (it.kind === 'user') starts.push(i);
+    turns.push(starts.length);
+  });
+  const foldBefore =
+    showEarlier || starts.length <= OPEN_TURNS ? 0 : starts[starts.length - OPEN_TURNS]!;
+  const foldedTurns = foldBefore > 0 ? turns[foldBefore]! - 1 : 0;
 
   // Follow the newest text, unless the reader scrolled up to read something.
   useEffect(() => {
@@ -658,91 +684,109 @@ export function ConversationView({ s, returnTo }: { s: SessionView; returnTo?: s
 
   return (
     <div className="flex min-h-0 min-w-0 flex-1 flex-col gap-3">
-      <div className="flex min-w-0 flex-wrap items-center gap-2 text-xs text-muted-foreground">
-        <span className={cn('size-2 shrink-0 rounded-full', status.dot)} aria-hidden />
-        <span className="text-sm text-foreground" role="status">
-          {status.label}
+      <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-2 text-xs text-muted-foreground">
+        <PhaseTrack now={phase.now} done={phase.done} planned={phase.planned} />
+        <span className="flex min-w-0 items-center gap-1.5">
+          <span className={cn('size-2 shrink-0 rounded-full', status.dot)} aria-hidden />
+          <span
+            className={cn(
+              'truncate text-sm',
+              phase.needsYou ? 'font-semibold text-emphasis' : 'text-foreground',
+            )}
+            role="status"
+          >
+            {status.label}
+          </span>
         </span>
         <MrBackLink s={s} />
         <BenchBackLink to={returnTo} />
-        <span className="ml-auto" />
-        {!exited && !paused && (
-          <>
-            <Select
-              aria-label="How the agent works"
-              className="h-8 w-auto text-xs"
-              value={doc.mode}
-              onChange={(e) =>
-                onCommand({ type: 'mode', mode: e.target.value as ConversationMode })
-              }
-            >
-              {Object.entries(MODE_LABEL).map(([value, label]) => (
-                <option key={value} value={value}>
-                  {label}
-                </option>
-              ))}
-            </Select>
-            {s.kind === 'cursor' ? (
-              // Cursor keeps the model it started on (one headless run per turn, no live switch).
-              <span className="text-xs text-muted-foreground" title="Cursor model">
-                {doc.model ?? 'Cursor'}
-              </span>
-            ) : (
+        {/* The controls: one scrolling row on a phone, pushed right on a desk. */}
+        <div className="flex shrink-0 items-center gap-2 overflow-x-auto [scrollbar-width:none] max-sm:w-full sm:ml-auto">
+          {!exited && !paused && (
+            <>
               <Select
-                aria-label="Model"
+                aria-label="How the agent works"
                 className="h-8 w-auto text-xs"
-                value={doc.model ?? 'default'}
+                value={doc.mode}
                 onChange={(e) =>
-                  onCommand({
-                    type: 'model',
-                    model: e.target.value as Extract<
-                      ConversationCommand,
-                      { type: 'model' }
-                    >['model'],
-                  })
+                  onCommand({ type: 'mode', mode: e.target.value as ConversationMode })
                 }
               >
-                {modelOptions(doc.model).map((m) => (
-                  <option key={m.value} value={m.value}>
-                    {m.label}
+                {Object.entries(MODE_LABEL).map(([value, label]) => (
+                  <option key={value} value={value}>
+                    {label}
                   </option>
                 ))}
               </Select>
-            )}
-          </>
-        )}
-        {working && (
+              {s.kind === 'cursor' ? (
+                // Cursor keeps the model it started on (one headless run per turn, no live switch).
+                <span className="text-xs text-muted-foreground" title="Cursor model">
+                  {doc.model ?? 'Cursor'}
+                </span>
+              ) : (
+                <Select
+                  aria-label="Model"
+                  className="h-8 w-auto text-xs"
+                  value={doc.model ?? 'default'}
+                  onChange={(e) =>
+                    onCommand({
+                      type: 'model',
+                      model: e.target.value as Extract<
+                        ConversationCommand,
+                        { type: 'model' }
+                      >['model'],
+                    })
+                  }
+                >
+                  {modelOptions(doc.model).map((m) => (
+                    <option key={m.value} value={m.value}>
+                      {m.label}
+                    </option>
+                  ))}
+                </Select>
+              )}
+            </>
+          )}
+          {working && (
+            <Button
+              size="sm"
+              variant="outline"
+              className="h-8"
+              onClick={() => onCommand({ type: 'interrupt' })}
+            >
+              <CircleStop className="size-3.5" aria-hidden /> Stop
+            </Button>
+          )}
+          <ExportMenu
+            disabled={exited || empty || working || deciding}
+            onExport={(mode) => void onSend(exportPrompt(mode), [])}
+          />
           <Button
             size="sm"
-            variant="outline"
-            className="h-8"
-            onClick={() => onCommand({ type: 'interrupt' })}
+            variant="ghost"
+            className="h-8 px-2"
+            disabled={kill.isPending}
+            aria-busy={kill.isPending}
+            onClick={() => {
+              setError(null);
+              kill.mutate(s.id, { onError: fail });
+            }}
           >
-            <CircleStop className="size-3.5" aria-hidden /> Stop
+            {kill.isPending ? (
+              <Loader2 className="size-3.5 motion-safe:animate-spin" aria-hidden />
+            ) : (
+              <X className="size-3.5" aria-hidden />
+            )}{' '}
+            {kill.isPending ? (exited ? 'Closing…' : 'Ending…') : exited ? 'Close' : 'End session'}
           </Button>
-        )}
-        <ExportMenu
-          disabled={exited || empty || working || deciding}
-          onExport={(mode) => void onSend(exportPrompt(mode), [])}
-        />
-        <Button
-          size="sm"
-          variant="ghost"
-          className="h-8 px-2"
-          disabled={kill.isPending}
-          aria-busy={kill.isPending}
-          onClick={() => {
-            setError(null);
-            kill.mutate(s.id, { onError: fail });
-          }}
-        >
-          {kill.isPending ? (
-            <Loader2 className="size-3.5 motion-safe:animate-spin" aria-hidden />
-          ) : (
-            <X className="size-3.5" aria-hidden />
-          )}{' '}
-          {kill.isPending ? (exited ? 'Closing…' : 'Ending…') : exited ? 'Close' : 'End session'}
-        </Button>
+        </div>
+      </div>
+      <div
+        className="ck-meter -mx-3 md:-mx-6"
+        data-live={working ? '' : undefined}
+        role="presentation"
+      >
+        <span style={{ transform: `scaleX(${phaseProgress(phase.now, phase.done)})` }} />
       </div>
 
       {/* A new session: the question and the editor sit together in the middle, like an empty page. */}
@@ -765,12 +809,24 @@ export function ConversationView({ s, returnTo }: { s: SessionView; returnTo?: s
                 </p>
               </div>
             )}
-            {doc.items.map((item, i) => (
-              <Fragment key={i}>
-                <Block item={item} onCommand={onCommand} />
-                {exportCardAfter(doc.items, i, working, s.title)}
-              </Fragment>
-            ))}
+            {foldedTurns > 0 && (
+              <button
+                type="button"
+                onClick={() => setShowEarlier(true)}
+                className="mx-auto flex items-center gap-1.5 rounded-full border px-3.5 py-1.5 text-xs text-muted-foreground hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+              >
+                <ChevronRight className="size-3.5 -rotate-90" aria-hidden />
+                {t('cockpit.turn.earlier', { count: foldedTurns })}
+              </button>
+            )}
+            {doc.items.map((item, i) =>
+              i < foldBefore ? null : (
+                <Fragment key={i}>
+                  <Block item={item} turn={turns[i]!} onCommand={onCommand} />
+                  {exportCardAfter(doc.items, i, working, s.title)}
+                </Fragment>
+              ),
+            )}
             {working && doc.items.length > 0 && doc.items.at(-1)?.kind !== 'tools' && (
               <p className="flex items-center gap-1.5 text-sm text-muted-foreground">
                 <Loader2 className="size-3.5 motion-safe:animate-spin" aria-hidden />

@@ -1,16 +1,7 @@
-import {
-  Bot,
-  FolderTree,
-  GitFork,
-  Layers,
-  Loader2,
-  Play,
-  Plus,
-  Rocket,
-  SquareTerminal,
-  X,
-} from 'lucide-react';
+import { Bot, FolderTree, Layers, Loader2, Play, Plus, SquareTerminal } from 'lucide-react';
+import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
 import { useEffect, useMemo, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { Link, useSearchParams } from 'react-router';
 import { isConversationKind, type SessionKind, type Workspace } from '@relay/shared';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
@@ -29,32 +20,30 @@ import { RunView } from '@/cockpit/RunView';
 import { AttentionPanel } from '@/cockpit/AttentionPanel';
 import { StartQueue } from '@/cockpit/StartQueue';
 import { Helper, useFinishedSessionReward } from '@/cockpit/Helper';
+import { SessionDock } from '@/cockpit/SessionDock';
 import { StartCardDialog } from '@/cockpit/StartCardDialog';
+import { WorkspaceMenu } from '@/cockpit/WorkspaceMenu';
+import { useFitHeight } from '@/cockpit/useFitHeight';
 import { WS_RING } from '@/cockpit/wsColors';
 import { RepoMark } from '@/components/RepoMark';
 import { PageTitle } from '@/components/PageTitle';
+import '@/cockpit/cockpit.css';
 
 /**
- * Mobile Dev Cockpit. Desktop: left rail (workspaces + sessions), tabbed main area.
- * Mobile: workspace chips in the header and a bottom tab bar Agent · Review · Run · Terminal · Files.
- * Sessions live on this computer: closing the page (or locking the phone) leaves them running.
+ * Mobile Dev Cockpit as one focus sheet and a helper dock. The sheet's header holds the workspace switch, the open
+ * session and the Agent · Review · Run · Terminal · Files switch; the dock under it holds every session, so moving
+ * between agents is one tap on desk and phone alike. Sessions live on this computer: closing the page (or locking
+ * the phone) leaves them running.
  */
 
 const TABS = [
-  { id: 'agent', label: 'Agent', icon: Bot },
-  { id: 'review', label: 'Review', icon: Layers },
-  { id: 'run', label: 'Run', icon: Play },
-  { id: 'terminal', label: 'Terminal', icon: SquareTerminal },
-  { id: 'files', label: 'Files', icon: FolderTree },
+  { id: 'agent', icon: Bot },
+  { id: 'review', icon: Layers },
+  { id: 'run', icon: Play },
+  { id: 'terminal', icon: SquareTerminal },
+  { id: 'files', icon: FolderTree },
 ] as const;
 type TabId = (typeof TABS)[number]['id'];
-
-const KIND_LABEL: Record<SessionKind, string> = {
-  claude: 'Claude',
-  cursor: 'Cursor',
-  shell: 'Shell',
-  flutter: 'Run',
-};
 
 function NewSession({
   open,
@@ -135,47 +124,10 @@ function NewSession({
 
 const NO_SESSIONS: SessionView[] = [];
 
-function SessionTabs({
-  sessions,
-  active,
-  onPick,
-}: {
-  sessions: SessionView[];
-  active: string | null;
-  onPick: (id: string) => void;
-}) {
-  if (sessions.length === 0) return null;
-  return (
-    <div
-      className="flex gap-1.5 overflow-x-auto [scrollbar-width:none]"
-      role="tablist"
-      aria-label="Sessions"
-    >
-      {sessions.map((s, i) => (
-        <button
-          key={s.id}
-          type="button"
-          role="tab"
-          aria-selected={s.id === active}
-          onClick={() => onPick(s.id)}
-          className={cn(
-            'flex h-8 shrink-0 items-center gap-1.5 rounded-full border px-3 text-xs whitespace-nowrap',
-            s.id === active
-              ? 'border-primary bg-primary/10 text-primary-ink'
-              : 'text-muted-foreground',
-          )}
-        >
-          <span className="max-w-48 truncate" title={s.cardId ? s.title : undefined}>
-            {s.cardId ? s.title : `${KIND_LABEL[s.kind]} ${i + 1}`}
-          </span>
-          <Helper session={s} />
-        </button>
-      ))}
-    </div>
-  );
-}
-
 export function Cockpit() {
+  const { t } = useTranslation();
+  const reduced = useReducedMotion();
+  const fit = useFitHeight<HTMLDivElement>();
   const [params, setParams] = useSearchParams();
   const wsQ = useWorkspaces();
   const sessionsQ = useSessions();
@@ -186,7 +138,7 @@ export function Cockpit() {
   // Each repo workspace, followed by the worktrees made from it for bulk starts.
   const workspaces = useMemo(() => orderWorkspaces(wsQ.data ?? []), [wsQ.data]);
   const removeWs = useRemoveWorkspace();
-  const sessions = sessionsQ.data ?? [];
+  const sessions = sessionsQ.data ?? NO_SESSIONS;
   useFinishedSessionReward(sessionsQ.data ?? NO_SESSIONS);
 
   const sessionParam = params.get('session');
@@ -227,8 +179,8 @@ export function Cockpit() {
     tabSessions.find((s) => s.state !== 'exited') ??
     tabSessions.at(-1) ??
     null;
-  // Every session in one list, newest work first: agents started from the Board sit side by side, wherever their
-  // worktree is.
+  // Every session in the dock, newest work first: agents started from the Board sit side by side, wherever their
+  // worktree is. Ended sessions that cannot resume go last.
   const allSessions = useMemo(
     () =>
       [...sessions].sort(
@@ -238,11 +190,10 @@ export function Cockpit() {
       ),
     [sessions],
   );
-  const wsName = (id: string) => workspaces.find((w) => w.id === id)?.name ?? 'Removed workspace';
   // A worktree made for a card reads as that card.
   const cardTitleIn = (id: string) =>
     sessions.filter((s) => s.workspaceId === id && s.cardId).at(-1)?.title ?? null;
-  const pickSession = (s: (typeof sessions)[number]) =>
+  const pickSession = (s: SessionView) =>
     set({
       ws: s.workspaceId,
       session: s.id,
@@ -251,6 +202,11 @@ export function Cockpit() {
   const liveIn = (id: string) => sessions.some((x) => x.workspaceId === id && x.state !== 'exited');
   const waitingCount = (id: string) =>
     sessions.filter((s) => s.workspaceId === id && s.waiting).length;
+  const removeWorktree = (w: Workspace) => {
+    if (!window.confirm(t('cockpit.workspace.removeConfirm', { name: w.name }))) return;
+    if (w.id === wsId) set({ ws: w.parentId, session: null });
+    removeWs.mutate(w.id);
+  };
 
   if (wsQ.isPending) {
     return (
@@ -262,7 +218,7 @@ export function Cockpit() {
   if (wsQ.error) {
     return (
       <Alert variant="destructive">
-        <AlertTitle>Could not load the Cockpit</AlertTitle>
+        <AlertTitle>{t('cockpit.load.failed')}</AlertTitle>
         <AlertDescription>{describeError(wsQ.error)}</AlertDescription>
       </Alert>
     );
@@ -270,20 +226,18 @@ export function Cockpit() {
   if (workspaces.length === 0) {
     return (
       <div className="mx-auto grid max-w-md gap-3 p-6 text-center">
-        <PageTitle>Cockpit</PageTitle>
-        <p className="text-sm text-muted-foreground">
-          Add a workspace (a repo folder on this computer) first to run agents, terminals and the
-          app.
-        </p>
+        <PageTitle>{t('cockpit.title')}</PageTitle>
+        <p className="text-sm text-muted-foreground">{t('cockpit.load.noWorkspace')}</p>
         <Button asChild>
-          <Link to="/settings#workspaces">Add workspace</Link>
+          <Link to="/settings#workspaces">{t('cockpit.workspace.add')}</Link>
         </Button>
       </div>
     );
   }
 
+  const sessionTab = tab === 'agent' || tab === 'terminal';
   const body =
-    !ws && !(tab === 'agent' || tab === 'terminal') ? null : ws && tab === 'review' ? (
+    !ws && !sessionTab ? null : ws && tab === 'review' ? (
       <div className="grid gap-5">
         <AttentionPanel />
         <ReviewView ws={ws} />
@@ -292,243 +246,99 @@ export function Cockpit() {
       <RunView ws={ws} sessions={sessions} />
     ) : ws && tab === 'files' ? (
       <FilesView ws={ws} initialPath={params.get('file')} />
+    ) : active ? (
+      isConversationKind(active.kind) ? (
+        <ConversationView key={active.id} s={active} returnTo={returnTo(active.id)} />
+      ) : (
+        <AgentView key={active.id} s={active} returnTo={returnTo(active.id)} />
+      )
     ) : (
-      <>
-        <div className="flex items-center gap-2">
-          <SessionTabs
-            sessions={tabSessions}
-            active={active?.id ?? null}
-            onPick={(id) => set({ session: id })}
-          />
-          <Button
-            size="sm"
-            variant="outline"
-            className="ml-auto h-8 shrink-0 rounded-full"
-            onClick={() => setPicker(true)}
-          >
-            <Plus className="size-4" /> Session
+      <div className="grid flex-1 place-items-center p-8 text-center text-sm text-muted-foreground">
+        <div className="grid justify-items-center gap-3">
+          <p>{tab === 'agent' ? t('cockpit.sheet.noAgent') : t('cockpit.sheet.noTerminal')}</p>
+          <Button onClick={() => setPicker(true)}>
+            <Plus className="size-4" aria-hidden />{' '}
+            {tab === 'agent' ? t('cockpit.sheet.startAgent') : t('cockpit.sheet.openTerminal')}
           </Button>
         </div>
-        {active ? (
-          isConversationKind(active.kind) ? (
-            <ConversationView key={active.id} s={active} returnTo={returnTo(active.id)} />
-          ) : (
-            <AgentView key={active.id} s={active} returnTo={returnTo(active.id)} />
-          )
-        ) : (
-          <div className="grid flex-1 place-items-center rounded-surface border border-dashed p-8 text-center text-sm text-muted-foreground">
-            <div className="grid justify-items-center gap-3">
-              <p>
-                {tab === 'agent' ? 'No agent session in this workspace yet.' : 'No terminal yet.'}
-              </p>
-              <Button onClick={() => setPicker(true)}>
-                <Plus className="size-4" /> {tab === 'agent' ? 'Start an agent' : 'Open a terminal'}
-              </Button>
-            </div>
-          </div>
-        )}
-      </>
+      </div>
     );
 
   return (
-    <div className="mx-auto flex h-[calc(100dvh-4.5rem)] w-full max-w-6xl min-w-0 gap-4 md:h-[calc(100dvh-3rem)]">
-      {/* Desktop rail */}
-      <aside className="hidden w-60 shrink-0 flex-col gap-3 md:flex">
-        <h1 className="px-1 text-2xl font-semibold tracking-tight">Cockpit</h1>
-        <ul className="grid grid-cols-1 gap-1">
-          {workspaces.map((w) => (
-            <li
-              key={w.id}
-              className={cn('flex min-w-0 items-center', w.kind === 'worktree' && 'pl-5')}
-            >
+    // Fills the room it is given; the CSS height is the first frame's guess (see useFitHeight).
+    <div
+      ref={fit.ref}
+      style={fit.height ? { height: fit.height } : undefined}
+      className="mx-auto flex h-[calc(100dvh-9rem)] w-full max-w-6xl min-w-0 flex-col gap-3 md:h-[calc(100dvh-7.5rem)]"
+    >
+      <StartQueue />
+      <section className="ck-sheet flex min-h-0 flex-1 flex-col overflow-hidden rounded-sheet">
+        <header className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-2 border-b border-hairline px-3 py-2.5 md:px-5">
+          <h1 className="sr-only">{t('cockpit.title')}</h1>
+          <WorkspaceMenu
+            workspaces={workspaces}
+            current={ws}
+            waitingIn={waitingCount}
+            liveIn={liveIn}
+            cardTitleIn={cardTitleIn}
+            onPick={(id) => set({ ws: id, session: null })}
+            onRemove={removeWorktree}
+            removing={removeWs.isPending}
+          />
+          {sessionTab && active && (
+            <span className="flex min-w-0 flex-1 items-center gap-2">
+              <span className="min-w-0 truncate text-sm font-semibold tracking-tight md:text-base">
+                {active.title}
+              </span>
+              <Helper session={active} />
+            </span>
+          )}
+          <nav
+            aria-label={t('cockpit.tabs.label')}
+            className="-mx-1 flex max-w-full shrink-0 gap-0.5 overflow-x-auto rounded-surface bg-muted p-0.5 [scrollbar-width:none] max-md:order-last max-md:w-full sm:ml-auto"
+          >
+            {TABS.map((x) => (
               <button
+                key={x.id}
                 type="button"
-                onClick={() => set({ ws: w.id, session: null })}
+                onClick={() => set({ tab: x.id })}
+                aria-current={tab === x.id ? 'page' : undefined}
                 className={cn(
-                  'flex min-w-0 flex-1 items-center gap-2 rounded-xl px-3 py-2 text-left text-sm',
-                  w.id === wsId ? 'bg-accent font-medium' : 'hover:bg-accent/50',
+                  'flex h-8 flex-1 shrink-0 items-center justify-center gap-1.5 rounded-control px-2.5 text-xs sm:px-3 whitespace-nowrap focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none md:flex-none',
+                  tab === x.id
+                    ? 'bg-card font-semibold text-foreground shadow-rest'
+                    : 'text-muted-foreground hover:text-foreground',
                 )}
               >
-                {w.kind === 'worktree' ? (
-                  <GitFork className="size-4 shrink-0 text-muted-foreground" aria-hidden />
-                ) : (
-                  <RepoMark color={w.color} size="md" />
-                )}
-                <span className="min-w-0 flex-1 truncate" title={w.name}>
-                  {w.kind === 'worktree' && <span className="sr-only">Worktree: </span>}
-                  {(w.kind === 'worktree' && cardTitleIn(w.id)) || w.name}
-                </span>
-                {waitingCount(w.id) > 0 && (
-                  <span className="shrink-0 rounded-full bg-primary px-1.5 text-micro font-semibold text-primary-foreground">
-                    {waitingCount(w.id)}
-                  </span>
-                )}
+                <x.icon className="size-3.5 max-sm:hidden" aria-hidden />{' '}
+                {t(`cockpit.tabs.${x.id}`)}
               </button>
-              {w.kind === 'worktree' && (
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  aria-label={`Remove worktree ${w.name}`}
-                  title={
-                    liveIn(w.id)
-                      ? 'Stop its sessions first'
-                      : 'Remove this worktree folder (the branch and its commits stay)'
-                  }
-                  disabled={liveIn(w.id) || removeWs.isPending}
-                  onClick={() => {
-                    if (
-                      window.confirm(
-                        `Remove the worktree ${w.name}? Its folder is deleted, uncommitted changes in it are lost. The branch and its commits stay.`,
-                      )
-                    ) {
-                      if (w.id === wsId) set({ ws: w.parentId, session: null });
-                      removeWs.mutate(w.id);
-                    }
-                  }}
-                >
-                  <X className="size-4" />
-                </Button>
-              )}
-            </li>
-          ))}
-        </ul>
-        <div className="grid grid-cols-1 gap-1">
-          <p className="px-1 text-xs text-muted-foreground">Sessions</p>
-          {allSessions.map((s) => (
-            <button
-              key={s.id}
-              type="button"
-              onClick={() => pickSession(s)}
-              title={`${s.title} · ${wsName(s.workspaceId)}`}
-              className={cn(
-                'flex items-center gap-2 rounded-lg px-3 py-1.5 text-left text-xs',
-                s.id === active?.id ? 'bg-accent' : 'hover:bg-accent/50',
-              )}
-            >
-              <span className="grid min-w-0 flex-1">
-                <span className="truncate">{s.title}</span>
-                <span className="truncate text-micro text-muted-foreground">
-                  {KIND_LABEL[s.kind]} · {wsName(s.workspaceId)}
-                </span>
-              </span>
-              <Helper session={s} />
-            </button>
-          ))}
-          <Button
-            size="sm"
-            variant="ghost"
-            className="justify-start"
-            onClick={() => setPicker(true)}
+            ))}
+          </nav>
+        </header>
+        <AnimatePresence mode="popLayout" initial={false}>
+          <motion.div
+            key={`${tab}:${sessionTab ? (active?.id ?? '') : (wsId ?? '')}`}
+            initial={reduced ? false : { opacity: 0.35, y: 6 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.32, ease: [0.16, 1, 0.3, 1] }}
+            className={cn(
+              'flex min-h-0 flex-1 flex-col gap-2 px-3 py-3 md:px-6 md:py-4',
+              !(sessionTab && active) && 'overflow-y-auto',
+            )}
           >
-            <Plus className="size-4" /> New session
-          </Button>
-          <Button
-            size="sm"
-            variant="ghost"
-            className="justify-start"
-            onClick={() => setStartCard(true)}
-          >
-            <Rocket className="size-4" /> Start card
-          </Button>
-        </div>
-        <StartQueue />
-        <AttentionPanel compact />
-      </aside>
-
-      <section className="flex min-h-0 min-w-0 flex-1 flex-col gap-3">
-        {/* Mobile header: workspace switcher chips */}
-        <div className="flex gap-1.5 overflow-x-auto pt-1 [scrollbar-width:none] md:hidden">
-          <button
-            type="button"
-            onClick={() => setStartCard(true)}
-            aria-label="Start card"
-            className="grid size-8 shrink-0 place-items-center rounded-full border"
-          >
-            <Rocket className="size-4" />
-          </button>
-          {workspaces.map((w) => (
-            <button
-              key={w.id}
-              type="button"
-              onClick={() => set({ ws: w.id, session: null })}
-              className={cn(
-                'flex h-8 shrink-0 items-center gap-1.5 rounded-full border px-3 text-xs',
-                w.id === wsId && cn('ring-2', WS_RING[w.color]),
-              )}
-            >
-              <RepoMark color={w.color} />
-              {w.name}
-              {waitingCount(w.id) > 0 && (
-                <span className="rounded-full bg-primary px-1 text-micro font-semibold text-primary-foreground">
-                  {waitingCount(w.id)}
-                </span>
-              )}
-            </button>
-          ))}
-        </div>
-        {/* Mobile: every agent session, by card title */}
-        {allSessions.some((s) => isConversationKind(s.kind)) && (
-          <div className="flex gap-1.5 overflow-x-auto [scrollbar-width:none] md:hidden">
-            {allSessions
-              .filter((s) => isConversationKind(s.kind))
-              .map((s) => (
-                <button
-                  key={s.id}
-                  type="button"
-                  onClick={() => pickSession(s)}
-                  className={cn(
-                    'flex h-8 max-w-56 shrink-0 items-center gap-1.5 rounded-full border px-3 text-xs',
-                    s.id === active?.id && 'border-primary bg-primary/10 text-primary-ink',
-                  )}
-                >
-                  <span className="truncate">{s.title}</span>
-                  <Helper session={s} />
-                </button>
-              ))}
-          </div>
-        )}
-        <StartQueue className="md:hidden" />
-        {/* Desktop tabs */}
-        <nav className="hidden gap-1 border-b md:flex" aria-label="Cockpit">
-          {TABS.map((t) => (
-            <button
-              key={t.id}
-              type="button"
-              onClick={() => set({ tab: t.id })}
-              className={cn(
-                'flex items-center gap-1.5 border-b-2 px-3 py-2 text-sm',
-                tab === t.id
-                  ? 'border-primary font-medium'
-                  : 'border-transparent text-muted-foreground',
-              )}
-            >
-              <t.icon className="size-4" /> {t.label}
-            </button>
-          ))}
-        </nav>
-        <div className="flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto">{body}</div>
-        {/* Mobile bottom tab bar */}
-        <nav
-          className="glass grid shrink-0 grid-cols-5 rounded-surface p-1 md:hidden"
-          aria-label="Cockpit"
-        >
-          {TABS.map((t) => (
-            <button
-              key={t.id}
-              type="button"
-              onClick={() => set({ tab: t.id })}
-              aria-current={tab === t.id ? 'page' : undefined}
-              className={cn(
-                'flex flex-col items-center gap-0.5 rounded-xl py-1.5 text-2xs',
-                tab === t.id ? 'bg-primary/10 text-primary-ink' : 'text-muted-foreground',
-              )}
-            >
-              <t.icon className="size-5" />
-              {t.label}
-            </button>
-          ))}
-        </nav>
+            {body}
+          </motion.div>
+        </AnimatePresence>
       </section>
+      <SessionDock
+        sessions={allSessions}
+        workspaces={workspaces}
+        active={active?.id ?? sessionParam}
+        onPick={pickSession}
+        onNew={() => setPicker(true)}
+        onStartCard={() => setStartCard(true)}
+      />
 
       {ws && (
         <StartCardDialog

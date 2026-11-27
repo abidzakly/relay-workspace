@@ -1,0 +1,142 @@
+/*
+ * The Cockpit's focus sheet and helper dock (views/Cockpit.tsx, cockpit/SessionDock.tsx) and how an agent's words
+ * read in it (cockpit/ConversationView.tsx). Paper & Ink tokens only: the sheet is an opaque card, colour marks
+ * emphasis, code and progress.
+ */
+
+/* One opaque page in focus: it never shows the room behind it, so text always sits on card. */
+.ck-sheet {
+  background: var(--card);
+  border: 1px solid var(--border);
+  box-shadow:
+    0 1px 2px rgb(var(--elevation) / 0.05),
+    0 18px 48px -18px rgb(var(--elevation) / 0.22);
+  scrollbar-color: var(--border) transparent;
+}
+.dark .ck-sheet {
+  box-shadow:
+    0 1px 0 rgb(255 255 255 / 0.04) inset,
+    0 24px 60px -20px rgb(0 0 0 / 0.65);
+}
+.ck-sheet ::selection {
+  background: color-mix(in oklch, var(--terracotta) 32%, transparent);
+}
+
+/* The progress line under the sheet header: moss for what is done, violet for where the agent is now. */
+.ck-meter {
+  height: 3px;
+  background: var(--muted);
+  overflow: hidden;
+}
+.ck-meter > span {
+  display: block;
+  height: 100%;
+  background: linear-gradient(90deg, var(--moss), var(--terracotta));
+  transform-origin: left;
+  transition: transform 600ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+.ck-meter[data-live] > span {
+  animation: ck-breathe 2.4s ease-in-out infinite;
+}
+@keyframes ck-breathe {
+  50% {
+    filter: brightness(1.25) saturate(1.2);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .ck-meter > span {
+    transition: none;
+  }
+  .ck-meter[data-live] > span {
+    animation: none;
+  }
+}
+
+/* The agent's prose: a reading measure, headings in the accent voice, and colour that means something. */
+.md.ck-prose {
+  font-size: 1rem;
+  line-height: 1.75;
+  max-width: 70ch;
+}
+.md.ck-prose > * + * {
+  margin-top: 0.75em;
+}
+.md.ck-prose :is(h1, h2) {
+  font-family: var(--font-accent);
+  font-style: italic;
+  font-weight: 400;
+  letter-spacing: -0.01em;
+  line-height: 1.2;
+  color: var(--emphasis);
+  text-wrap: balance;
+  margin-top: 1.1em;
+}
+.md.ck-prose h1 {
+  font-size: 1.75rem;
+}
+.md.ck-prose h2 {
+  font-size: 1.5rem;
+}
+.md.ck-prose :is(h3, h4, h5, h6) {
+  font-size: 1.0625rem;
+  font-weight: 600;
+  color: var(--foreground);
+  margin-top: 1em;
+}
+.md.ck-prose > :first-child {
+  margin-top: 0;
+}
+.md.ck-prose :is(h1, h2, h3, h4) + * {
+  margin-top: 0.35em;
+}
+.md.ck-prose :is(strong, b) {
+  font-weight: 650;
+  color: var(--foreground);
+  background: linear-gradient(
+    transparent 62%,
+    color-mix(in oklch, var(--terracotta) 28%, transparent) 62%
+  );
+}
+.md.ck-prose em {
+  color: var(--emphasis);
+}
+.md.ck-prose :not(pre) > code {
+  font-family: var(--font-mono);
+  font-size: 0.86em;
+  color: var(--emphasis);
+  background: color-mix(in oklch, var(--emphasis) 10%, var(--card));
+  border-radius: 0.3rem;
+  padding: 0.1em 0.38em;
+}
+.md.ck-prose pre {
+  background: var(--terminal);
+  color: var(--terminal-foreground);
+  border-radius: 0.6rem;
+  padding: 0.85em 1em;
+  font-size: 0.875rem;
+  line-height: 1.6;
+}
+.md.ck-prose a {
+  color: var(--emphasis);
+  text-decoration-color: color-mix(in oklch, var(--emphasis) 45%, transparent);
+}
+.md.ck-prose li + li {
+  margin-top: 0.25em;
+}
+.md.ck-prose li::marker {
+  color: var(--moss);
+}
+.md.ck-prose blockquote {
+  border: 1px solid var(--hairline);
+  background: var(--muted);
+  border-radius: 0.6rem;
+  padding: 0.6em 0.9em;
+  color: var(--foreground);
+}
+.md.ck-prose hr {
+  border: 0;
+  border-top: 1px solid var(--hairline);
+}
+.md.ck-prose table {
+  font-size: 0.9375rem;
+}

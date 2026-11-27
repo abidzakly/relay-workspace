@@ -1,0 +1,76 @@
+/** The Cockpit's shell (sheet, dock, workspace menu) and the agent chat's progress and turns. */
+export const cockpit = {
+  title: 'Cockpit',
+  tabs: {
+    label: 'Cockpit view',
+    agent: 'Agent',
+    review: 'Review',
+    run: 'Run',
+    terminal: 'Terminal',
+    files: 'Files',
+  },
+  kind: {
+    claude: 'Claude',
+    cursor: 'Cursor',
+    shell: 'Shell',
+    flutter: 'Run',
+  },
+  workspace: {
+    menu: 'Workspaces',
+    current: 'Workspace: {{name}}',
+    worktree: 'Worktree',
+    waiting: '{{count}} waiting for you',
+    removeWorktree: 'Remove worktree {{name}}',
+    stopFirst: 'Stop its sessions first',
+    removeHint: 'Remove this worktree folder (the branch and its commits stay)',
+    removeConfirm:
+      'Remove the worktree {{name}}? Its folder is deleted, uncommitted changes in it are lost. The branch and its commits stay.',
+    removed: 'Removed workspace',
+    add: 'Add workspace',
+  },
+  helper: {
+    start: 'starting',
+    working: 'working',
+    'needs-you': 'needs you',
+    idle: 'idle',
+    finished: 'finished',
+    failed: 'failed',
+  },
+  load: {
+    failed: 'Could not load the Cockpit',
+    noWorkspace:
+      'Add a workspace (a repo folder on this computer) first to run agents, terminals and the app.',
+  },
+  dock: {
+    label: 'Sessions',
+    newSession: 'New session',
+    startCard: 'Start card',
+    needsYou: 'Needs you',
+    empty: 'No sessions yet',
+  },
+  sheet: {
+    noSession: 'No session open',
+    noAgent: 'No agent session in this workspace yet.',
+    noTerminal: 'No terminal yet.',
+    startAgent: 'Start an agent',
+    openTerminal: 'Open a terminal',
+  },
+  phase: {
+    label: 'Progress',
+    plan: 'Plan',
+    approve: 'Approve',
+    work: 'Work',
+    review: 'Review',
+  },
+  turn: {
+    you: 'You · turn {{n}}',
+    agent: 'Agent',
+    folded: 'Turn {{n}}',
+    steps_one: '{{count}} step',
+    steps_other: '{{count}} steps',
+    show: 'Show turn {{n}}',
+    hide: 'Fold turn {{n}}',
+    earlier_one: 'Show {{count}} earlier turn',
+    earlier_other: 'Show {{count}} earlier turns',
+  },
+};
