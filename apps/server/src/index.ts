@@ -35,8 +35,10 @@ import {
   RemoteGitExec,
   RemotePtyBackend,
   RemoteScriptEnvWriter,
+  RemoteScriptsHost,
 } from './hostAgent/client';
 import { LocalScriptEnvWriter, ScriptConfigService } from './services/scriptConfig';
+import { LocalScriptsHost } from './services/scriptsHost';
 import { AiService } from './services/ai/aiService';
 import { MrCreateService } from './services/mrCreate';
 import { TestBenchService } from './services/testBench/testBench';
@@ -227,6 +229,7 @@ async function main(): Promise<void> {
     log,
     bus,
     writer: agent ? new RemoteScriptEnvWriter(agent) : new LocalScriptEnvWriter(),
+    host: agent ? new RemoteScriptsHost(agent) : new LocalScriptsHost(),
   });
   scripts.watch();
   void scripts.writeFile();

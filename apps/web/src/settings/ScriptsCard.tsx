@@ -6,6 +6,7 @@ import { TimeAgo } from '@/components/TimeAgo';
 import { useSaveScripts, useScripts } from '@/lib/scriptsApi';
 import { ScriptFieldInputs } from '@/scripts/ScriptFieldInputs';
 import { ErrorAlert, SectionCard } from './SectionCard';
+import { ScriptsDirPicker } from './ScriptsDirPicker';
 
 const GROUPS: { need: ScriptNeed; title: string; note: string }[] = [
   {
@@ -59,10 +60,13 @@ export function ScriptsCard() {
             {s.vu.path
               ? s.vu.bundled
                 ? ' (bundled with the dashboard)'
-                : ' (your own copy)'
+                : s.vu.chosen
+                  ? ' (the folder you chose)'
+                  : ' (your own copy)'
               : null}
             .
           </p>
+          {!s.hostError && <ScriptsDirPicker found={s.vu.path !== null} />}
           {s.envFile && (
             <p>
               Values file <code className="font-mono text-2xs text-foreground">{s.envFile}</code>
@@ -76,12 +80,17 @@ export function ScriptsCard() {
           )}
         </div>
       )}
+      {s?.hostError && (
+        <Alert variant="warning">
+          <AlertDescription>Could not check the scripts on the Mac: {s.hostError}</AlertDescription>
+        </Alert>
+      )}
       {s?.fileError && (
         <Alert variant="warning">
           <AlertDescription>{s.fileError}</AlertDescription>
         </Alert>
       )}
-      {s && s.missingTools.length > 0 && (
+      {s && !s.hostError && s.missingTools.length > 0 && (
         <Alert variant="warning">
           <AlertTitle>Not installed: {s.missingTools.join(', ')}</AlertTitle>
           <AlertDescription>

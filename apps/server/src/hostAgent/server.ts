@@ -1,4 +1,5 @@
 import { defaultEnvFilePath, writeEnvFileLocal } from '../services/scriptConfig';
+import { chooseScriptsDirLocal, localScriptsStatus } from '../services/scriptsHost';
 import { spawnSync } from 'node:child_process';
 import { randomUUID, timingSafeEqual } from 'node:crypto';
 import { chmodSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
@@ -102,6 +103,12 @@ export async function createHostAgent(o: HostAgentOptions): Promise<FastifyInsta
     }
     return { path };
   });
+
+  /** Which `vu` runs and which tools the scripts lack, checked on the Mac (the container has neither). */
+  app.get('/v1/scripts/status', async () => localScriptsStatus());
+
+  /** "Choose folder…" for the scripts: the Mac's own dialog only, never a path sent by the dashboard. */
+  app.post('/v1/scripts/dir', async () => chooseScriptsDirLocal(undefined, false));
 
   app.get('/v1/health', async (): Promise<AgentHealth> => {
     flutterVersion ??= readFlutterVersion();

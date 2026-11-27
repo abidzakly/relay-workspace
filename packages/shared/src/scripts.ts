@@ -199,12 +199,32 @@ export const ScriptsStatusSchema = z.object({
   envFile: z.string().nullable(),
   writtenAt: EpochMsSchema.nullable(),
   fileError: z.string().nullable(),
-  /** Which `vu` the dashboard runs: your own (`~/bin`, `VU_BIN_DIR`) or the bundled `tools/bin`. */
-  vu: z.object({ path: z.string().nullable(), bundled: z.boolean() }),
-  /** Command-line tools the scripts call that are missing on this machine. */
+  /**
+   * Which `vu` the dashboard runs: `VU_BIN_DIR`, the folder chosen in Settings, your own `~/bin` or the bundled
+   * `tools/bin`. `chosen` = the chosen folder is the one used.
+   */
+  vu: z.object({
+    path: z.string().nullable(),
+    bundled: z.boolean(),
+    chosen: z.boolean().optional(),
+  }),
+  /** Command-line tools the scripts call that are missing on the machine that runs them (the Mac in Docker). */
   missingTools: z.array(z.string()),
+  /** The machine that runs the scripts could not be asked (host agent down or too old); `vu`/`missingTools` unknown. */
+  hostError: z.string().nullable().optional(),
 });
 export type ScriptsStatus = z.infer<typeof ScriptsStatusSchema>;
+
+/** "Choose folder…" for the scripts: the folder holding `vu`, picked in the computer's own dialog (or typed). */
+export const ScriptsDirRequestSchema = z.object({
+  /** Typed path; only where no folder dialog exists and the dashboard runs on that machine. Unset = open the dialog. */
+  path: z.string().trim().min(1).max(1024).optional(),
+});
+export type ScriptsDirPick =
+  | { status: 'picked'; path: string }
+  | { status: 'cancelled' }
+  | { status: 'unsupported'; reason: string }
+  | { status: 'invalid'; reason: string };
 
 /** Save: a string sets, `null` clears (falls back to Settings), absent keeps. */
 export const ScriptsSaveRequestSchema = z.object({

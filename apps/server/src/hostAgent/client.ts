@@ -1,3 +1,5 @@
+import type { ScriptsDirPick } from '@relay/shared';
+import type { ScriptsHost, ScriptsHostStatus } from '../services/scriptsHost';
 import type { Logger } from '../util/logger';
 import {
   GitExec,
@@ -187,6 +189,46 @@ export class RemoteScriptEnvWriter {
   constructor(private readonly agent: HostAgentClient) {}
   async write(content: string): Promise<void> {
     await this.agent.json<{ path: string }>('PUT', '/v1/scripts/env', { content }, 10_000);
+  }
+}
+
+/** The scripts' machine is the Mac: `vu`, the tools and the folder dialog are all asked of the host agent. */
+export class RemoteScriptsHost implements ScriptsHost {
+  constructor(private readonly agent: HostAgentClient) {}
+  async status(): Promise<ScriptsHostStatus> {
+    try {
+      return await this.agent.json<ScriptsHostStatus>(
+        'GET',
+        '/v1/scripts/status',
+        undefined,
+        10_000,
+      );
+    } catch (e) {
+      return {
+        vu: { path: null, bundled: false },
+        missingTools: [],
+        hostError:
+          e instanceof AgentRefusedError && e.status === 404
+            ? 'Restart the host agent (`pnpm agent`) to check the scripts on the Mac.'
+            : (e as Error).message,
+      };
+    }
+  }
+  async chooseDir(path: string | undefined): Promise<ScriptsDirPick> {
+    if (path !== undefined) {
+      return { status: 'invalid', reason: 'Choose the folder in the dialog on the Mac.' };
+    }
+    try {
+      return await this.agent.json<ScriptsDirPick>('POST', '/v1/scripts/dir', {}, 6 * 60_000);
+    } catch (e) {
+      if (e instanceof AgentRefusedError && e.status === 404) {
+        return {
+          status: 'unsupported',
+          reason: 'Restart the host agent (`pnpm agent`) to choose a folder.',
+        };
+      }
+      throw e;
+    }
   }
 }
 
