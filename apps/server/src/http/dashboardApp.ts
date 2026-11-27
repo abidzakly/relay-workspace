@@ -57,6 +57,7 @@ import type { TokenIdentity } from '../services/tokenIdentity';
 import { registerReviewRoutes } from './routes/review';
 import { registerSettingsRoutes } from './routes/settings';
 import { registerShareRoutes } from './routes/share';
+import { registerShowcaseRoutes } from './routes/showcase';
 import { registerSigningRoutes } from './routes/signing';
 import { registerStateRoutes } from './routes/state';
 import { registerSprintRoutes } from './routes/sprints';
@@ -190,6 +191,7 @@ export async function buildDashboardApp(opts: DashboardAppOptions): Promise<Fast
   if (opts.signing) registerSigningRoutes(app, { signing: opts.signing });
   if (opts.cockpit) registerCockpitRoutes(app, opts.cockpit);
   registerSettingsRoutes(app, opts);
+  registerShowcaseRoutes(app, { store: opts.store });
   registerRepoRoutes(app, opts);
   registerConnectionTestRoutes(app, {
     store: opts.store,

@@ -9,6 +9,8 @@ export const palette = {
   refreshHint: 'Sync GitLab and Notion now',
   aiCheck: 'Check AI connection',
   aiCheckHint: 'Test Claude and Cursor now',
+  showcase: 'Feature tour',
+  showcaseHint: 'What each switched-on feature does',
   dryRunOn: 'Turn dry-run on',
   dryRunOff: 'Turn dry-run off (writes become real)',
   saving: 'Saving…',

@@ -7,6 +7,8 @@ import {
   type FeatureId,
   type GlobalConfigPublic,
 } from '@relay/shared';
+import { useShowcaseStore } from '@/components/ShowcaseDialog';
+import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
 import { Select } from '@/components/ui/select';
 import { Switch } from '@/components/ui/switch';
@@ -22,6 +24,7 @@ export function FeaturesCard({ settings }: { settings: GlobalConfigPublic }) {
   const save = useSaveGlobal();
   const { t } = useTranslation();
   const unsupported = useUnsupported();
+  const setTour = useShowcaseStore((s) => s.setOpen);
   const on = settings.features;
   const count = FEATURES.filter((f) => on[f.id]).length;
   const toggle = (id: FeatureId, value: boolean) =>
@@ -32,6 +35,11 @@ export function FeaturesCard({ settings }: { settings: GlobalConfigPublic }) {
       id="features"
       title="Features"
       description={t('settings.descriptions.features', { count, total: FEATURES.length })}
+      action={
+        <Button variant="outline" size="sm" onClick={() => setTour(true)}>
+          {t('showcase.reopen')}
+        </Button>
+      }
     >
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="grid gap-0.5">

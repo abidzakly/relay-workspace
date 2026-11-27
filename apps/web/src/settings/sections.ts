@@ -34,6 +34,8 @@ export const SETTINGS_SECTIONS: SettingsSection[] = [
       'reviews',
       'kpi',
       'freelance',
+      'tour',
+      'onboarding',
       'board',
       'cockpit',
       'release',

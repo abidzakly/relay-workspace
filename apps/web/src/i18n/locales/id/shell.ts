@@ -3,6 +3,11 @@ import type { shell as en } from '../en/shell';
 
 export const shell: Messages<typeof en> = {
   localOnly: 'Hanya 127.0.0.1',
+  steps: {
+    label: 'Langkah',
+    back: 'Kembali',
+    continue: 'Lanjut',
+  },
   theme: {
     label: 'Tema',
     light: 'Terang',

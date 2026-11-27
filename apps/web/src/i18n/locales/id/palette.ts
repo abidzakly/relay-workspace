@@ -11,6 +11,8 @@ export const palette: Messages<typeof en> = {
   refreshHint: 'Sinkronkan GitLab dan Notion sekarang',
   aiCheck: 'Cek koneksi AI',
   aiCheckHint: 'Uji Claude dan Cursor sekarang',
+  showcase: 'Tur fitur',
+  showcaseHint: 'Kegunaan setiap fitur yang aktif',
   dryRunOn: 'Nyalakan dry-run',
   dryRunOff: 'Matikan dry-run (penulisan jadi sungguhan)',
   saving: 'Menyimpan…',

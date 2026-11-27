@@ -16,6 +16,7 @@ import { LANGS } from '@/i18n';
 import { navLabel } from '@/i18n/labels';
 import { BULK_READY_MAX_CARDS } from '@relay/shared';
 import { useAiCheckStore } from '@/components/AiCheck';
+import { useShowcaseStore } from '@/components/ShowcaseDialog';
 import { bulkReadyCandidates, buildBoard, columnFor, NO_FILTER } from '@/board/model';
 import { BulkReadyDialog } from '@/components/BulkReadyDialog';
 import { ConfirmWriteDialog } from '@/components/ConfirmWriteDialog';
@@ -135,6 +136,16 @@ function PaletteBody({ confirmWrite, bulkReady }: WriteOpeners) {
         hint: t('palette.aiCheckHint'),
         keywords: 'ai claude cursor engine fallback limit status test',
         run: () => useAiCheckStore.getState().setOpen(true),
+      }),
+    );
+    out.push(
+      item({
+        id: 'showcase',
+        kind: 'action',
+        label: t('palette.showcase'),
+        hint: t('palette.showcaseHint'),
+        keywords: 'tour onboarding features intro what new help',
+        run: () => useShowcaseStore.getState().setOpen(true),
       }),
     );
     if (dryRun !== undefined) {
