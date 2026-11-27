@@ -53,6 +53,7 @@ import {
   exportPrompt,
   ExportRequestChip,
 } from './ChatExport';
+import { BenchBackLink } from './BenchBackLink';
 import { MrBackLink } from './MrBackLink';
 import { useCoarsePointer } from '@/workspace/useMedia';
 
@@ -617,7 +618,7 @@ function Editor({
   );
 }
 
-export function ConversationView({ s }: { s: SessionView }) {
+export function ConversationView({ s, returnTo }: { s: SessionView; returnTo?: string | null }) {
   const doc = useConversation(s.id);
   const kill = useKillSession();
   const [error, setError] = useState<string | null>(null);
@@ -663,6 +664,7 @@ export function ConversationView({ s }: { s: SessionView }) {
           {status.label}
         </span>
         <MrBackLink s={s} />
+        <BenchBackLink to={returnTo} />
         <span className="ml-auto" />
         {!exited && !paused && (
           <>

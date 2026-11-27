@@ -19,6 +19,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/u
 import { describeError } from '@/lib/api';
 import { useRemoveWorkspace, useWorkspaces } from '@/lib/cockpitApi';
 import { useSessions, useStartSession, type SessionView } from '@/lib/sessionApi';
+import { isBenchPath, readBenchReturns, rememberBenchReturn } from '@/lib/benchReturn';
 import { cn } from '@/lib/utils';
 import { AgentView } from '@/cockpit/AgentView';
 import { ConversationView } from '@/cockpit/ConversationView';
@@ -310,7 +311,7 @@ export function Cockpit() {
         </div>
         {active ? (
           isConversationKind(active.kind) ? (
-            <ConversationView key={active.id} s={active} />
+            <ConversationView key={active.id} s={active} returnTo={returnTo(active.id)} />
           ) : (
             <AgentView key={active.id} s={active} returnTo={returnTo(active.id)} />
           )
@@ -558,35 +559,17 @@ export function Cockpit() {
 }
 
 /**
- * "Back to testing" for a session started from the Test Bench: taken from `?returnTo=` and remembered per session in
+ * "Back to test device" for a session sent from the Test Bench: taken from `?returnTo=` and remembered per session in
  * this browser, so it survives a reload or opening the cockpit from the notification. Only in-app bench paths.
  */
-const RETURN_KEY = 'cockpit:return-to';
-const isBenchPath = (p: string | null): p is string =>
-  !!p && /^\/test-bench\/[a-z0-9-]+\?branch=/.test(p);
-
 function useSessionReturnTo(
   sessionId: string | null,
   fromUrl: string | null,
 ): (id: string) => string | null {
-  const [map, setMap] = useState<Record<string, string>>(() => {
-    try {
-      return JSON.parse(localStorage.getItem(RETURN_KEY) ?? '{}') as Record<string, string>;
-    } catch {
-      return {};
-    }
-  });
+  const [map, setMap] = useState<Record<string, string>>(readBenchReturns);
   useEffect(() => {
     if (!sessionId || !isBenchPath(fromUrl) || map[sessionId] === fromUrl) return;
-    const next = { ...map, [sessionId]: fromUrl };
-    // Keep the newest 20.
-    const trimmed = Object.fromEntries(Object.entries(next).slice(-20));
-    setMap(trimmed);
-    try {
-      localStorage.setItem(RETURN_KEY, JSON.stringify(trimmed));
-    } catch {
-      /* private mode: the URL still carries it */
-    }
+    setMap(rememberBenchReturn(sessionId, fromUrl, map));
   }, [sessionId, fromUrl, map]);
   return (id: string) =>
     isBenchPath(map[id] ?? null)

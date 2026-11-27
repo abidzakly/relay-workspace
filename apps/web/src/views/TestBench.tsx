@@ -5,6 +5,7 @@ import { branchesPath } from '@/lib/branchesApi';
 import { useQueryClient } from '@tanstack/react-query';
 import {
   ArrowLeft,
+  Bot,
   CheckCircle2,
   ExternalLink,
   ListChecks,
@@ -25,7 +26,8 @@ import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
 import { describeError } from '@/lib/api';
 import { useWorkspaces } from '@/lib/cockpitApi';
-import { launchEmulator, useDevices } from '@/lib/sessionApi';
+import { benchPath, benchSessionsFor, rememberBenchReturn } from '@/lib/benchReturn';
+import { launchEmulator, useDevices, useSessions } from '@/lib/sessionApi';
 import { emit } from '@/lib/reward/engine';
 import {
   refreshBody,
@@ -120,6 +122,17 @@ export function TestBench() {
   const { repo = '' } = useParams();
   const [search, setSearch] = useSearchParams();
   const branch = search.get('branch') ?? '';
+  // The agent session last sent this branch's findings (this browser), while the cockpit still has it.
+  const sessions = useSessions();
+  const here = benchPath(repo, branch);
+  const agentSession = useMemo(() => {
+    const live = new Map((sessions.data ?? []).map((s) => [s.id, s]));
+    for (const id of benchSessionsFor(here)) {
+      const s = live.get(id);
+      if (s) return s;
+    }
+    return null;
+  }, [sessions.data, here]);
   // "Run this branch" (Create MR, MR Inbox, Code Review): check the branch out on arrival, then drop the flag.
   const autoRun = search.get('run') === '1';
   const clearAutoRun = useCallback(
@@ -261,10 +274,12 @@ export function TestBench() {
   const fixing = st.findings.filter((f) => f.status === 'fixing').length;
   const sendToAgent = () =>
     fix.mutate(undefined, {
-      onSuccess: (r) =>
+      onSuccess: (r) => {
+        rememberBenchReturn(r.sessionId, r.returnTo);
         void navigate(
           `/cockpit?ws=${encodeURIComponent(r.workspaceId)}&session=${encodeURIComponent(r.sessionId)}&tab=agent&returnTo=${encodeURIComponent(r.returnTo)}`,
-        ),
+        );
+      },
     });
   const canNotReady =
     st.findings.some((f) => f.status === 'open') || st.readiness.counts.failed > 0;
@@ -299,6 +314,16 @@ export function TestBench() {
           <p className="truncate font-mono text-xs text-muted-foreground">{branch}</p>
         </div>
         <BranchSwitcher repo={repo} branch={branch} />
+        {agentSession && (
+          <Link
+            to={`/cockpit?ws=${encodeURIComponent(agentSession.workspaceId)}&session=${encodeURIComponent(agentSession.id)}&tab=agent&returnTo=${encodeURIComponent(here)}`}
+            title={`Open the agent session in the Cockpit: ${agentSession.title}`}
+            className="inline-flex h-7 min-w-0 items-center gap-1 rounded-full border px-2.5 text-xs font-medium text-foreground hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+          >
+            <Bot className="size-3.5 shrink-0" aria-hidden />
+            <span className="truncate">Agent in Cockpit</span>
+          </Link>
+        )}
         {st.card?.url && (
           <Button size="sm" variant="ghost" asChild>
             <a href={safeHref(st.card.url) ?? undefined} target="_blank" rel="noopener noreferrer">
