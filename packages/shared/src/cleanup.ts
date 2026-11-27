@@ -1,7 +1,8 @@
 /**
  * Storage cleanup (no AI): every candidate comes from a fixed rule over facts the dashboard already has (card status,
  * MR state, finding status, git ancestry, file age). `safe` items are pure leftovers and may be cleaned
- * automatically; `confirm` items (local branches, APKs, clones) are only removed when the user ticks them.
+ * automatically; `confirm` items (local branches, APKs, clones, a workspace's Flutter `build/`) are only removed when
+ * the user ticks them.
  */
 export const CLEANUP_CATEGORIES = [
   'attachments',
@@ -9,6 +10,7 @@ export const CLEANUP_CATEGORIES = [
   'branches',
   'git',
   'clone-builds',
+  'run-builds',
   'clones',
   'apks',
   'evidence',

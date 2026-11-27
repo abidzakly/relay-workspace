@@ -67,6 +67,21 @@ export const settings: Messages<typeof en> = {
     visuals:
       'Gambar dan gestur di tiap halaman. Semua tombol dan daftar tetap ada. Hanya disimpan di browser ini.',
   },
+  storageCategories: {
+    attachments: 'Lampiran agen',
+    checkpoints: 'Ref checkpoint',
+    branches: 'Branch lokal',
+    git: 'Perawatan Git',
+    'clone-builds': 'Output build clone',
+    'run-builds': 'Output build run',
+    clones: 'Clone bot tak terpakai',
+    apks: 'APK lama',
+    evidence: 'Screenshot tes',
+    figma: 'Cache Figma',
+    scrcpy: 'Server scrcpy lama',
+    temp: 'Sisa file sementara',
+    worktrees: 'Worktree agen yang selesai',
+  },
   appearance: {
     language: 'Bahasa',
     landing: 'Halaman awal',

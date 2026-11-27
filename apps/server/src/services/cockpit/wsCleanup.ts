@@ -8,7 +8,8 @@ import { git } from './workspaceFs';
 /**
  * The Mac side of the storage cleanup (no AI). The host only reports facts and deletes what it is told to, and only
  * inside fixed places: `<git dir>/cockpit-attachments/<group>`, `refs/cockpit/*`, local branches (`refs/heads/*`)
- * and named leftovers in the OS temp dir. Every delete re-checks the item at that moment:
+ * named leftovers in the OS temp dir, and a Flutter workspace's git-ignored `build/` (what `flutter run` writes, debug
+ * APK included). Every delete re-checks the item at that moment:
  *  - refs and branches are removed with `update-ref -d <ref> <expected sha>`, so a branch that moved is kept;
  *  - a branch delete without `force` also re-checks that its tip is inside `origin/<base>`;
  *  - the checked-out branch is never deleted; paths are `lstat`ed, so a symlink is never followed.
@@ -33,12 +34,18 @@ export interface WsCleanupFacts {
     /** Tip is an ancestor of `origin/<base>`: every commit is in the base. */
     inBase: boolean;
   }[];
+  /** The workspace's Flutter `build/` folder, when there is one. Absent from older agents. */
+  builds?: { rel: typeof BUILD_DIR; bytes: number; mtimeMs: number }[];
 }
+
+/** The only build folder the cleanup touches: `<workspace>/build`, the output of `flutter run` and `flutter build`. */
+export const BUILD_DIR = 'build';
 
 export type WsCleanupItem =
   | { kind: 'attachment'; group: string }
   | { kind: 'ref'; name: string; sha: string }
   | { kind: 'branch'; name: string; tip: string; force: boolean }
+  | { kind: 'build'; rel: typeof BUILD_DIR }
   | { kind: 'prune' };
 
 export interface CleanupApplyResult {
@@ -94,6 +101,21 @@ async function sizeOf(
 }
 
 const lines = (s: string) => s.split('\n').filter(Boolean);
+
+/**
+ * `<cwd>/build` when it is a Flutter build output: the workspace has a `pubspec.yaml`, `build` is a real folder (never
+ * a symlink), and git ignores it, so nothing tracked can be in it. Null otherwise.
+ */
+async function flutterBuildDir(cwd: string): Promise<string | null> {
+  const pubspec = await lstat(join(cwd, 'pubspec.yaml')).catch(() => null);
+  if (!pubspec?.isFile()) return null;
+  const path = join(cwd, BUILD_DIR);
+  const st = await lstat(path).catch(() => null);
+  if (!st?.isDirectory() || st.isSymbolicLink()) return null;
+  // Prints the path when it is ignored; exit 1 with no output when it is not. The slash matches `build/` patterns too.
+  const ignored = await git(cwd, ['check-ignore', `${BUILD_DIR}/`], { allowExit: [1] });
+  return ignored.trim() === `${BUILD_DIR}/` ? path : null;
+}
 
 export async function wsCleanupFacts(cwd: string, base: string): Promise<WsCleanupFacts> {
   if (!isSafeBranchName(base)) {
@@ -160,7 +182,14 @@ export async function wsCleanupFacts(cwd: string, base: string): Promise<WsClean
       inBase: merged.has(name),
     };
   });
-  return { gitDir, head, baseKnown, attachments, refs, branches };
+  const builds: NonNullable<WsCleanupFacts['builds']> = [];
+  const buildDir = await flutterBuildDir(cwd).catch(() => null);
+  if (buildDir) {
+    // A build folder holds tens of thousands of files: a bigger walk, so the size shown is close to the real one.
+    const s = await sizeOf(buildDir, { n: 200_000 }).catch(() => null);
+    if (s) builds.push({ rel: BUILD_DIR, ...s });
+  }
+  return { gitDir, head, baseKnown, attachments, refs, branches, builds };
 }
 
 export async function wsCleanupApply(
@@ -186,7 +215,9 @@ export async function wsCleanupApply(
           ? item.name
           : item.kind === 'branch'
             ? `branch ${item.name}`
-            : 'prune';
+            : item.kind === 'build'
+              ? 'build folder'
+              : 'prune';
     try {
       switch (item.kind) {
         case 'attachment': {
@@ -227,6 +258,13 @@ export async function wsCleanupApply(
           await git(cwd, ['config', '--remove-section', `branch.${item.name}`], {
             allowExit: [128],
           }).catch(() => undefined);
+          break;
+        }
+        case 'build': {
+          if (item.rel !== BUILD_DIR) throw new Error('not the build folder');
+          const path = await flutterBuildDir(cwd);
+          if (!path) throw new Error('not a git-ignored Flutter build folder');
+          await rm(path, { recursive: true, force: true });
           break;
         }
         case 'prune': {

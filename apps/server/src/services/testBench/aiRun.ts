@@ -75,6 +75,8 @@ interface Live {
   workspaceId: string;
   sessionId: string | null;
   flutterSessionId: string | null;
+  /** The run started that `flutter run` (not one already open): it stops it at the end, so the workspace is free. */
+  ownsFlutter: boolean;
   timer: NodeJS.Timeout;
   waiting: { resolve: (helped: boolean) => void; timer: NodeJS.Timeout } | null;
   shots: number;
@@ -169,6 +171,7 @@ export class AiRunService {
       workspaceId: ws.workspaceId,
       sessionId: null,
       flutterSessionId: null,
+      ownsFlutter: false,
       timer: setTimeout(
         () => void this.abort(run.id, 'Stopped: the run took longer than 45 minutes.'),
         RUN_MAX_MS,
@@ -204,6 +207,7 @@ export class AiRunService {
           rows: 30,
           ...(flavor ? { flavor } : {}),
         });
+      live.ownsFlutter = !existing;
       live.flutterSessionId =
         existing?.id ??
         (
@@ -268,6 +272,7 @@ export class AiRunService {
         l.waiting.resolve(false);
       }
       if (l.sessionId) await this.d.sessions.kill(l.sessionId).catch(() => {});
+      await this.stopOwnFlutter(l);
     }
     return this.d.bench.abortRun(runId, summary);
   }
@@ -915,6 +920,13 @@ export class AiRunService {
     this.live.delete(l.run.id);
     clearTimeout(l.timer);
     // The session stays open so its reasoning can be read; it has nothing left to do.
+    await this.stopOwnFlutter(l);
     return run;
+  }
+
+  /** Stops the `flutter run` this run started. One the user had open before is theirs and keeps running. */
+  private async stopOwnFlutter(l: Live): Promise<void> {
+    if (!l.ownsFlutter || !l.flutterSessionId) return;
+    await this.d.sessions.kill(l.flutterSessionId).catch(() => {});
   }
 }
