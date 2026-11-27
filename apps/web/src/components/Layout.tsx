@@ -8,6 +8,7 @@ import { MeetingAlert } from '@/components/MeetingAlert';
 import { ModelFallbackAlert } from './ModelFallbackAlert';
 import { NotificationBell } from '@/components/NotificationBell';
 import { OnboardingDialog } from '@/components/OnboardingDialog';
+import { ShowcaseDialog } from '@/components/ShowcaseDialog';
 import { NotificationToggle } from '@/components/NotificationToggle';
 import { PageSwap } from '@/components/PageSwap';
 import { PaperGrid } from '@/components/PaperGrid';
@@ -42,6 +43,7 @@ export function Layout() {
         <CommandPalette />
         <AiCheckDialog />
         <OnboardingDialog />
+        <ShowcaseDialog />
         <RewardLayer />
         <MeetingAlert />
         <ModelFallbackAlert />
@@ -60,6 +62,7 @@ export function Layout() {
       <CommandPalette />
       <AiCheckDialog />
       <OnboardingDialog />
+      <ShowcaseDialog />
       <RewardLayer />
       <MeetingAlert />
       <ModelFallbackAlert />

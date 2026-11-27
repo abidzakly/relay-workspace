@@ -1,6 +1,11 @@
 /** The frame around every page: header toggles, the Living Workspace HUD, the scene menu. */
 export const shell = {
   localOnly: '127.0.0.1 only',
+  steps: {
+    label: 'Steps',
+    back: 'Back',
+    continue: 'Continue',
+  },
   theme: {
     label: 'Theme',
     light: 'Wake',

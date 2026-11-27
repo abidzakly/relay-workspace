@@ -5,6 +5,7 @@ import { nav } from './nav';
 import { overview } from './overview';
 import { palette } from './palette';
 import { settings } from './settings';
+import { showcase } from './showcase';
 import { testBench } from './testBench';
 import { shell } from './shell';
 
@@ -16,5 +17,6 @@ export const id: Messages<typeof en> = {
   cockpit,
   testBench,
   settings,
+  showcase,
   overview,
 };

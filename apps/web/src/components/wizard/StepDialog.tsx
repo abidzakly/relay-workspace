@@ -1,5 +1,6 @@
 import { Check } from 'lucide-react';
 import type { ReactNode } from 'react';
+import { useTranslation } from 'react-i18next';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 
@@ -34,11 +35,12 @@ export function StepDialog<K extends string>({
   status?: ReactNode;
   children: ReactNode;
 }) {
+  const { t } = useTranslation();
   const last = at === steps.length - 1;
   const current = steps[at];
   return (
     <div className="grid gap-5">
-      <ol className="flex flex-wrap gap-1.5" aria-label="Steps">
+      <ol className="flex flex-wrap gap-1.5" aria-label={t('shell.steps.label')}>
         {steps.map((s, i) => {
           const reachable = free || i <= at || steps.slice(0, i).every((x) => x.done);
           const state = i === at ? 'now' : i < at || (free && s.done) ? 'done' : 'next';
@@ -79,7 +81,7 @@ export function StepDialog<K extends string>({
 
       <footer className="flex flex-wrap items-center gap-3 border-t pt-4">
         <Button type="button" variant="ghost" disabled={at === 0} onClick={() => onAt(at - 1)}>
-          Back
+          {t('shell.steps.back')}
         </Button>
         {last || free ? finish : null}
         {!last ? (
@@ -89,7 +91,7 @@ export function StepDialog<K extends string>({
             disabled={!free && !current?.done}
             onClick={() => onAt(at + 1)}
           >
-            Continue
+            {t('shell.steps.continue')}
           </Button>
         ) : null}
         {status ? <span className="min-w-0 flex-1 text-sm">{status}</span> : null}
