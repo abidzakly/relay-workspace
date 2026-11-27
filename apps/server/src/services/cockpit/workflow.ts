@@ -517,6 +517,9 @@ export class CockpitWorkflowService {
     context?: string | undefined;
     question?: string | undefined;
     history?: readonly MrChatMessage[] | undefined;
+    /** Picked in the thread's "Ask AI" panel; unset = Settings > AI (with its fallback). */
+    agent?: 'claude' | 'cursor' | undefined;
+    model?: string | undefined;
   }): Promise<ExplainThreadResult | ExplainThreadChatResult> {
     const mr = this.d.store.db
       .select()
@@ -553,21 +556,26 @@ export class CockpitWorkflowService {
       ...(input.context?.trim() ? { context: input.context.trim() } : {}),
       links,
     });
+    const runOpts = input.agent ? { agent: { kind: input.agent, model: input.model } } : {};
     if (question) {
-      const { output, generatedBy } = await this.d.ai.run('explain-thread-chat', {
-        mr: vars.mr!,
-        thread: vars.thread!,
-        code: vars.code!,
-        commits: vars.commits!,
-        changes: vars.changes!,
-        comments: vars.comments!,
-        links: vars.links!,
-        question,
-        history: renderChatHistory(input.history ?? []),
-      });
+      const { output, generatedBy } = await this.d.ai.run(
+        'explain-thread-chat',
+        {
+          mr: vars.mr!,
+          thread: vars.thread!,
+          code: vars.code!,
+          commits: vars.commits!,
+          changes: vars.changes!,
+          comments: vars.comments!,
+          links: vars.links!,
+          question,
+          history: renderChatHistory(input.history ?? []),
+        },
+        runOpts,
+      );
       return { ...output, generatedBy };
     }
-    const { output, generatedBy } = await this.d.ai.run('explain-thread', vars);
+    const { output, generatedBy } = await this.d.ai.run('explain-thread', vars, runOpts);
     return { ...output, generatedBy };
   }
 

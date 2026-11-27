@@ -69,13 +69,20 @@ export function useBaseSuggest() {
   });
 }
 
+/** The thread, plus the agent picked in the "Ask AI" panel (unset = Settings > AI). */
+interface ThreadExplainInput {
+  repoId: string;
+  iid: number;
+  discussionId: string;
+  agent?: 'claude' | 'cursor';
+  model?: string;
+}
+
 /** "Ask AI" on a reviewer's thread: checks the comment against the MR's commits and changes. */
 export function useThreadExplain() {
-  return useMutation<
-    ExplainThreadResult,
-    Error,
-    { repoId: string; iid: number; discussionId: string; context?: string }
-  >({ mutationFn: (b) => post('/api/cockpit/thread-explain', b) });
+  return useMutation<ExplainThreadResult, Error, ThreadExplainInput & { context?: string }>({
+    mutationFn: (b) => post('/api/cockpit/thread-explain', b),
+  });
 }
 
 /** A follow-up in a thread's "Ask AI" chat: the server keeps nothing, so the history goes along each time. */
@@ -83,13 +90,7 @@ export function useThreadChat() {
   return useMutation<
     ExplainThreadChatResult,
     Error,
-    {
-      repoId: string;
-      iid: number;
-      discussionId: string;
-      question: string;
-      history: MrChatMessage[];
-    }
+    ThreadExplainInput & { question: string; history: MrChatMessage[] }
   >({ mutationFn: (b) => post('/api/cockpit/thread-explain', b) });
 }
 

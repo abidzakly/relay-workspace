@@ -101,6 +101,8 @@ export function ThreadAgentActions({
       ? modelPick
       : (defaultModel ?? models[0].id);
   const ids = { repoId: repo, iid, discussionId };
+  // Ask AI (first answer, Try again, follow-ups) runs on the agent and model the pickers show, like Review and Fix.
+  const picked = { agent, model };
 
   /** The conversation as the AI and the agent get it: the first explanation, then every turn. */
   const history = (): MrChatMessage[] =>
@@ -116,7 +118,7 @@ export function ThreadAgentActions({
   const toggle = () => {
     const next = !open;
     setOpen(next);
-    if (next && !explain.data && !explain.isPending) explain.mutate(ids);
+    if (next && !explain.data && !explain.isPending) explain.mutate({ ...ids, ...picked });
   };
   const ask = () => {
     const q = draft.trim();
@@ -125,7 +127,7 @@ export function ThreadAgentActions({
     setDraft('');
     setTurns((t) => [...t, { role: 'user', text: q }]);
     chat.mutate(
-      { ...ids, question: q, history: before },
+      { ...ids, ...picked, question: q, history: before },
       {
         onSuccess: (r) =>
           setTurns((t) => [
@@ -216,7 +218,12 @@ export function ThreadAgentActions({
       {explain.error && (
         <div className="flex flex-wrap items-center gap-2">
           <p className="text-xs text-destructive">{describeError(explain.error)}</p>
-          <Button type="button" size="sm" variant="ghost" onClick={() => explain.mutate(ids)}>
+          <Button
+            type="button"
+            size="sm"
+            variant="ghost"
+            onClick={() => explain.mutate({ ...ids, ...picked })}
+          >
             <RotateCcw className="size-3.5" aria-hidden /> Try again
           </Button>
         </div>
@@ -299,7 +306,7 @@ export function ThreadAgentActions({
           Fix
         </Button>
         <Select
-          aria-label="Agent for Review and Fix"
+          aria-label="Agent for Ask AI, Review and Fix"
           className="h-8 w-auto text-xs"
           value={agent}
           disabled={start.isPending}
@@ -312,7 +319,7 @@ export function ThreadAgentActions({
           <option value="cursor">Cursor</option>
         </Select>
         <Select
-          aria-label="Model for Review and Fix"
+          aria-label="Model for Ask AI, Review and Fix"
           className="h-8 w-auto text-xs"
           value={model}
           disabled={start.isPending}

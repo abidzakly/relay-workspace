@@ -224,6 +224,12 @@ const ThreadExplainBody = z
     /** A follow-up in the thread's "Ask AI" chat; links in it are opened. Unset = the first explanation. */
     question: z.string().trim().min(1).max(8_000).optional(),
     history: z.array(MrChatMessageSchema).max(MR_CHAT_MAX_HISTORY).optional(),
+    /** Picked in the "Ask AI" panel: only this agent answers. Unset = Settings > AI. */
+    agent: z.enum(['claude', 'cursor']).optional(),
+    model: z
+      .string()
+      .regex(/^[a-z0-9.-]{1,64}$/i)
+      .optional(),
   })
   .strict();
 
