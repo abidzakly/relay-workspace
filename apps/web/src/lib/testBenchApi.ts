@@ -14,6 +14,7 @@ import type {
   TestRunEngine,
 } from '@relay/shared';
 import { CSRF_HEADER_NAME, CSRF_HEADER_VALUE } from '@relay/shared';
+import { i18n } from '@/i18n';
 import { del, get, patch, post, put } from './api';
 
 /** Test Bench + device bridge. SSE `testbench.changed` refreshes `testBenchKeys.branch`. */
@@ -227,10 +228,7 @@ export async function openMirror(
     });
   } catch (err) {
     if (deadline.signal.aborted && !signal.aborted) {
-      throw new Error(
-        'The phone did not answer in time. Unlock it (or check the emulator is running), then press Reconnect.',
-        { cause: err },
-      );
+      throw new Error(i18n.t('testBench.mirror.noAnswer'), { cause: err });
     }
     throw err;
   } finally {
