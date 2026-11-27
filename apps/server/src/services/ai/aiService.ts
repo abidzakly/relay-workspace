@@ -9,6 +9,7 @@ import {
   type ConnectionTestResult,
   type AiEngine,
   type AiEngineStatus,
+  type AiModelChoice,
   type AiModels,
   type AiGeneratedBy,
   type AiOutput,
@@ -51,6 +52,12 @@ export interface AiServiceDeps {
   now?: () => number;
   /** Tests inject providers. */
   providers?: AiProvider[];
+}
+
+/** An agent the user picked for one call (e.g. the thread "Ask AI" picker); `claude` = the CLI, else the API key. */
+export interface PinnedAgent {
+  kind: 'claude' | 'cursor';
+  model?: string | undefined;
 }
 
 /** How long an engine that failed is asked last. */
@@ -327,11 +334,18 @@ export class AiService {
   async run<T extends AiTemplate>(
     template: T,
     vars: Readonly<Record<string, string>>,
-    opts: { tier?: AiTier; fresh?: boolean } = {},
+    opts: { tier?: AiTier; fresh?: boolean; agent?: PinnedAgent } = {},
   ): Promise<{ output: AiOutput<T>; cached: boolean; engine: string; generatedBy: AiGeneratedBy }> {
     const tier = opts.tier ?? DEFAULT_TIER[template];
     const models = this.d.models?.() ?? {};
-    const choice = models[template] ?? models.default ?? {};
+    // An agent picked for this one call replaces Settings' choice for it.
+    const choice: AiModelChoice = opts.agent
+      ? opts.agent.kind === 'cursor'
+        ? { engine: 'cursor_cli', ...(opts.agent.model ? { model: opts.agent.model } : {}) }
+        : opts.agent.model
+          ? { model: opts.agent.model }
+          : {}
+      : (models[template] ?? models.default ?? {});
     // The chosen model applies to the chosen agent; with no agent chosen, to the Claude engines.
     const modelFor = (engine: AiEngine): string =>
       (choice.model && (choice.engine ? choice.engine === engine : engine !== 'cursor_cli')
@@ -370,7 +384,20 @@ export class AiService {
         }
       }
     }
-    const chained = [...(await this.chain())];
+    let chained = [...(await this.chain())];
+    // A picked agent is the only one asked: no fallback to another (maybe cooling) engine whose error would hide its own.
+    if (opts.agent) {
+      const cursor = opts.agent.kind === 'cursor';
+      chained = chained.filter((p) => (p.engine === 'cursor_cli') === cursor);
+      if (chained.length === 0) {
+        throw new AiError(
+          'ai_unavailable',
+          cursor
+            ? 'Cursor is not available: install and log in to the Cursor CLI on the Mac, or pick Claude.'
+            : 'Claude is not available: log in to the Claude CLI on the Mac or set ANTHROPIC_API_KEY, or pick Cursor.',
+        );
+      }
+    }
     if (choice.engine)
       chained.sort((a, b) => +(b.engine === choice.engine) - +(a.engine === choice.engine));
     // A cooling engine goes last, so it is asked only when nothing else answers.
