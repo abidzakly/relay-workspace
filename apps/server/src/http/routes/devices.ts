@@ -2,6 +2,7 @@ import type { FastifyInstance } from 'fastify';
 import { DeviceControlBatchSchema, DeviceSerialSchema } from '@relay/shared';
 import { z } from 'zod';
 import type { DeviceHost } from '../../services/device/deviceHost';
+import { drained } from '../../util/drained';
 import { HttpError, parseWith, wrapAction } from '../errors';
 
 /**
@@ -10,6 +11,7 @@ import { HttpError, parseWith, wrapAction } from '../errors';
  * port or network path.
  */
 const Params = z.object({ serial: DeviceSerialSchema });
+
 const MAX_MIRRORS = 4;
 
 export function registerDeviceRoutes(app: FastifyInstance, devices: DeviceHost): void {
@@ -19,7 +21,13 @@ export function registerDeviceRoutes(app: FastifyInstance, devices: DeviceHost):
 
   app.get('/api/devices/:serial/mirror', async (req, reply) => {
     const { serial } = parseWith(Params, req.params);
-    if (open >= MAX_MIRRORS) throw new HttpError(429, 'too_many_mirrors');
+    if (open >= MAX_MIRRORS) {
+      throw new HttpError(
+        429,
+        'too_many_mirrors',
+        'Too many mirrors are open. Close another Test Bench tab, then try again.',
+      );
+    }
     const abort = new AbortController();
     req.raw.on('close', () => abort.abort());
     const it = devices.mirror(serial, abort.signal)[Symbol.asyncIterator]();
@@ -37,7 +45,7 @@ export function registerDeviceRoutes(app: FastifyInstance, devices: DeviceHost):
       for (;;) {
         const next = await it.next();
         if (next.done || abort.signal.aborted) break;
-        if (!reply.raw.write(next.value)) await new Promise((r) => reply.raw.once('drain', r));
+        if (!reply.raw.write(next.value)) await drained(reply.raw, abort.signal);
       }
     } catch {
       /* the phone or the agent went away: the viewer sees the stream end and offers a restart */
