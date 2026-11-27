@@ -66,6 +66,21 @@ export const settings = {
     visuals:
       'The pictures and gestures on each page. Every button and list stays either way. Stored in this browser only.',
   },
+  storageCategories: {
+    attachments: 'Agent attachments',
+    checkpoints: 'Checkpoint refs',
+    branches: 'Local branches',
+    git: 'Git housekeeping',
+    'clone-builds': 'Clone build output',
+    'run-builds': 'Run build output',
+    clones: 'Unused bot clones',
+    apks: 'Old APKs',
+    evidence: 'Test screenshots',
+    figma: 'Figma cache',
+    scrcpy: 'Old scrcpy servers',
+    temp: 'Temp leftovers',
+    worktrees: 'Finished agent worktrees',
+  },
   appearance: {
     language: 'Language',
     landing: 'Landing page',

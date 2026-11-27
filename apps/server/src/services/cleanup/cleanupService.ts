@@ -26,6 +26,7 @@ import type { WorkspaceService } from '../cockpit/workspaces';
 import { SCRCPY_SERVER_VERSION } from '../device/scrcpyVersion';
 import { FIGMA_CARDS_DIR } from '../figma/snapshotStore';
 import {
+  buildCandidates,
   dataCandidates,
   tmpCandidates,
   workspaceCandidates,
@@ -41,7 +42,7 @@ import {
  * Storage cleanup (no AI). `scan()` gathers facts (DB, the Mac through the host, the server's data dir) and runs the
  * fixed rules in `rules.ts`. `apply(ids)` scans AGAIN and deletes only the ids that still match a rule, so anything
  * that changed since the user looked (a branch got a commit, a card reopened) is kept. A workspace with a session
- * still running is not touched at all. Once a day the safe tier runs by itself when Settings allows it.
+ * still running is not touched, except its Flutter `build/` when nothing can be building into it (see `buildInUse`). Once a day the safe tier runs by itself when Settings allows it.
  */
 
 const AUTO_FIRST_MS = 10 * 60 * 1000;
@@ -260,13 +261,34 @@ export class CleanupService {
     const skipped: CleanupScan['skipped'] = [];
 
     const sessions = await this.d.sessions.list().catch(() => null);
+    const runningRepos = new Set(
+      this.d.store.db
+        .select({ repoId: testRuns.repoId })
+        .from(testRuns)
+        .where(inArray(testRuns.status, ['active', 'paused']))
+        .all()
+        .map((r) => r.repoId),
+    );
     for (const w of this.d.workspaces.list()) {
       if (!sessions) {
         skipped.push({ where: w.name, reason: 'Could not list sessions (host agent down?)' });
         continue;
       }
-      if (sessions.some((s) => s.workspaceId === w.id && s.state !== 'exited')) {
+      const base = w.defaultBase || 'main';
+      const ws = { id: w.id, name: w.name, repoId: w.repoId, base };
+      const open = sessions.filter((s) => s.workspaceId === w.id && s.state !== 'exited');
+      if (open.length > 0) {
         skipped.push({ where: w.name, reason: 'A session is running in it' });
+        // An agent idle after its turn (a finished device test keeps its chat open) builds nothing: its `build/` may go.
+        const buildInUse =
+          open.some((s) => s.state === 'running' || s.kind === 'flutter' || s.kind === 'shell') ||
+          (w.repoId !== null && runningRepos.has(w.repoId));
+        if (!buildInUse) {
+          const facts = await this.d.host
+            .wsCleanupFacts(this.d.workspaces.ref(w.id), base)
+            .catch(() => null);
+          if (facts) candidates.push(...buildCandidates({ ws, facts }, now));
+        }
         continue;
       }
       try {
@@ -274,14 +296,11 @@ export class CleanupService {
           const wt = await this.worktreeCandidate(w);
           if (wt) candidates.push(wt);
         }
-        const base = w.defaultBase || 'main';
         const facts = await this.d.host.wsCleanupFacts(this.d.workspaces.ref(w.id), base);
-        candidates.push(
-          ...workspaceCandidates(
-            { ws: { id: w.id, name: w.name, repoId: w.repoId, base }, facts },
-            db,
-          ),
-        );
+        candidates.push(...workspaceCandidates({ ws, facts }, db));
+        if (w.repoId === null || !runningRepos.has(w.repoId)) {
+          candidates.push(...buildCandidates({ ws, facts }, now));
+        }
       } catch (e) {
         skipped.push({ where: w.name, reason: (e as Error).message });
       }

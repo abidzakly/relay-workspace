@@ -13,21 +13,6 @@ import { useCleanupApply, useCleanupLast, useCleanupScan } from '@/lib/cleanupAp
 import { useSaveGlobal } from '@/lib/settingsApi';
 import { ErrorAlert, SectionCard } from './SectionCard';
 
-const CATEGORY_LABEL: Record<CleanupCategory, string> = {
-  attachments: 'Agent attachments',
-  checkpoints: 'Checkpoint refs',
-  branches: 'Local branches',
-  git: 'Git housekeeping',
-  'clone-builds': 'Clone build output',
-  clones: 'Unused bot clones',
-  apks: 'Old APKs',
-  evidence: 'Test screenshots',
-  figma: 'Figma cache',
-  scrcpy: 'Old scrcpy servers',
-  temp: 'Temp leftovers',
-  worktrees: 'Finished agent worktrees',
-};
-
 const bytesLabel = (b: number) =>
   b >= 1024 ** 3
     ? `${(b / 1024 ** 3).toFixed(1)} GB`
@@ -44,6 +29,7 @@ const sum = (list: readonly CleanupCandidate[]) => list.reduce((n, c) => n + (c.
  */
 export function StorageCard({ settings }: { settings: GlobalConfigPublic }) {
   const { t } = useTranslation();
+  const categoryLabel = (c: CleanupCategory) => t(`settings.storageCategories.${c}` as const);
   const save = useSaveGlobal();
   const last = useCleanupLast();
   const scan = useCleanupScan();
@@ -82,7 +68,7 @@ export function StorageCard({ settings }: { settings: GlobalConfigPublic }) {
       confirm.length > 0 &&
       !window.confirm(
         `Delete ${confirm.length} item${confirm.length === 1 ? '' : 's'} that need confirmation (${[
-          ...new Set(confirm.map((c) => CATEGORY_LABEL[c.category])),
+          ...new Set(confirm.map((c) => categoryLabel(c.category))),
         ].join(', ')})? This cannot be undone.`,
       )
     )
@@ -176,7 +162,7 @@ export function StorageCard({ settings }: { settings: GlobalConfigPublic }) {
                           )
                         }
                       />
-                      {CATEGORY_LABEL[cat]}
+                      {categoryLabel(cat)}
                       <span className="font-mono text-2xs text-muted-foreground">
                         {list.length}
                         {sum(list) > 0 ? ` · ${bytesLabel(sum(list))}` : ''}

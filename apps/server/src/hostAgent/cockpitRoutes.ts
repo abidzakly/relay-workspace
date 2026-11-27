@@ -109,6 +109,7 @@ const WsSchemas = {
             tip: z.string().regex(/^[0-9a-f]{40,64}$/),
             force: z.boolean(),
           }),
+          z.object({ kind: z.literal('build'), rel: z.literal('build') }),
           z.object({ kind: z.literal('prune') }),
         ]),
       )

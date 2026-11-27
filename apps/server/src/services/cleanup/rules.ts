@@ -21,6 +21,7 @@ export const GRACE = {
   preSquash: 7 * DAY,
   branchIdle: 3 * DAY,
   cloneBuild: 3 * DAY,
+  runBuild: 3 * DAY,
   apkKeep: 5,
   apkAge: 14 * DAY,
   evidenceDone: 30 * DAY,
@@ -242,6 +243,26 @@ export function workspaceCandidates(w: WorkspaceFacts, db: DbFacts): PlannedCand
     });
   }
   return out;
+}
+
+/**
+ * Rule 4b: a workspace's Flutter `build/` (what "Run this branch" and Test Bench runs leave: intermediates and the
+ * debug APK). The next run rebuilds it, so only an idle one is offered, and only on a click: a cold build is slower.
+ */
+export function buildCandidates(w: WorkspaceFacts, now: number): PlannedCandidate[] {
+  const { ws, facts } = w;
+  return (facts.builds ?? [])
+    .filter((b) => now - b.mtimeMs >= GRACE.runBuild)
+    .map((b) => ({
+      id: `ws:${ws.id}:build:${b.rel}:${Math.floor(b.mtimeMs)}`,
+      category: 'run-builds' as const,
+      tier: 'confirm' as const,
+      label: `Flutter ${b.rel}/ folder`,
+      reason: `Last built ${ago(now, b.mtimeMs)}; the next run rebuilds it (debug APK included)`,
+      bytes: b.bytes,
+      where: ws.name,
+      action: { on: 'ws', workspaceId: ws.id, base: ws.base, item: { kind: 'build', rel: b.rel } },
+    }));
 }
 
 function attachmentDoneReason(
