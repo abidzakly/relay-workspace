@@ -1,16 +1,12 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import type { GlobalConfigPublic } from '@relay/shared';
 import { Label } from '@/components/ui/label';
-import { Slider } from '@/components/ui/slider';
 import { Switch } from '@/components/ui/switch';
 import { Field, errorMap } from '@/components/Field';
 import { ApiError } from '@/lib/api';
 import { useSaveGlobal } from '@/lib/settingsApi';
+import { CapacityWaterline } from './CapacityWaterline';
 import { ErrorAlert, SectionCard } from './SectionCard';
-
-export function toPlanningDraft(s: GlobalConfigPublic) {
-  return { capacityHours: String(s.sprint.capacityHours) };
-}
 
 type KpiPreset = keyof GlobalConfigPublic['kpi'];
 
@@ -28,19 +24,22 @@ const KPI_PRESETS: readonly { id: KpiPreset; label: string; hint: string }[] = [
   { id: 'bugRatio', label: 'Bug ratio', hint: 'At most a set share of bug cards each month.' },
 ];
 
-/** The slider's usual top; a larger saved capacity stretches it. */
-const CAPACITY_MAX = 160;
-
 /** Sprint capacity for the Sprint Atelier, and the KPI presets. */
 export function PlanningCard({ settings }: { settings: GlobalConfigPublic }) {
   const saved = settings.sprint.capacityHours;
-  const [capacity, setCapacity] = useState(saved);
   const save = useSaveGlobal();
+  const [justSaved, setJustSaved] = useState(false);
+  useEffect(() => {
+    if (!justSaved) return;
+    const t = setTimeout(() => setJustSaved(false), 2000);
+    return () => clearTimeout(t);
+  }, [justSaved]);
   const saveCapacity = (hours: number) => {
     if (hours === saved || hours <= 0) return;
-    save.mutate({
-      patch: (s) => ({ ...s, sprint: { ...s.sprint, capacityHours: hours } }),
-    });
+    save.mutate(
+      { patch: (s) => ({ ...s, sprint: { ...s.sprint, capacityHours: hours } }) },
+      { onSuccess: () => setJustSaved(true) },
+    );
   };
   const errs = errorMap(save.error instanceof ApiError ? save.error.issues : []);
   return (
@@ -49,26 +48,20 @@ export function PlanningCard({ settings }: { settings: GlobalConfigPublic }) {
       title="Planning"
       description="Sprint capacity for the Sprint Atelier."
     >
-      <div className="grid gap-4 sm:grid-cols-2">
-        <Field
-          label="Sprint capacity (hours)"
-          htmlFor="pl-cap"
-          hint="The Sprint Atelier fill line: estimated hours one sprint can hold. Saved when you let go."
-          error={errs['sprint.capacityHours']}
-        >
-          <Slider
-            id="pl-cap"
-            min={1}
-            max={Math.max(CAPACITY_MAX, Math.ceil(saved))}
-            step={1}
-            value={capacity}
-            disabled={save.isPending}
-            format={(h) => `${h} h`}
-            onChange={setCapacity}
-            onCommit={saveCapacity}
-          />
-        </Field>
-      </div>
+      <Field
+        label="Sprint capacity"
+        htmlFor="pl-cap"
+        hint="The Sprint Atelier fill line: estimated hours one sprint can hold. Type 72, 2w or 5d (a day is 8 h); saved on Enter or when you leave the field."
+        error={errs['sprint.capacityHours']}
+      >
+        <CapacityWaterline
+          id="pl-cap"
+          saved={saved}
+          pending={save.isPending}
+          justSaved={justSaved}
+          onSave={saveCapacity}
+        />
+      </Field>
       <ErrorAlert error={save.error && Object.keys(errs).length === 0 ? save.error : null} />
       <fieldset className="grid gap-3 border-t border-hairline pt-4">
         <legend className="type-micro text-muted-foreground">KPI presets</legend>

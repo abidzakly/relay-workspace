@@ -11,7 +11,7 @@ import {
 } from 'react';
 import { useLocation, useNavigate } from 'react-router';
 import { ChevronsDownUp, ChevronsUpDown, Search, X } from 'lucide-react';
-import { PlanningCard, toPlanningDraft } from '@/settings/PlanningCard';
+import { PlanningCard } from '@/settings/PlanningCard';
 import { AiPromptsCard } from '@/settings/AiPromptsCard';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Input } from '@/components/ui/input';
@@ -70,7 +70,7 @@ function cards(s: GlobalConfigPublic): Record<string, ReactNode> {
     workspaces: <WorkspacesCard />,
     scripts: <ScriptsCard />,
     webhooks: <WebhookHealthCard settings={s} />,
-    planning: <PlanningCard key={`pl:${JSON.stringify(toPlanningDraft(s))}`} settings={s} />,
+    planning: <PlanningCard settings={s} />,
     storage: <StorageCard settings={s} />,
     backup: <BackupCard />,
     appearance: <AppearanceCard />,
