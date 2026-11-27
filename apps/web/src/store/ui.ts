@@ -2,6 +2,8 @@ import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 
 export type Theme = 'light' | 'dark' | 'system';
+/** UI language. English is the source; every key has an Indonesian twin (`src/i18n/locales`). */
+export type Lang = 'en' | 'id';
 /** S = ring ship (default), A = ring pipeline gimbal, B = block-built sphere gimbal. */
 export type CoreMode = 'S' | 'A' | 'B';
 /** Current release cycle (default) vs all-time progress. */
@@ -24,6 +26,7 @@ export type LogViewPage = 'release' | 'builds';
 
 interface UiState {
   theme: Theme;
+  lang: Lang;
   mode3d: CoreMode;
   scope: CoreScope;
   ascii: AsciiMode;
@@ -48,6 +51,7 @@ interface UiState {
   /** Release and Builds: the live picture of a job, or its plain log. */
   logView: Record<LogViewPage, LogView>;
   setTheme: (v: Theme) => void;
+  setLang: (v: Lang) => void;
   setMode3d: (v: CoreMode) => void;
   setScope: (v: CoreScope) => void;
   setAscii: (v: AsciiMode) => void;
@@ -80,6 +84,7 @@ export const useUiStore = create<UiState>()(
   persist(
     (set) => ({
       theme: 'system',
+      lang: 'en',
       mode3d: 'S',
       scope: 'cycle',
       ascii: 'text',
@@ -96,6 +101,7 @@ export const useUiStore = create<UiState>()(
       setupIgnored: [],
       logView: { release: 'visual', builds: 'visual' },
       setTheme: (theme) => set({ theme }),
+      setLang: (lang) => set({ lang }),
       setMode3d: (mode3d) => set({ mode3d }),
       setScope: (scope) => set({ scope }),
       setAscii: (ascii) => set({ ascii }),
@@ -139,6 +145,7 @@ export const useUiStore = create<UiState>()(
       },
       partialize: (s) => ({
         theme: s.theme,
+        lang: s.lang,
         mode3d: s.mode3d,
         scope: s.scope,
         ascii: s.ascii,

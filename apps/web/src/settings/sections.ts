@@ -210,6 +210,8 @@ export const SETTINGS_SECTIONS: SettingsSection[] = [
     group: 'browser',
     title: 'Appearance & 3D core',
     keywords: [
+      'language',
+      'bahasa',
       'landing page',
       'theme',
       'core view',

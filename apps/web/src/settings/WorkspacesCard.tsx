@@ -1,3 +1,4 @@
+import { useTranslation } from 'react-i18next';
 import { FolderGit2, FolderOpen, GitBranch, Loader2, Plus, Trash2 } from 'lucide-react';
 import { useState } from 'react';
 import type { WorkspaceColor } from '@relay/shared';
@@ -22,6 +23,7 @@ import { sameGitRemote, workspaceName } from './workspaceForm';
  * validates each path (`git rev-parse`, inside HOST_AGENT_WORKSPACE_ROOTS, default ~/Work).
  */
 export function WorkspacesCard() {
+  const { t } = useTranslation();
   const list = useWorkspaces();
   const repos = useRepos();
   const add = useAddWorkspace();
@@ -70,7 +72,7 @@ export function WorkspacesCard() {
     <SectionCard
       id="workspaces"
       title="Workspaces"
-      description="Repo folders on this computer for the Cockpit (agent, terminal, editor, run app). They must be inside HOST_AGENT_WORKSPACE_ROOTS (default ~/Work)."
+      description={t('settings.descriptions.workspaces')}
     >
       <ul className="grid gap-2">
         {/* Worktrees made by a bulk start are managed in the Cockpit, next to their parent. */}

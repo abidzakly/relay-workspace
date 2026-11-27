@@ -1,5 +1,7 @@
 import { useMemo, type ReactNode } from 'react';
 import { Link } from 'react-router';
+import { Trans, useTranslation } from 'react-i18next';
+import type { TFunction } from 'i18next';
 import {
   ArrowRight,
   GitPullRequestCreate,
@@ -30,30 +32,21 @@ import { useKpiPresets } from '@/lib/features';
  * sentence here is built from server data; nothing is invented, and an unknown stays "—", never 0.
  */
 
-const WEEKDAY = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
-const MONTH = [
-  'January',
-  'February',
-  'March',
-  'April',
-  'May',
-  'June',
-  'July',
-  'August',
-  'September',
-  'October',
-  'November',
-  'December',
-];
+/** Dates in the UI language: `en` prints the day before the month, as `en-GB` does. */
+const dateLocale = (lang: string) => (lang === 'id' ? 'id-ID' : 'en-GB');
 
-/** Today's edition: its number is the day of the year. */
-export function edition(now = new Date()) {
+/** Today's edition: its number is the day of the year. `dateLine` is always "Weekday, day month year". */
+export function edition(now = new Date(), lang = 'en') {
   const start = new Date(now.getFullYear(), 0, 0);
   const no = Math.floor((now.getTime() - start.getTime()) / 86_400_000);
+  const loc = dateLocale(lang);
+  const weekday = now.toLocaleDateString(loc, { weekday: 'long' });
+  const date = now.toLocaleDateString(loc, { day: 'numeric', month: 'long', year: 'numeric' });
+  const month = now.toLocaleDateString(loc, { month: 'short' }).replace(/\.$/, '');
   return {
     no,
-    dateLine: `${WEEKDAY[now.getDay()]}, ${now.getDate()} ${MONTH[now.getMonth()]} ${now.getFullYear()}`,
-    short: `${MONTH[now.getMonth()]!.slice(0, 3)} ${now.getFullYear()}`,
+    dateLine: `${weekday}, ${date}`,
+    short: `${month} ${now.getFullYear()}`,
     printed: `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`,
   };
 }
@@ -69,28 +62,37 @@ export interface Headline {
   breaking: string | null;
 }
 
-const plural = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
-
-/** The lead story, written from the release and what needs you. */
+/** The lead story, written from the release and what needs you, in the UI language. */
 export function headline(
   model: ProgressModel | null,
   center: ActionCenter,
   offDuty: boolean,
+  t: TFunction,
+  lang = 'en',
 ): Headline {
   const urgent = center.categories.find((c) => calmTone(c.tone, offDuty) === 'bad' && c.count > 0);
+  // English titles are plural nouns ("Failed pipelines"); one of them reads singular. Indonesian has no plural -s.
   const breaking = urgent
-    ? `${urgent.count} ${urgent.count === 1 ? urgent.title.replace(/s$/, '') : urgent.title}`
+    ? `${urgent.count} ${urgent.count === 1 && lang === 'en' ? urgent.title.replace(/s$/, '') : urgent.title}`
     : null;
+  const first = center.categories[0]?.title;
   const needs =
     center.total === 0
-      ? 'Nothing needs you right now.'
-      : `${plural(center.total, 'thing')} need${center.total === 1 ? 's' : ''} you; first, ${center.categories[0]?.title.toLowerCase() ?? 'the list'}.`;
+      ? t('overview.headline.needsNothing')
+      : t('overview.headline.needs', {
+          count: center.total,
+          first: first
+            ? lang === 'en'
+              ? first.toLowerCase()
+              : first
+            : t('overview.headline.theList'),
+        });
   if (!model) {
     return {
-      kicker: 'Release',
-      before: 'The presses are',
-      accent: 'warming',
-      after: 'up',
+      kicker: t('overview.release'),
+      before: t('overview.headline.warmingBefore'),
+      accent: t('overview.headline.warmingAccent'),
+      after: t('overview.headline.warmingAfter'),
       deck: needs,
       breaking,
     };
@@ -98,14 +100,14 @@ export function headline(
   const s = releaseSummary(model);
   const flow = s.facts.find((f) => f.key === 'cards')?.value ?? 0;
   const issues = s.facts.find((f) => f.key === 'issues')?.value ?? 0;
-  const counts = `${plural(flow, 'card')} in the flow${issues > 0 ? `, ${issues} in Issues` : ''}.`;
-  const kicker = `Release · ${s.scopeLabel}${s.partial ? ' · partial' : ''}`;
+  const counts = `${t('overview.headline.counts', { count: flow })}${issues > 0 ? t('overview.headline.countsIssues', { count: issues }) : ''}.`;
+  const kicker = `${t('overview.headline.kicker', { scope: s.scopeLabel })}${s.partial ? t('overview.headline.partial') : ''}`;
   if (s.percent === null) {
     return {
       kicker,
-      before: 'No cards in the',
-      accent: 'flow',
-      after: 'yet',
+      before: t('overview.headline.noFlowBefore'),
+      accent: t('overview.headline.noFlowAccent'),
+      after: t('overview.headline.noFlowAfter'),
       deck: needs,
       breaking,
     };
@@ -113,18 +115,18 @@ export function headline(
   if (s.percent >= 100) {
     return {
       kicker,
-      before: 'Every card is',
-      accent: 'ready',
-      after: '. Ship it.',
+      before: t('overview.headline.readyBefore'),
+      accent: t('overview.headline.readyAccent'),
+      after: t('overview.headline.readyAfter'),
       deck: `${counts} ${needs}`,
       breaking,
     };
   }
   return {
     kicker,
-    before: `${s.percent}% of the cycle is ready to`,
-    accent: 'test',
-    after: '',
+    before: t('overview.headline.percentBefore', { percent: s.percent }),
+    accent: t('overview.headline.percentAccent'),
+    after: t('overview.headline.percentAfter'),
     deck: `${counts} ${needs}`,
     breaking,
   };
@@ -228,10 +230,11 @@ function Sparkline({
  */
 export function Markets({ report, className }: { report: KpiReport; className?: string }) {
   const kpiPresets = useKpiPresets();
+  const { t } = useTranslation();
   const items = kpiItems(report.scorecard, kpiPresets);
   const months = [...report.history].reverse().slice(-8);
   return (
-    <ul className={cn('grid', className)} aria-label="KPI">
+    <ul className={cn('grid', className)} aria-label={t('overview.kpi.label')}>
       {items.map((item) => {
         const metric = item.key as Metric;
         const g: GaugeModel = item.gauge;
@@ -244,7 +247,7 @@ export function Markets({ report, className }: { report: KpiReport; className?: 
         const Trend = delta === null || delta === 0 ? Minus : delta > 0 ? TrendingUp : TrendingDown;
         const deltaText =
           delta === null
-            ? 'new'
+            ? t('overview.kpi.new')
             : metric === 'research'
               ? `${delta > 0 ? '+' : ''}${delta}`
               : `${delta > 0 ? '+' : ''}${(delta * 100).toFixed(1)}`;
@@ -270,11 +273,13 @@ export function Markets({ report, className }: { report: KpiReport; className?: 
                 better === false && 'text-destructive',
                 better === null && 'text-muted-foreground',
               )}
-              title="Change since the last frozen month"
+              title={t('overview.kpi.change')}
             >
               <Trend aria-hidden className="size-3.5" />
               {deltaText}
-              {metric !== 'research' && delta !== null && <span className="text-2xs">pt</span>}
+              {metric !== 'research' && delta !== null && (
+                <span className="text-2xs">{t('overview.kpi.pt')}</span>
+              )}
             </span>
             <span className="col-span-2 sm:col-span-1">
               <Sparkline
@@ -306,22 +311,24 @@ export function Briefs({
   loading: boolean;
   limit?: number;
 }) {
+  const { t } = useTranslation();
   return (
     <div className="flex flex-col gap-5">
       {offDuty && center.total > 0 && (
-        <p className="text-xs text-muted-foreground italic">
-          Off duty today: this keeps for when you are back.
-        </p>
+        <p className="text-xs text-muted-foreground italic">{t('overview.briefs.offDuty')}</p>
       )}
       {errors.length > 0 && (
         <p className="text-xs text-destructive">
-          Part of this could not load: {errors.map(describeError).join('; ')}
+          {t('overview.briefs.partError', { errors: errors.map(describeError).join('; ') })}
         </p>
       )}
-      {loading && <p className="text-sm text-muted-foreground">Setting the type…</p>}
+      {loading && <p className="text-sm text-muted-foreground">{t('overview.settingType')}</p>}
       {!loading && center.total === 0 && errors.length === 0 && (
         <p className="text-lg leading-snug">
-          Quiet day. Nothing <span className="type-accent">needs</span> you.
+          <Trans
+            i18nKey="overview.briefs.quiet"
+            components={[<span key="needs" className="type-accent" />]}
+          />
         </p>
       )}
       {center.categories.map((c) => {
@@ -342,7 +349,7 @@ export function Briefs({
                 to={c.to}
                 className="arrow-link inline-flex shrink-0 items-center gap-1 text-2xs font-semibold tracking-[0.04em] uppercase hover:underline"
               >
-                All <ArrowRight aria-hidden className="size-3" />
+                {t('overview.briefs.all')} <ArrowRight aria-hidden className="size-3" />
               </Link>
             </h4>
             <ul className="grid">
@@ -361,8 +368,10 @@ export function Briefs({
             </ul>
             {c.count > Math.min(limit, c.preview.length) && (
               <p className="font-mono text-2xs text-muted-foreground">
-                continued on {c.to.replace(/^\//, '').split(/[/?]/)[0] || 'its page'} ·{' '}
-                {c.count - Math.min(limit, c.preview.length)} more
+                {t('overview.briefs.continued', {
+                  page: c.to.replace(/^\//, '').split(/[/?]/)[0] || t('overview.briefs.itsPage'),
+                  count: c.count - Math.min(limit, c.preview.length),
+                })}
               </p>
             )}
           </section>
@@ -384,16 +393,17 @@ export function Classifieds({
 }) {
   const q = useReadyForMr();
   const refresh = useRefreshReady();
+  const { t } = useTranslation();
   const items = useMemo(() => groupReady(q.data?.items ?? []).flat(), [q.data]);
   return (
     <div className={cn('grid gap-3', className)}>
       <div className="flex items-center justify-between">
-        <p className="type-micro text-muted-foreground">Wanted: one MR each</p>
+        <p className="type-micro text-muted-foreground">{t('overview.ads.wanted')}</p>
         <button
           type="button"
           onClick={() => refresh.mutate()}
           disabled={refresh.isPending}
-          aria-label="Re-check branches in GitLab"
+          aria-label={t('overview.ads.recheck')}
           className="grid size-7 place-items-center rounded-full border border-hairline outline-none hover:border-foreground focus-visible:ring-1 focus-visible:ring-ring"
         >
           <RefreshCw className={cn('size-3.5', refresh.isPending && 'motion-safe:animate-spin')} />
@@ -402,7 +412,7 @@ export function Classifieds({
       {q.error && <p className="text-xs text-destructive">{describeError(q.error)}</p>}
       {q.data && items.length === 0 && (
         <p className="border border-dashed border-foreground/30 p-3 text-sm text-muted-foreground">
-          No ads today: every pushed branch has its MR.
+          {t('overview.ads.none')}
         </p>
       )}
       <ul className={cn('grid gap-3', !compact && 'sm:grid-cols-2')}>
@@ -417,7 +427,10 @@ export function Classifieds({
             />
             <p className="flex items-baseline justify-between gap-2">
               <span className="text-sm font-semibold tracking-[-0.01em] uppercase">
-                Wanted{it.stack && it.stack.size > 1 ? ` · #${it.stack.position} of a stack` : ''}
+                {t('overview.ads.item')}
+                {it.stack && it.stack.size > 1
+                  ? t('overview.ads.ofStack', { position: it.stack.position })
+                  : ''}
               </span>
               <span className="font-mono text-2xs text-muted-foreground">
                 <TimeAgo at={it.pushedAt} />
@@ -432,13 +445,13 @@ export function Classifieds({
               className="tactile mt-1 inline-flex w-fit items-center gap-1.5 rounded-full bg-foreground px-3 py-1 text-2xs font-semibold tracking-[0.04em] text-background uppercase"
             >
               <GitPullRequestCreate aria-hidden className="size-3.5" />
-              Create MR
+              {t('overview.ads.create')}
             </Link>
           </li>
         ))}
       </ul>
       {items.some((it) => it.stack && it.stack.size > 1) && (
-        <p className="text-2xs text-muted-foreground">Stacks: create the parent MR (#1) first.</p>
+        <p className="text-2xs text-muted-foreground">{t('overview.ads.stacks')}</p>
       )}
     </div>
   );
@@ -449,30 +462,33 @@ export function Classifieds({
 /** Progression as a scoreboard: the level in big digits, the XP to go, the streaks as a standings table. */
 export function Standings({ className }: { className?: string }) {
   const q = useGamification();
-  if (q.isPending) return <p className="text-sm text-muted-foreground">Loading…</p>;
+  const { t } = useTranslation();
+  if (q.isPending) return <p className="text-sm text-muted-foreground">{t('overview.loading')}</p>;
   if (q.isError) return <p className="text-xs text-destructive">{describeError(q.error)}</p>;
   if (!q.data) return null;
   const p = progressionSummary(q.data);
   const rows: [string, { current: number; best: number }][] = [
-    ['Clean releases', p.releases],
-    ['SLA-met days', p.slaDays],
-    ['Review days', p.reviewDays],
+    [t('overview.standingsTable.clean'), p.releases],
+    [t('overview.standingsTable.sla'), p.slaDays],
+    [t('overview.standingsTable.review'), p.reviewDays],
   ];
   return (
     <div className={cn('grid gap-4', className)}>
       <div className="flex items-end gap-4">
         <div className="grid place-items-center bg-foreground px-4 py-2 text-background">
-          <span className="type-micro opacity-70">Level</span>
+          <span className="type-micro opacity-70">{t('overview.standingsTable.level')}</span>
           <span className="font-mono text-6xl leading-none tabular-nums">{p.level}</span>
         </div>
         <div className="grid flex-1 gap-1.5">
           <p className="flex justify-between font-mono text-xs">
             <span>{p.xp} XP</span>
-            <span className="text-muted-foreground">{p.xpToNext} to go</span>
+            <span className="text-muted-foreground">
+              {t('overview.standingsTable.toGo', { xp: p.xpToNext })}
+            </span>
           </p>
           <div
             role="progressbar"
-            aria-label={`Progress to level ${p.level + 1}`}
+            aria-label={t('overview.standingsTable.progress', { level: p.level + 1 })}
             aria-valuemin={0}
             aria-valuemax={p.xpForLevel}
             aria-valuenow={p.xpIntoLevel}
@@ -492,17 +508,17 @@ export function Standings({ className }: { className?: string }) {
       </div>
       <div className="overflow-x-auto">
         <table className="w-full text-sm">
-          <caption className="sr-only">Streaks</caption>
+          <caption className="sr-only">{t('overview.standingsTable.streaks')}</caption>
           <thead>
             <tr className="type-micro text-muted-foreground">
               <th scope="col" className="pb-1 text-left font-semibold">
-                Streak
+                {t('overview.standingsTable.streak')}
               </th>
               <th scope="col" className="pb-1 text-right font-semibold">
-                Now
+                {t('overview.standingsTable.now')}
               </th>
               <th scope="col" className="pb-1 text-right font-semibold">
-                Best
+                {t('overview.standingsTable.best')}
               </th>
             </tr>
           </thead>
@@ -522,7 +538,10 @@ export function Standings({ className }: { className?: string }) {
         </table>
       </div>
       <p className="font-mono text-2xs text-muted-foreground">
-        Achievements {p.badgesEarned}/{p.badgesTotal}
+        {t('overview.standingsTable.achievements', {
+          earned: p.badgesEarned,
+          total: p.badgesTotal,
+        })}
       </p>
     </div>
   );

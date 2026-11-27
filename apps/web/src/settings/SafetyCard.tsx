@@ -1,3 +1,4 @@
+import { useTranslation } from 'react-i18next';
 import { ENGINES, type Engine, type GlobalConfigPublic } from '@relay/shared';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Label } from '@/components/ui/label';
@@ -15,6 +16,7 @@ const ENGINE_LABEL: Record<Engine, string> = {
 
 /** Dry-run + release engine. Both save immediately (single field each). */
 export function SafetyCard({ settings }: { settings: GlobalConfigPublic }) {
+  const { t } = useTranslation();
   const save = useSaveGlobal();
   const pty = useReleaseEngines().data?.pty;
   const ptyUnavailable = pty?.available === false;
@@ -22,7 +24,7 @@ export function SafetyCard({ settings }: { settings: GlobalConfigPublic }) {
     <SectionCard
       id="safety"
       title="Safety & engine"
-      description="Dry-run records what a write WOULD do without calling GitLab, Notion or Drive."
+      description={t('settings.descriptions.safety')}
     >
       {!settings.dryRun ? (
         <Alert variant="warning">

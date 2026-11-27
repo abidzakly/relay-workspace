@@ -1,3 +1,4 @@
+import { useTranslation } from 'react-i18next';
 import { useRef, useState } from 'react';
 import { Database, Download, Upload } from 'lucide-react';
 import {
@@ -347,11 +348,12 @@ function DbSection() {
 
 /** Config export and import, and the DB backup. */
 export function BackupCard() {
+  const { t } = useTranslation();
   return (
     <SectionCard
       id="backup"
       title="Backup & export"
-      description="Served by this private dashboard only, never through the public webhook address."
+      description={t('settings.descriptions.backup')}
     >
       <ExportSection />
       <ImportSection />

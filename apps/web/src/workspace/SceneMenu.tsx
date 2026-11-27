@@ -4,6 +4,9 @@ import { pathEnabled } from '@relay/shared';
 import { useFeatures } from '@/lib/features';
 import { useReviewDesk } from '@/lib/reviewsApi';
 import { Link } from 'react-router';
+import { useTranslation } from 'react-i18next';
+import type { TFunction } from 'i18next';
+import { navLabel } from '@/i18n/labels';
 import { useUnreadNotifications } from '@/lib/notificationApi';
 import { cn } from '@/lib/utils';
 import { OBJECTS, type ObjectId } from './registry';
@@ -18,12 +21,14 @@ const TONE_CLASS: Record<Tone, string> = {
   bad: 'bg-destructive',
 };
 
-const TONE_TEXT: Record<Tone, string> = {
-  idle: '',
-  ok: 'All good.',
-  warn: 'Needs a look.',
-  bad: 'Needs action.',
-};
+const toneText = (t: TFunction, tone: Tone): string =>
+  tone === 'ok'
+    ? t('shell.scene.allGood')
+    : tone === 'warn'
+      ? t('shell.scene.needsLook')
+      : tone === 'bad'
+        ? t('shell.scene.needsAction')
+        : '';
 
 /** Colour is never the only signal: the tone also reads out in the label. */
 export function ToneDot({ tone, className }: { tone: Tone; className?: string }) {
@@ -71,53 +76,59 @@ export function SceneMenu({
     desk?.items.filter((i) => i.lane === 'needs_you' || i.lane === 'changed').length ?? 0;
   const [hint, setHint] = useState<Entry | null>(null);
   const dock = layout === 'dock';
+  const { t } = useTranslation();
+  const unreadText =
+    unread > 0 ? t('shell.scene.unread', { count: unread }) : t('shell.scene.nothingUnread');
+  const askedText =
+    asked > 0 ? t('shell.scene.waitingReview', { count: asked }) : t('shell.scene.nothingWaiting');
 
   const all: Entry[] = [
     ...OBJECTS.map((o): Entry => {
       const s = data.signals[o.id];
+      const label = navLabel(t, o.route, o.label);
       return {
         key: o.id,
         to: o.route,
-        label: o.label,
+        label,
         icon: o.icon,
         summary: s.summary,
         tone: s.tone,
         badge: s.badge,
-        ariaLabel: `${o.label} (${thingIn(env, o.id)}). ${s.summary} ${TONE_TEXT[s.tone]}`.trim(),
+        ariaLabel: `${label} (${thingIn(env, o.id)}). ${s.summary} ${toneText(t, s.tone)}`.trim(),
         object: o.id,
       };
     }),
     {
       key: 'cockpit',
       to: '/cockpit',
-      label: 'Cockpit',
+      label: t('nav.cockpit'),
       icon: Bot,
-      summary: 'Your agent sessions.',
+      summary: t('shell.scene.cockpitSummary'),
       tone: 'idle',
       badge: null,
-      ariaLabel: 'Cockpit. Your agent sessions.',
+      ariaLabel: `${t('nav.cockpit')}. ${t('shell.scene.cockpitSummary')}`,
       object: null,
     },
     {
       key: 'notifications',
       to: '/notifications',
-      label: 'Notifications',
+      label: t('nav.notifications'),
       icon: Bell,
-      summary: unread > 0 ? `${unread} unread.` : 'Nothing unread.',
+      summary: unreadText,
       tone: 'idle',
       badge: unread > 0 ? unread : null,
-      ariaLabel: `Notifications. ${unread > 0 ? `${unread} unread.` : 'Nothing unread.'}`,
+      ariaLabel: `${t('nav.notifications')}. ${unreadText}`,
       object: null,
     },
     {
       key: 'reviews',
       to: '/reviews',
-      label: 'Reviews',
+      label: t('nav.reviews'),
       icon: ScanEye,
-      summary: asked > 0 ? `${asked} waiting for your review.` : 'Nothing waiting for you.',
+      summary: askedText,
       tone: 'idle',
       badge: asked > 0 ? asked : null,
-      ariaLabel: `Reviews. ${asked > 0 ? `${asked} waiting for your review.` : 'Nothing waiting for you.'}`,
+      ariaLabel: `${t('nav.reviews')}. ${askedText}`,
       object: null,
     },
   ];
@@ -130,7 +141,10 @@ export function SceneMenu({
   };
 
   return (
-    <nav aria-label="Workspace" className={dock ? 'relative max-w-full' : undefined}>
+    <nav
+      aria-label={t('shell.workspace.menu')}
+      className={dock ? 'relative max-w-full' : undefined}
+    >
       {/* Above the list, not inside it: the list scrolls sideways, which would clip a tooltip. Touch has the labels below. */}
       {dock && hint && (
         <p

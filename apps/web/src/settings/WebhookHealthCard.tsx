@@ -1,3 +1,4 @@
+import { useTranslation } from 'react-i18next';
 import { useState } from 'react';
 import { Radio, RefreshCw } from 'lucide-react';
 import type { GlobalConfigPublic, PublicUrlCheck, WebhookHealthRepo } from '@relay/shared';
@@ -106,6 +107,7 @@ function RepoRow({ repo, onRegister }: { repo: WebhookHealthRepo; onRegister: ()
 
 /** Webhook health panel. Reading it stays local; the two buttons are the only outbound actions. */
 export function WebhookHealthCard({ settings }: { settings: GlobalConfigPublic }) {
+  const { t } = useTranslation();
   const health = useWebhookHealth();
   const check = useCheckPublicUrl();
   const register = useRegisterWebhooks();
@@ -124,7 +126,7 @@ export function WebhookHealthCard({ settings }: { settings: GlobalConfigPublic }
     <SectionCard
       id="webhooks"
       title="Webhook health"
-      description="Last delivery per repo, from the local database. Polling still covers anything a webhook misses."
+      description={t('settings.descriptions.webhooks')}
       action={
         <div className="flex flex-wrap gap-2">
           <Button variant="outline" disabled={check.isPending} onClick={() => check.mutate()}>

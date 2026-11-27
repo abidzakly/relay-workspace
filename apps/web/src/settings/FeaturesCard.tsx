@@ -1,4 +1,5 @@
 import { Fragment } from 'react';
+import { useTranslation } from 'react-i18next';
 import {
   FEATURE_GROUPS,
   FEATURES,
@@ -19,6 +20,7 @@ import { ErrorAlert, SectionCard } from './SectionCard';
  */
 export function FeaturesCard({ settings }: { settings: GlobalConfigPublic }) {
   const save = useSaveGlobal();
+  const { t } = useTranslation();
   const unsupported = useUnsupported();
   const on = settings.features;
   const count = FEATURES.filter((f) => on[f.id]).length;
@@ -29,7 +31,7 @@ export function FeaturesCard({ settings }: { settings: GlobalConfigPublic }) {
     <SectionCard
       id="features"
       title="Features"
-      description={`Switch off what you do not use. ${count} of ${FEATURES.length} on. Nothing is deleted when a feature is off.`}
+      description={t('settings.descriptions.features', { count, total: FEATURES.length })}
     >
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="grid gap-0.5">

@@ -1,5 +1,6 @@
 import { SlidersHorizontal } from 'lucide-react';
 import { useEffect, useRef, type ReactNode } from 'react';
+import { useTranslation } from 'react-i18next';
 import type { StateCard } from '@relay/shared';
 import { Button } from '@/components/ui/button';
 import { MonthFilter } from '@/components/MonthFilter';
@@ -14,6 +15,7 @@ import { PageTitle } from '@/components/PageTitle';
  */
 export function ViewSettings({ className }: { className?: string }) {
   const ref = useRef<HTMLDetailsElement>(null);
+  const { t } = useTranslation();
   useEffect(() => {
     const el = ref.current;
     if (!el) return;
@@ -39,19 +41,19 @@ export function ViewSettings({ className }: { className?: string }) {
     >
       <summary className="inline-flex h-8 cursor-pointer list-none items-center gap-1.5 rounded-md border px-3 text-sm font-medium outline-none select-none hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring [&::-webkit-details-marker]:hidden">
         <SlidersHorizontal className="size-4" aria-hidden />
-        View settings
+        {t('overview.controls.view')}
       </summary>
       <div
         role="group"
-        aria-label="View settings"
+        aria-label={t('overview.controls.view')}
         className="absolute left-0 z-20 mt-2 sm:right-0 sm:left-auto flex w-max max-w-[calc(100vw-2rem)] flex-col gap-3 rounded-xl border bg-popover p-3 text-popover-foreground shadow-lift"
       >
         <div className="flex flex-col gap-1">
-          <span className="text-xs text-muted-foreground">Stage view · presentation only</span>
+          <span className="text-xs text-muted-foreground">{t('overview.controls.stage')}</span>
           <ModeSwitch />
         </div>
         <div className="flex flex-col gap-1">
-          <span className="text-xs text-muted-foreground">Rendering</span>
+          <span className="text-xs text-muted-foreground">{t('overview.controls.rendering')}</span>
           <div className="flex flex-wrap gap-2">
             <AsciiSwitch />
           </div>
@@ -85,12 +87,13 @@ export function OverviewControls({
   const setMonth = useUiStore((s) => s.setCardMonth);
   const setScope = useUiStore((s) => s.setScope);
   const filtered = month !== 'current' || scope !== 'cycle';
+  const { t } = useTranslation();
   return (
     <div className={cn('flex flex-wrap items-end gap-3', className)}>
-      <Labelled label="Period · KPI">
+      <Labelled label={t('overview.controls.period')}>
         <MonthFilter cards={cards} />
       </Labelled>
-      <Labelled label="Scope · Release">
+      <Labelled label={t('overview.controls.scope')}>
         <ScopeSwitch />
       </Labelled>
       {filtered && (
@@ -102,7 +105,7 @@ export function OverviewControls({
             setScope('cycle');
           }}
         >
-          Reset filters
+          {t('overview.controls.reset')}
         </Button>
       )}
       <ViewSettings />
@@ -117,15 +120,16 @@ export function OverviewControls({
 export function OverviewHeader({
   cards,
   className,
-  title = 'Overview',
+  title,
 }: {
   cards: readonly StateCard[];
   className?: string;
   title?: string;
 }) {
+  const { t } = useTranslation();
   return (
     <header className={cn('flex flex-wrap items-end justify-between gap-x-4 gap-y-3', className)}>
-      <PageTitle>{title}</PageTitle>
+      <PageTitle>{title ?? t('overview.title')}</PageTitle>
       <OverviewControls cards={cards} />
     </header>
   );

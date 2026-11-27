@@ -12,6 +12,8 @@ import {
 import { ArrowLeft, Maximize, Minimize, RotateCcw } from 'lucide-react';
 import { motion } from 'motion/react';
 import { useLocation, useNavigate } from 'react-router';
+import { Trans, useTranslation } from 'react-i18next';
+import { navLabel } from '@/i18n/labels';
 import { CommandButton } from '@/components/CommandPalette';
 import { AiStatusButton } from '@/components/AiCheck';
 import { ConnectionIndicator } from '@/components/ConnectionIndicator';
@@ -26,7 +28,7 @@ import { useWallClock } from '@/lib/useWallClock';
 import { cn } from '@/lib/utils';
 import { detectWebgl } from '@/lib/webgl';
 import { useNeedsActionGroups } from '@/overview/useNeedsActionGroups';
-import { DEFAULT_ENV, ENV_LABEL, isStowed, type EnvId } from './envFor';
+import { DEFAULT_ENV, isStowed, type EnvId } from './envFor';
 import { FirstWin } from './FirstWin';
 import { pickNextJob } from './nextJob';
 import { NextJobCard } from './NextJobCard';
@@ -88,7 +90,10 @@ function RoomWaking({ visible, quiet }: { visible: boolean; quiet: boolean }) {
       {!quiet && (
         <>
           <p className="absolute top-1/2 left-4 -translate-y-1/2 type-micro md:left-10">
-            Waking the <span className="type-accent text-sm">room</span>
+            <Trans
+              i18nKey="shell.workspace.waking"
+              components={[<span key="room" className="type-accent text-sm" />]}
+            />
           </p>
           <p
             className="absolute top-1/2 right-4 -translate-y-1/2 font-mono text-sm tabular-nums md:right-10"
@@ -158,6 +163,7 @@ export function WorkspaceShell({ children }: { children: ReactNode }) {
   const hourParam = preview?.get('hour');
   const hour = hourParam ? Number(hourParam) : new Date(now).getHours();
   const needs = useNeedsActionGroups();
+  const { t } = useTranslation();
   // Only from a clean read: a failed source must not hide what is urgent, and off-duty worlds never nag.
   const job = needs.settled && !isStowed(env) ? pickNextJob(needs.groups) : null;
 
@@ -244,9 +250,7 @@ export function WorkspaceShell({ children }: { children: ReactNode }) {
 
   const fallback = (
     <div className="absolute inset-0 overflow-y-auto bg-background p-4 pt-24 md:p-10 md:pt-32">
-      <p className="mb-6 type-micro text-muted-foreground">
-        The 3D world is off in this browser. Every tab is here instead.
-      </p>
+      <p className="mb-6 type-micro text-muted-foreground">{t('shell.workspace.noWebgl')}</p>
       <SceneMenu data={data} env={env} layout="grid" />
     </div>
   );
@@ -297,12 +301,14 @@ export function WorkspaceShell({ children }: { children: ReactNode }) {
         >
           <p className="flex items-center gap-1.5 type-micro">
             {tipSignal && <ToneDot tone={tipSignal.tone} />}
-            {tipObject.label}
+            {navLabel(t, tipObject.route, tipObject.label)}
           </p>
           <p className="type-accent text-base text-muted-foreground">{thingIn(env, tipId!)}</p>
           {tipSignal && <p className="text-xs text-muted-foreground">{tipSignal.summary}</p>}
           {coarse && armed === tipId && (
-            <p className="mt-1 text-xs font-medium text-primary-ink">Tap again to open</p>
+            <p className="mt-1 text-xs font-medium text-primary-ink">
+              {t('shell.workspace.tapAgain')}
+            </p>
           )}
         </div>
       )}
@@ -319,7 +325,11 @@ export function WorkspaceShell({ children }: { children: ReactNode }) {
         <div className="pointer-events-auto flex flex-col gap-1.5">
           <h1 className="type-micro">Relay</h1>
           <p className="type-micro text-muted-foreground">
-            Living <span className="type-accent text-sm">workspace</span> — {ENV_LABEL[env]} ·{' '}
+            <Trans
+              i18nKey="shell.workspace.living"
+              components={[<span key="ws" className="type-accent text-sm" />]}
+            />{' '}
+            — {t(`shell.workspace.env.${env}` as const)} ·{' '}
             <span className="tabular-nums">
               <HeaderClock />
             </span>
@@ -327,7 +337,7 @@ export function WorkspaceShell({ children }: { children: ReactNode }) {
           <XpChip className="mt-1" />
           {webgl && (
             <p className="hidden type-micro text-muted-foreground md:block">
-              Drag to look · scroll to zoom · double-click to reset
+              {t('shell.workspace.hint')}
             </p>
           )}
         </div>
@@ -344,8 +354,8 @@ export function WorkspaceShell({ children }: { children: ReactNode }) {
               variant="ghost"
               size="icon"
               onClick={() => window.dispatchEvent(new Event(RESET_VIEW_EVENT))}
-              aria-label="Reset view"
-              title="Reset view (0 or double-click). Drag to look around, scroll to zoom, or use the arrow keys."
+              aria-label={t('shell.workspace.resetView')}
+              title={t('shell.workspace.resetViewTitle')}
             >
               <RotateCcw />
             </Button>
@@ -356,8 +366,16 @@ export function WorkspaceShell({ children }: { children: ReactNode }) {
               size="icon"
               onClick={fullscreen.toggle}
               aria-pressed={fullscreen.active}
-              aria-label={fullscreen.active ? 'Exit full screen' : 'Full screen'}
-              title={fullscreen.active ? 'Exit full screen (f or Esc)' : 'Full screen (f)'}
+              aria-label={
+                fullscreen.active
+                  ? t('shell.workspace.exitFullScreen')
+                  : t('shell.workspace.fullScreen')
+              }
+              title={
+                fullscreen.active
+                  ? t('shell.workspace.exitFullScreenTitle')
+                  : t('shell.workspace.fullScreenTitle')
+              }
             >
               {fullscreen.active ? <Minimize /> : <Maximize />}
             </Button>
@@ -404,8 +422,16 @@ export function WorkspaceShell({ children }: { children: ReactNode }) {
                 size="icon"
                 onClick={fullscreen.toggle}
                 aria-pressed={fullscreen.active}
-                aria-label={fullscreen.active ? 'Exit full screen' : 'Full screen'}
-                title={fullscreen.active ? 'Exit full screen (f or Esc)' : 'Full screen (f)'}
+                aria-label={
+                  fullscreen.active
+                    ? t('shell.workspace.exitFullScreen')
+                    : t('shell.workspace.fullScreen')
+                }
+                title={
+                  fullscreen.active
+                    ? t('shell.workspace.exitFullScreenTitle')
+                    : t('shell.workspace.fullScreenTitle')
+                }
               >
                 {fullscreen.active ? <Minimize /> : <Maximize />}
               </Button>
@@ -446,6 +472,8 @@ function PagePanel({
 }) {
   const ref = useRef<HTMLDivElement>(null);
   const object = focus ? objectById(focus) : null;
+  const { t } = useTranslation();
+  const objectLabel = object ? navLabel(t, object.route, object.label) : null;
 
   // Move focus into the page when it opens, so the keyboard continues where the eye goes.
   useEffect(() => {
@@ -466,7 +494,7 @@ function PagePanel({
     <motion.section
       ref={ref}
       tabIndex={-1}
-      aria-label={object ? object.label : 'Page'}
+      aria-label={objectLabel ?? t('shell.workspace.page')}
       aria-hidden={!shown}
       inert={!shown}
       className={cn(
@@ -493,16 +521,16 @@ function PagePanel({
           variant="ghost"
           size="sm"
           onClick={onBack}
-          title="Back to the world (Esc)"
-          aria-label="Back to the workspace"
+          title={t('shell.workspace.backTitle')}
+          aria-label={t('shell.workspace.backLabel')}
         >
           <ArrowLeft />
-          <span className="hidden sm:inline">Workspace</span>
+          <span className="hidden sm:inline">{t('nav.workspace')}</span>
         </Button>
         {object && (
           <span className="flex min-w-0 items-center gap-1.5 type-micro text-muted-foreground">
             <span aria-hidden>/</span>
-            <span className="truncate text-foreground">{object.label}</span>
+            <span className="truncate text-foreground">{objectLabel}</span>
           </span>
         )}
         <XpChip className="ml-auto" />

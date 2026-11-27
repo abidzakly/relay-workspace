@@ -1,6 +1,8 @@
 import type { KpiReport } from '@relay/shared';
 import type { UseQueryResult } from '@tanstack/react-query';
 import { Link } from 'react-router';
+import type { TFunction } from 'i18next';
+import { useTranslation } from 'react-i18next';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Ruler } from '@/kpi/Ruler';
 import { describeError } from '@/lib/api';
@@ -10,15 +12,19 @@ import { Panel } from './Panel';
 import { useKpiPresets } from '@/lib/features';
 
 /** "KPI · November 2026", plus whether the month is still running. */
-export function kpiContext(report: KpiReport | undefined, allMonths: boolean): string {
-  if (!report) return 'KPI';
+export function kpiContext(
+  t: TFunction,
+  report: KpiReport | undefined,
+  allMonths: boolean,
+): string {
+  if (!report) return t('overview.kpi.label');
   const month = monthLabel(report.month);
-  const state = report.frozen ? 'final' : report.current ? 'month in progress' : '';
-  return [
-    `KPI · ${month}`,
-    state,
-    allMonths ? 'a scorecard is per month, so All months shows this one' : '',
-  ]
+  const state = report.frozen
+    ? t('overview.kpi.final')
+    : report.current
+      ? t('overview.kpi.inProgress')
+      : '';
+  return [t('overview.kpi.month', { month }), state, allMonths ? t('overview.kpi.allMonths') : '']
     .filter(Boolean)
     .join(' · ');
 }
@@ -37,11 +43,12 @@ export function KpiGrid({
   className?: string;
 }) {
   const kpiPresets = useKpiPresets();
+  const { t } = useTranslation();
   return (
     <Panel
       n={4}
-      title="Engineering health"
-      context={kpiContext(report.data, allMonths)}
+      title={t('overview.engineering')}
+      context={kpiContext(t, report.data, allMonths)}
       actions={
         <Link to="/kpi" className="text-xs text-primary-ink underline-offset-4 hover:underline">
           Open KPI

@@ -1,5 +1,7 @@
 import { createContext, useContext, useId, type ReactNode } from 'react';
 import { ChevronDown } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
+import { settingsSectionTitle } from '@/i18n/labels';
 import { Card, CardDescription, CardTitle } from '@/components/ui/card';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { describeError } from '@/lib/api';
@@ -36,6 +38,7 @@ export function SectionCard({
   const collapsed = useUiStore((s) => s.settingsCollapsed[id] === true);
   const setCollapsed = useUiStore((s) => s.setSettingsCollapsed);
   const bodyId = useId();
+  const { t } = useTranslation();
   const open = view.forceOpen || !collapsed;
 
   return (
@@ -68,7 +71,7 @@ export function SectionCard({
             )}
           />
           {brand ? <BrandLogo brand={brand} className="row-span-2 -mt-1.5" /> : null}
-          <CardTitle>{title}</CardTitle>
+          <CardTitle>{settingsSectionTitle(t, id, title)}</CardTitle>
           {description ? (
             <CardDescription className={brand ? 'col-start-3' : 'col-start-2'}>
               {description}

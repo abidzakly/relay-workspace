@@ -1,4 +1,5 @@
 import { Link } from 'react-router';
+import { Trans, useTranslation } from 'react-i18next';
 import type { StateCard } from '@relay/shared';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Select } from '@/components/ui/select';
@@ -10,23 +11,24 @@ import { useUiStore, type CardMonth } from '@/store/ui';
 export function MonthFilter({ cards }: { cards: readonly StateCard[] }) {
   const month = useUiStore((s) => s.cardMonth);
   const setMonth = useUiStore((s) => s.setCardMonth);
+  const { t } = useTranslation();
   const months = monthOptions(cards).filter((m) => m !== monthKey());
   // A fixed month that no card has any more is still offered, so the select never shows a blank.
   const fixed = month !== 'current' && month !== 'all' && !months.includes(month) ? [month] : [];
   return (
     <Select
-      aria-label="Month"
+      aria-label={t('overview.month.label')}
       value={month}
       onChange={(e) => setMonth(e.target.value as CardMonth)}
       className="w-44"
     >
-      <option value="current">This month</option>
+      <option value="current">{t('overview.month.current')}</option>
       {[...fixed, ...months].map((m) => (
         <option key={m} value={m}>
           {monthLabel(m)}
         </option>
       ))}
-      <option value="all">All months</option>
+      <option value="all">{t('overview.month.all')}</option>
     </Select>
   );
 }
@@ -37,6 +39,7 @@ export function MonthFilter({ cards }: { cards: readonly StateCard[] }) {
  */
 export function NoIdentityNotice() {
   const settings = useSettings();
+  const { t } = useTranslation();
   const s = settings.data;
   if (!s) return null;
   const notion = hasNotionUserId(s.notion.assigneeAliases);
@@ -44,24 +47,34 @@ export function NoIdentityNotice() {
   if (notion && gitlab) return null;
   return (
     <Alert>
-      <AlertTitle>Not everything can be synced yet</AlertTitle>
+      <AlertTitle>{t('overview.identity.title')}</AlertTitle>
       <AlertDescription>
         {!notion && (
           <span className="block">
-            Notion cards are not fetched until your Notion user id is under{' '}
-            <Link to="/settings#notion" className="underline underline-offset-4">
-              Settings → Notion → My names
-            </Link>
-            .
+            <Trans
+              i18nKey="overview.identity.notion"
+              components={[
+                <Link
+                  key="notion"
+                  to="/settings#notion"
+                  className="underline underline-offset-4"
+                />,
+              ]}
+            />
           </span>
         )}
         {!gitlab && (
           <span className="block">
-            Open MRs are not fetched until your username is set in{' '}
-            <Link to="/settings#gitlab" className="underline underline-offset-4">
-              Settings → GitLab
-            </Link>
-            .
+            <Trans
+              i18nKey="overview.identity.gitlab"
+              components={[
+                <Link
+                  key="gitlab"
+                  to="/settings#gitlab"
+                  className="underline underline-offset-4"
+                />,
+              ]}
+            />
           </span>
         )}
       </AlertDescription>

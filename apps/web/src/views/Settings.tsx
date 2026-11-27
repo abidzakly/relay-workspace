@@ -10,6 +10,8 @@ import {
   type ReactNode,
 } from 'react';
 import { useLocation, useNavigate } from 'react-router';
+import { Trans, useTranslation } from 'react-i18next';
+import { settingsGroupLabel, settingsSectionTitle } from '@/i18n/labels';
 import { ChevronsDownUp, ChevronsUpDown, Search, X } from 'lucide-react';
 import { PlanningCard } from '@/settings/PlanningCard';
 import { AiPromptsCard } from '@/settings/AiPromptsCard';
@@ -104,6 +106,7 @@ export function Settings() {
   const reduced = useReducedMotion();
   const active = groupOfHash(hash) ?? 'general';
   const [query, setQuery] = useState('');
+  const { t } = useTranslation();
   const searching = query.trim() !== '';
   const searchRef = useRef<HTMLInputElement>(null);
   const barRef = useRef<HTMLDivElement>(null);
@@ -129,8 +132,24 @@ export function Settings() {
   const setCollapsed = useUiStore((s) => s.setSettingsCollapsed);
 
   const shownIds = useMemo(
-    () => new Set(SETTINGS_SECTIONS.filter((s) => matchesQuery(s, query)).map((s) => s.id)),
-    [query],
+    () =>
+      new Set(
+        SETTINGS_SECTIONS.filter((s) =>
+          // The words on screen match too, in whichever language is shown.
+          matchesQuery(
+            {
+              ...s,
+              keywords: [
+                ...s.keywords,
+                settingsSectionTitle(t, s.id, s.title),
+                settingsGroupLabel(t, s.group, ''),
+              ],
+            },
+            query,
+          ),
+        ).map((s) => s.id),
+      ),
+    [query, t],
   );
   const view = useMemo(
     () => ({ shown: (id: string) => !searching || shownIds.has(id), forceOpen: searching }),
@@ -193,12 +212,13 @@ export function Settings() {
   const attention: Partial<Record<SettingsGroupId, string>> = {};
   for (const g of SETTINGS_GROUPS) {
     const needed = setup.items.filter((i) => i.group === g.id && i.level === 'needed');
-    if (needed.length > 0) attention[g.id] = `Not set: ${needed.map((i) => i.title).join(', ')}`;
+    if (needed.length > 0)
+      attention[g.id] = t('settings.notSet', { items: needed.map((i) => i.title).join(', ') });
   }
 
   return (
     <div className="mx-auto grid max-w-4xl grid-cols-1 gap-6 [overflow-anchor:none]">
-      <PageTitle>Settings</PageTitle>
+      <PageTitle>{t('settings.title')}</PageTitle>
 
       <div className="relative w-full sm:w-80">
         <Search
@@ -216,8 +236,8 @@ export function Settings() {
           data-lpignore="true"
           data-bwignore
           data-form-type="other"
-          aria-label="Search settings"
-          placeholder="Search settings  /"
+          aria-label={t('settings.searchLabel')}
+          placeholder={t('settings.searchPlaceholder')}
           value={query}
           onChange={(e) => setQuery(e.target.value)}
           onKeyDown={(e) => {
@@ -231,7 +251,7 @@ export function Settings() {
         {query && (
           <button
             type="button"
-            aria-label="Clear search"
+            aria-label={t('settings.clearSearch')}
             onClick={() => {
               setQuery('');
               searchRef.current?.focus();
@@ -262,18 +282,23 @@ export function Settings() {
             ) : (
               <ChevronsDownUp className="size-3.5" aria-hidden />
             )}
-            {allFolded ? 'Expand all' : 'Collapse all'}
+            {allFolded ? t('settings.expandAll') : t('settings.collapseAll')}
           </button>
         )}
       </div>
 
-      {q.isPending ? <p className="text-sm text-muted-foreground">Loading settings…</p> : null}
+      {q.isPending ? (
+        <p className="text-sm text-muted-foreground">{t('settings.loading')}</p>
+      ) : null}
       {q.isError ? (
         <Alert variant="destructive">
-          <AlertTitle>Cannot load settings</AlertTitle>
+          <AlertTitle>{t('settings.loadError')}</AlertTitle>
           <AlertDescription>
-            {describeError(q.error)}. Make sure the server is running (<code>pnpm dev</code>) and{' '}
-            <code>MASTER_KEY</code> is set in <code>.env</code>.
+            {describeError(q.error)}.{' '}
+            <Trans
+              i18nKey="settings.loadErrorHint"
+              components={[<code key="dev" />, <code key="key" />, <code key="env" />]}
+            />
           </AlertDescription>
         </Alert>
       ) : null}
@@ -284,7 +309,7 @@ export function Settings() {
             <div ref={panelsRef} className="grid gap-6">
               {searching && shownIds.size === 0 ? (
                 <p className="text-sm text-muted-foreground">
-                  No setting matches “{query.trim()}”.
+                  {t('settings.noMatch', { query: query.trim() })}
                 </p>
               ) : null}
               {SETTINGS_GROUPS.map((g) => {
@@ -296,11 +321,13 @@ export function Settings() {
                     id={panelId(g.id)}
                     role={searching ? undefined : 'tabpanel'}
                     aria-labelledby={searching ? undefined : tabId(g.id)}
-                    aria-label={searching ? g.label : undefined}
+                    aria-label={searching ? settingsGroupLabel(t, g.id, g.label) : undefined}
                     hidden={hidden}
                     className="grid gap-4"
                   >
-                    {searching && <SectionLabel>{g.label}</SectionLabel>}
+                    {searching && (
+                      <SectionLabel>{settingsGroupLabel(t, g.id, g.label)}</SectionLabel>
+                    )}
                     {ids.map((id) => (
                       <Fragment key={id}>{byId[id]}</Fragment>
                     ))}

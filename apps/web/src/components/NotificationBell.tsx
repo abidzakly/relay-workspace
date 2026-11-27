@@ -1,3 +1,4 @@
+import { useTranslation } from 'react-i18next';
 import { Bell } from 'lucide-react';
 import { Link } from 'react-router';
 import { Button } from '@/components/ui/button';
@@ -11,14 +12,17 @@ const MAX_SHOWN = 99;
  */
 export function NotificationBell() {
   const data = useUnreadNotifications().data;
+  const { t } = useTranslation();
   const unread = data?.needsAction ?? 0;
   const other = Math.max(0, (data?.unread ?? 0) - unread);
   const label =
     unread > 0
-      ? `Notifications, ${unread} need action${other > 0 ? `, ${other} other unread` : ''}`
+      ? other > 0
+        ? t('shell.bell.needsActionAndOther', { count: unread, other })
+        : t('shell.bell.needsAction', { count: unread })
       : other > 0
-        ? `Notifications, ${other} unread, none need action`
-        : 'Notifications';
+        ? t('shell.bell.otherOnly', { other })
+        : t('shell.bell.plain');
   return (
     <Button asChild variant="ghost" size="icon" className="relative">
       <Link to="/notifications" aria-label={label} title={label}>

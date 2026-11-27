@@ -1,0 +1,22 @@
+/** Page names, keyed by route (`/mrs` → `mrs`, `/` → `workspace`). */
+export const nav = {
+  workspace: 'Workspace',
+  overview: 'Overview',
+  notifications: 'Notifications',
+  board: 'Board',
+  mrs: 'MR Inbox',
+  review: 'Code Review',
+  branches: 'Branches',
+  reviews: 'Reviews',
+  cockpit: 'Cockpit',
+  sync: 'Sync Health',
+  release: 'Release',
+  builds: 'Builds',
+  kpi: 'KPI',
+  sprints: 'Sprint Atelier',
+  meetings: 'Meetings',
+  reader: 'Reader',
+  settings: 'Settings',
+  audit: 'Audit',
+  main: 'Main',
+};

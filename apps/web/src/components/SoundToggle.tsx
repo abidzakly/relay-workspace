@@ -1,3 +1,4 @@
+import { useTranslation } from 'react-i18next';
 import { playSound } from '@/lib/sound/engine';
 import { cn } from '@/lib/utils';
 import { useUiStore } from '@/store/ui';
@@ -22,12 +23,13 @@ function Wave({ on }: { on: boolean }) {
 export function SoundToggle({ className, compact }: { className?: string; compact?: boolean }) {
   const soundOn = useUiStore((s) => s.soundOn);
   const setSoundOn = useUiStore((s) => s.setSoundOn);
-  const label = soundOn ? 'Sound on' : 'Sound off';
+  const { t } = useTranslation();
+  const label = soundOn ? t('shell.sound.on') : t('shell.sound.off');
   return (
     <button
       type="button"
-      title={`${label} (click to change)`}
-      aria-label="Sound"
+      title={t('shell.theme.clickToChange', { name: label })}
+      aria-label={t('shell.sound.label')}
       aria-pressed={soundOn}
       onClick={() => {
         setSoundOn(!soundOn);
