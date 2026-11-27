@@ -1,4 +1,5 @@
 import { execFile } from 'node:child_process';
+import { randomInt } from 'node:crypto';
 import { access, readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { promisify } from 'node:util';
@@ -74,6 +75,29 @@ export function encodeMirrorFrame(
   return out;
 }
 
+/** Pushing the server, starting it and its first video packet; past this the viewer gets a timeout. */
+const START_TIMEOUT_MS = 20_000;
+/** How long a new start waits for the previous mirror on the phone to close. */
+const TAKEOVER_WAIT_MS = 5_000;
+
+class DeadlineError extends Error {}
+
+const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms).unref());
+
+/** `p`, or a `DeadlineError` after `ms`, or an `AbortError` once `signal` aborts. `p` itself keeps running. */
+function withDeadline<T>(p: Promise<T>, signal: AbortSignal, ms: number): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timer = setTimeout(() => reject(new DeadlineError(`no answer within ${ms} ms`)), ms);
+    const onAbort = () => reject(signal.reason ?? new Error('aborted'));
+    if (signal.aborted) onAbort();
+    signal.addEventListener('abort', onAbort, { once: true });
+    p.then(resolve, reject).finally(() => {
+      clearTimeout(timer);
+      signal.removeEventListener('abort', onAbort);
+    });
+  });
+}
+
 const json = (v: unknown) => new TextEncoder().encode(JSON.stringify(v));
 
 interface Mirror {
@@ -97,6 +121,10 @@ export class DeviceBridge {
   private readonly server: AdbServerClient;
   private readonly mirrors = new Map<string, Mirror>();
   private readonly adbs = new Map<string, Promise<Adb>>();
+  /** Per phone: aborts the start or viewer that currently has it, when a new one takes over. */
+  private readonly takeovers = new Map<string, AbortController>();
+  /** Per phone: settles once the current mirror's scrcpy server is closed. */
+  private readonly runs = new Map<string, Promise<void>>();
   private readonly exec = promisify(execFile);
   /** `uiautomator dump` fails when two run at once on a phone: one at a time per serial. */
   private readonly dumpLocks = new Map<string, Promise<unknown>>();
@@ -151,9 +179,53 @@ export class DeviceBridge {
     return p;
   }
 
+  /** Drops the cached connection so the next call reconnects (after a replug, an adb restart, a phone asleep). */
+  private forgetAdb(serial: string): void {
+    this.adbs.delete(serial);
+  }
+
+  /** Refuses early, with the reason, when adb does not list the phone as ready. */
+  private async checkReady(serial: string): Promise<bigint> {
+    let found: { state: string; transportId: bigint } | undefined;
+    try {
+      found = (await this.server.getDevices(['device', 'unauthorized', 'offline'])).find(
+        (d) => d.serial === serial,
+      );
+    } catch {
+      throw new DeviceError(
+        409,
+        'device_unavailable',
+        'The adb server is not reachable on the Mac. Run `adb devices` once, then try again.',
+      );
+    }
+    const state = found?.state;
+    if (found && state === 'device') {
+      // A reconnect gives the phone a new transport: a connection cached on the old one only fails.
+      const cached = await this.adbs.get(serial)?.catch(() => null);
+      // (Connections made through the adb server carry their transport id.)
+      const cachedId = (cached?.transport as { transportId?: bigint } | undefined)?.transportId;
+      if (cached !== undefined && cachedId !== found.transportId) this.forgetAdb(serial);
+      return found.transportId;
+    }
+    this.forgetAdb(serial);
+    throw new DeviceError(
+      409,
+      'device_unavailable',
+      state === 'unauthorized'
+        ? `The phone ${serial} has not allowed USB debugging. Accept the prompt on the phone, then try again.`
+        : state === 'offline'
+          ? `The phone ${serial} is offline. Replug the cable (or restart the emulator) or run \`adb reconnect\`, then try again.`
+          : `The phone ${serial} is not connected. Plug it in (or start the emulator) and check \`adb devices\`.`,
+    );
+  }
+
   /**
    * Starts (or restarts) the mirror and yields framed bytes until the viewer goes away (`signal`) or another viewer
    * takes over. The caller writes them to its HTTP response as they come.
+   *
+   * Starts on one phone run one at a time: a new start stops the previous viewer (even one still starting) and waits
+   * until its scrcpy server is closed. Two servers starting at once share the pushed jar, which `cleanup` deletes when
+   * one exits, and the other then exits "prematurely".
    */
   async *mirror(serial: string, signal: AbortSignal): AsyncGenerator<Buffer> {
     DeviceSerialSchema.parse(serial);
@@ -166,42 +238,43 @@ export class DeviceBridge {
         'The scrcpy server is not downloaded: run `pnpm --filter @relay/server device:setup` on the Mac.',
       );
     }
+    // Take over the phone: stop whoever has it, then wait (bounded) until it has let go.
+    const own = new AbortController();
+    this.takeovers.get(serial)?.abort();
+    this.takeovers.set(serial, own);
     this.mirrors.get(serial)?.stop();
-    const adb = await this.adb(serial);
-    const bin = await readFile(this.serverPath);
-    await AdbScrcpyClient.pushServer(
-      adb,
-      new ReadableStream<Uint8Array>({
-        start(c) {
-          c.enqueue(new Uint8Array(bin));
-          c.close();
-        },
-      }),
-    );
-    const options = new AdbScrcpyOptions3_3_3({
-      audio: false,
-      video: true,
-      control: true,
-      tunnelForward: true,
-      maxSize: 1280,
-      maxFps: 30,
-      videoBitRate: 4_000_000,
-      stayAwake: true,
-      clipboardAutosync: false,
-      cleanup: true,
-    });
-    let client: AdbScrcpyClient<AdbScrcpyOptions3_3_3<true>>;
+    const previous = this.runs.get(serial);
+    let release!: () => void;
+    const closed = new Promise<void>((r) => (release = r));
+    this.runs.set(serial, closed);
+    const stopSignal = AbortSignal.any([signal, own.signal]);
     try {
-      client = await AdbScrcpyClient.start(adb, DefaultServerPath, options);
-    } catch (e) {
-      this.adbs.delete(serial);
-      this.o.log.warn({ serial, err: (e as Error).message }, 'scrcpy start failed');
-      throw new DeviceError(502, 'mirror_failed', 'The mirror could not start on the phone.');
+      yield* this.run(serial, stopSignal, previous);
+    } finally {
+      if (this.takeovers.get(serial) === own) this.takeovers.delete(serial);
+      if (this.runs.get(serial) === closed) this.runs.delete(serial);
+      release();
     }
-    // The server logs to `output`; it must be drained or the process blocks.
-    void client.output.pipeTo(new WritableStream<string>({ write() {} })).catch(() => {});
+  }
 
-    const video = await client.videoStream;
+  private async *run(
+    serial: string,
+    signal: AbortSignal,
+    previous: Promise<void> | undefined,
+  ): AsyncGenerator<Buffer> {
+    if (previous) await Promise.race([previous, sleep(TAKEOVER_WAIT_MS)]);
+    if (signal.aborted) return;
+    const client = await this.start(serial, signal);
+    if (!client) return;
+    let video: Awaited<typeof client.videoStream>;
+    try {
+      video = await withDeadline(client.videoStream, signal, START_TIMEOUT_MS);
+    } catch (e) {
+      await client.close().catch(() => {});
+      if (signal.aborted) return;
+      this.forgetAdb(serial);
+      throw this.startError(serial, e);
+    }
     const queue: Buffer[] = [];
     let wake: (() => void) | null = null;
     let done = false;
@@ -212,6 +285,7 @@ export class DeviceBridge {
     const mirror: Mirror = { client, width: video.width, height: video.height, stop: finish };
     this.mirrors.set(serial, mirror);
     signal.addEventListener('abort', finish, { once: true });
+    if (signal.aborted) finish();
 
     const meta: MirrorMeta = {
       codec: video.metadata.codec,
@@ -244,7 +318,10 @@ export class DeviceBridge {
           },
         }),
       )
-      .catch(() => {})
+      .catch(() => {
+        // The phone went away mid-stream: the next start reconnects instead of reusing a dead connection.
+        if (!done) this.forgetAdb(serial);
+      })
       .finally(finish);
 
     try {
@@ -270,6 +347,83 @@ export class DeviceBridge {
       await client.close().catch(() => {});
       await pump;
     }
+  }
+
+  /** Pushes the server and starts it; null when the viewer left meanwhile (nothing is left running). */
+  private async start(
+    serial: string,
+    signal: AbortSignal,
+  ): Promise<AdbScrcpyClient<AdbScrcpyOptions3_3_3<true>> | null> {
+    await this.checkReady(serial);
+    let client: AdbScrcpyClient<AdbScrcpyOptions3_3_3<true>>;
+    let gaveUp = false;
+    try {
+      const adb = await withDeadline(this.adb(serial), signal, START_TIMEOUT_MS);
+      const bin = await readFile(this.serverPath);
+      await withDeadline(
+        AdbScrcpyClient.pushServer(
+          adb,
+          new ReadableStream<Uint8Array>({
+            start(c) {
+              c.enqueue(new Uint8Array(bin));
+              c.close();
+            },
+          }),
+        ),
+        signal,
+        START_TIMEOUT_MS,
+      );
+      const options = new AdbScrcpyOptions3_3_3({
+        // Its own socket name per start, so a server still exiting never answers this one.
+        scid: randomInt(1, 0x7fffffff).toString(16).padStart(8, '0'),
+        audio: false,
+        video: true,
+        control: true,
+        tunnelForward: true,
+        maxSize: 1280,
+        maxFps: 30,
+        videoBitRate: 4_000_000,
+        stayAwake: true,
+        clipboardAutosync: false,
+        cleanup: true,
+      });
+      const starting = AdbScrcpyClient.start(adb, DefaultServerPath, options);
+      // Started after the viewer left or the deadline passed: close it as soon as it exists.
+      starting.then(
+        (c) => {
+          if (gaveUp) void c.close().catch(() => {});
+        },
+        () => {},
+      );
+      client = await withDeadline(starting, signal, START_TIMEOUT_MS);
+    } catch (e) {
+      gaveUp = true;
+      if (signal.aborted) return null;
+      if (e instanceof DeviceError) throw e;
+      this.forgetAdb(serial);
+      throw this.startError(serial, e);
+    }
+    // The server logs to `output`; it must be drained or the process blocks.
+    void client.output.pipeTo(new WritableStream<string>({ write() {} })).catch(() => {});
+    return client;
+  }
+
+  /** What went wrong while starting, worded for the viewer; the raw error goes to the log. */
+  private startError(serial: string, e: unknown): DeviceError {
+    const msg = (e as Error).message;
+    this.o.log.warn({ serial, err: msg }, 'scrcpy start failed');
+    if (e instanceof DeadlineError) {
+      return new DeviceError(
+        504,
+        'mirror_timeout',
+        `The phone did not answer within ${START_TIMEOUT_MS / 1000} s. Unlock it (or check the emulator is running), then try again.`,
+      );
+    }
+    return new DeviceError(
+      502,
+      'mirror_failed',
+      `The mirror could not start on the phone (${msg}). Try again; if it keeps failing, replug the phone or restart the emulator.`,
+    );
   }
 
   async control(serial: string, events: DeviceControl[]): Promise<void> {

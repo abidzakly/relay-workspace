@@ -2,6 +2,7 @@ import type { FastifyInstance } from 'fastify';
 import { AdbInputSchema, DeviceControlBatchSchema, DeviceSerialSchema } from '@relay/shared';
 import { z } from 'zod';
 import { DeviceError, type DeviceBridge } from '../services/device/deviceBridge';
+import { drained } from '../util/drained';
 
 /**
  * Host agent device routes. Bearer-checked like every agent route; the agent stays bound to
@@ -41,7 +42,7 @@ export function registerDeviceAgentRoutes(app: FastifyInstance, bridge: DeviceBr
     try {
       if (!first.done) reply.raw.write(first.value);
       for await (const chunk of gen) {
-        if (!reply.raw.write(chunk)) await new Promise((r) => reply.raw.once('drain', r));
+        if (!reply.raw.write(chunk)) await drained(reply.raw, abort.signal);
         if (abort.signal.aborted) break;
       }
     } catch {

@@ -14,6 +14,7 @@ import type {
   TestRunEngine,
 } from '@relay/shared';
 import { CSRF_HEADER_NAME, CSRF_HEADER_VALUE } from '@relay/shared';
+import { i18n } from '@/i18n';
 import { del, get, patch, post, put } from './api';
 
 /** Test Bench + device bridge. SSE `testbench.changed` refreshes `testBenchKeys.branch`. */
@@ -209,15 +210,30 @@ export async function sendControl(serial: string, events: DeviceControl[]): Prom
   await post<{ ok: true }>(`/api/devices/${e(serial)}/control`, { events });
 }
 
+const MIRROR_START_TIMEOUT_MS = 30_000;
+
 /** The raw mirror response (binary frames, see `MirrorFrameKind`). Not JSON, so not through `api()`. */
 export async function openMirror(
   serial: string,
   signal: AbortSignal,
 ): Promise<ReadableStream<Uint8Array>> {
-  const res = await fetch(`/api/devices/${e(serial)}/mirror`, {
-    signal,
-    headers: { accept: 'application/octet-stream', [CSRF_HEADER_NAME]: CSRF_HEADER_VALUE },
-  });
+  // The server answers once the phone sends video (it gives up after 20 s); never wait forever on "Starting…".
+  const deadline = new AbortController();
+  const timer = setTimeout(() => deadline.abort(), MIRROR_START_TIMEOUT_MS);
+  let res: Response;
+  try {
+    res = await fetch(`/api/devices/${e(serial)}/mirror`, {
+      signal: AbortSignal.any([signal, deadline.signal]),
+      headers: { accept: 'application/octet-stream', [CSRF_HEADER_NAME]: CSRF_HEADER_VALUE },
+    });
+  } catch (err) {
+    if (deadline.signal.aborted && !signal.aborted) {
+      throw new Error(i18n.t('testBench.mirror.noAnswer'), { cause: err });
+    }
+    throw err;
+  } finally {
+    clearTimeout(timer);
+  }
   if (!res.ok || !res.body) {
     let message = `The mirror could not start (${res.status}).`;
     try {
