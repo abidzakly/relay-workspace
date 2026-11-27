@@ -18,23 +18,23 @@ export type NativeFolderPick =
 const PICK_TIMEOUT_MS = 5 * 60_000;
 const PROMPT = 'Choose the repository folder for this workspace';
 
-// `activate` brings osascript's own dialog in front of the browser. The start folder comes in as an argument, never
-// spliced into the script.
+// `activate` brings osascript's own dialog in front of the browser. The start folder and the prompt come in as
+// arguments, never spliced into the script.
 const MAC_SCRIPT = [
   'on run argv',
   'activate',
   'set startAt to POSIX file (item 1 of argv)',
-  `return POSIX path of (choose folder with prompt "${PROMPT}" default location startAt)`,
+  'return POSIX path of (choose folder with prompt (item 2 of argv) default location startAt)',
   'end run',
 ];
 
-// The start folder comes in through an environment variable, never spliced into the script. A topmost owner form brings
-// the dialog in front of the browser. Cancel exits 1.
+// The start folder and the prompt come in through environment variables, never spliced into the script. A topmost
+// owner form brings the dialog in front of the browser. Cancel exits 1.
 const WINDOWS_SCRIPT = [
   'Add-Type -AssemblyName System.Windows.Forms',
   '[Console]::OutputEncoding = [System.Text.Encoding]::UTF8',
   '$d = New-Object System.Windows.Forms.FolderBrowserDialog',
-  `$d.Description = '${PROMPT}'`,
+  '$d.Description = $env:RELAY_PICK_PROMPT',
   '$d.SelectedPath = $env:RELAY_PICK_START',
   '$owner = New-Object System.Windows.Forms.Form -Property @{ TopMost = $true }',
   "if ($d.ShowDialog($owner) -eq 'OK') { [Console]::Out.Write($d.SelectedPath) } else { exit 1 }",
@@ -42,19 +42,23 @@ const WINDOWS_SCRIPT = [
 
 let pending: Promise<NativeFolderPick> | null = null;
 
-export function pickFolderNative(startAt: string | undefined): Promise<NativeFolderPick> {
-  pending ??= run(startAt).finally(() => {
+/** `prompt` is a fixed string from the caller (default: the workspace one), never user input. */
+export function pickFolderNative(
+  startAt: string | undefined,
+  prompt: string = PROMPT,
+): Promise<NativeFolderPick> {
+  pending ??= run(startAt, prompt).finally(() => {
     pending = null;
   });
   return pending;
 }
 
-function run(startAt: string | undefined): Promise<NativeFolderPick> {
+function run(startAt: string | undefined, prompt: string): Promise<NativeFolderPick> {
   const start = startAt && existsSync(startAt) ? startAt : homedir();
   if (process.platform === 'darwin') {
     return exec(
       'osascript',
-      MAC_SCRIPT.flatMap((l) => ['-e', l]).concat(start),
+      MAC_SCRIPT.flatMap((l) => ['-e', l]).concat(start, prompt),
       (code, stderr) => code === 1 && /-128/.test(stderr),
     );
   }
@@ -67,7 +71,7 @@ function run(startAt: string | undefined): Promise<NativeFolderPick> {
     }
     return exec(
       'zenity',
-      ['--file-selection', '--directory', `--title=${PROMPT}`, `--filename=${start}/`],
+      ['--file-selection', '--directory', `--title=${prompt}`, `--filename=${start}/`],
       (code) => code === 1,
     );
   }
@@ -76,7 +80,7 @@ function run(startAt: string | undefined): Promise<NativeFolderPick> {
       'powershell.exe',
       ['-NoProfile', '-NonInteractive', '-STA', '-Command', WINDOWS_SCRIPT],
       (code) => code === 1,
-      { RELAY_PICK_START: start },
+      { RELAY_PICK_START: start, RELAY_PICK_PROMPT: prompt },
     );
   }
   return Promise.resolve({

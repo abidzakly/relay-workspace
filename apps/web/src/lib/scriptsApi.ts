@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import type { ScriptsMissing, ScriptsStatus } from '@relay/shared';
-import { ApiError, get, put } from './api';
+import type { ScriptsDirPick, ScriptsMissing, ScriptsStatus } from '@relay/shared';
+import { ApiError, get, post, put } from './api';
 
 export const scriptsKeys = { status: ['scripts'] as const };
 
@@ -18,6 +18,17 @@ export function useSaveScripts() {
     mutationFn: (values: Record<string, string | null>) =>
       put<ScriptsStatus>('/api/scripts', { values }),
     onSuccess: (s) => qc.setQueryData(scriptsKeys.status, s),
+  });
+}
+
+/** "Choose folder…" for the scripts: the computer's dialog, or `path` where it has none. */
+export function useChooseScriptsDir() {
+  const qc = useQueryClient();
+  return useMutation<ScriptsDirPick, Error, string | undefined>({
+    mutationFn: (path) => post('/api/scripts/dir', path === undefined ? {} : { path }),
+    onSuccess: (r) => {
+      if (r.status === 'picked') void qc.invalidateQueries({ queryKey: scriptsKeys.status });
+    },
   });
 }
 

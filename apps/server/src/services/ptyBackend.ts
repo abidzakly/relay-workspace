@@ -102,13 +102,15 @@ export interface LocalPtyBackendOptions {
 }
 
 export class LocalPtyBackend implements PtyBackend {
-  readonly binDir: string;
   private readonly nodePty: NodePtyModule | null;
 
   constructor(private readonly o: LocalPtyBackendOptions) {
-    // VU_BIN_DIR, else your own ~/bin/vu when there is one, else the bundled tools/bin.
-    this.binDir = o.binDir ?? resolveVuBinDir().dir;
     this.nodePty = loadNodePty(o.log);
+  }
+
+  /** VU_BIN_DIR, else the folder chosen in Settings, else your own ~/bin/vu, else the bundled tools/bin. Read per run. */
+  get binDir(): string {
+    return this.o.binDir ?? resolveVuBinDir().dir;
   }
 
   /**

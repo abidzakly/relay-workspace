@@ -4,6 +4,7 @@ import {
   constants,
   existsSync,
   mkdirSync,
+  readFileSync,
   renameSync,
   writeFileSync,
 } from 'node:fs';
@@ -15,6 +16,7 @@ import {
   SCRIPT_KEYS,
   type RepoConfig,
   type ScriptField,
+  type ScriptsDirPick,
   type ScriptSource,
   type ScriptsMissing,
   type ScriptsStatus,
@@ -22,7 +24,7 @@ import {
 import type { ConfigStore } from '../config/store';
 import type { EventBus } from '../sync/eventBus';
 import type { Logger } from '../util/logger';
-import { IS_WINDOWS, which } from '../util/platform';
+import type { ScriptsHost } from './scriptsHost';
 
 /**
  * Release script settings (`tools/bin`). ONE source of truth: values typed in the dashboard win, otherwise each field
@@ -38,13 +40,6 @@ const VALUES_STATE = 'scripts.values';
 const WRITTEN_STATE = 'scripts.writtenAt';
 const secretName = (key: string) => `scripts.${key}`;
 const FIELDS = new Map(SCRIPT_FIELDS.map((f) => [f.key, f]));
-/**
- * Tools the scripts call. Missing ones are listed in Settings, never fatal here. On Windows the scripts do not run (the
- * custom engine is bash), so only what the native engine itself starts is listed: glab and jq are not needed there.
- */
-const TOOLS = IS_WINDOWS
-  ? (['git', 'flutter'] as const)
-  : (['glab', 'git', 'jq', 'flutter'] as const);
 
 /** Writes the env file where the scripts run: this machine, or the Mac behind the host agent. */
 export interface ScriptEnvWriter {
@@ -111,7 +106,7 @@ export function bundledBinDir(): string | null {
   return null;
 }
 
-const executable = (p: string) => {
+export const scriptsExecutable = (p: string) => {
   try {
     accessSync(p, constants.X_OK);
     return true;
@@ -120,15 +115,38 @@ const executable = (p: string) => {
   }
 };
 
+/** The folder chosen in Settings > Release scripts, kept next to the env file on the machine that runs the scripts. */
+export function scriptsDirFile(): string {
+  return join(dirname(defaultEnvFilePath()), 'scripts-dir');
+}
+
+/** The chosen folder, or null when none is saved or it no longer holds an executable `vu`. */
+export function readChosenScriptsDir(): string | null {
+  try {
+    const dir = readFileSync(scriptsDirFile(), 'utf8').trim();
+    return dir && scriptsExecutable(join(dir, 'vu')) ? dir : null;
+  } catch {
+    return null;
+  }
+}
+
+/** Remembers the folder holding `vu`; refuses one without an executable `vu` in it. */
+export function saveChosenScriptsDir(dir: string): void {
+  if (!scriptsExecutable(join(dir, 'vu'))) throw new Error(`No executable vu in ${dir}.`);
+  writeEnvFileLocal(scriptsDirFile(), `${dir}\n`);
+}
+
 /**
- * Which `vu` runs: `VU_BIN_DIR`, else your own `~/bin/vu` when it exists (a setup made before the bundled scripts),
- * else the bundled `tools/bin`.
+ * Which `vu` runs: `VU_BIN_DIR`, else the folder chosen in Settings, else your own `~/bin/vu` when it exists (a setup
+ * made before the bundled scripts), else the bundled `tools/bin`.
  */
-export function resolveVuBinDir(): { dir: string; bundled: boolean } {
+export function resolveVuBinDir(): { dir: string; bundled: boolean; chosen?: boolean } {
   const fromEnv = process.env.VU_BIN_DIR?.trim();
   if (fromEnv) return { dir: fromEnv, bundled: false };
+  const chosen = readChosenScriptsDir();
+  if (chosen) return { dir: chosen, bundled: false, chosen: true };
   const own = join(homedir(), 'bin');
-  if (executable(join(own, 'vu'))) return { dir: own, bundled: false };
+  if (scriptsExecutable(join(own, 'vu'))) return { dir: own, bundled: false };
   const bundled = bundledBinDir();
   return bundled ? { dir: bundled, bundled: true } : { dir: own, bundled: false };
 }
@@ -142,6 +160,8 @@ export class ScriptConfigService {
       config: ConfigStore;
       log: Logger;
       writer: ScriptEnvWriter | null;
+      /** Where the scripts run: checks `vu` and the tools there. */
+      host: ScriptsHost;
       bus?: EventBus;
       now?: () => number;
     },
@@ -251,9 +271,8 @@ export class ScriptConfigService {
     return { repoId: repo.id, required, optional };
   }
 
-  status(): ScriptsStatus {
-    const vu = resolveVuBinDir();
-    const vuPath = join(vu.dir, 'vu');
+  async status(): Promise<ScriptsStatus> {
+    const host = await this.d.host.status();
     return {
       fields: SCRIPT_FIELDS.map((f) => {
         const saved = this.savedValue(f) !== undefined;
@@ -271,9 +290,15 @@ export class ScriptConfigService {
       fileError: this.d.writer
         ? this.writtenError
         : 'The scripts run on another machine without a host agent.',
-      vu: { path: executable(vuPath) ? vuPath : null, bundled: vu.bundled },
-      missingTools: TOOLS.filter((t) => which(t) === null),
+      vu: host.vu,
+      missingTools: host.missingTools,
+      hostError: host.hostError ?? null,
     };
+  }
+
+  /** "Choose folder…": remembered on the machine that runs the scripts. */
+  chooseDir(path: string | undefined): Promise<ScriptsDirPick> {
+    return this.d.host.chooseDir(path);
   }
 
   /** Saves typed values (`null` clears one: it falls back to Settings again), then re-writes the file. */
