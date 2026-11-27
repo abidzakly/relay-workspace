@@ -299,6 +299,7 @@ export async function buildDashboardApp(opts: DashboardAppOptions): Promise<Fast
       audit: opts.audit,
       cache: opts.cache,
       ...(opts.calendar ? { calendar: opts.calendar } : {}),
+      ...(opts.cockpit ? { workspaces: opts.cockpit.workspaces } : {}),
       ...(opts.now ? { now: opts.now } : {}),
     });
     if (opts.refreshSync) {

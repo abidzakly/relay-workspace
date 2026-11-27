@@ -19,6 +19,10 @@ import {
   type PriorityMarks,
   type RepoConfigStored,
   type SealedSecrets,
+  type ScriptValuesExport,
+  type WorkspaceExport,
+  UiPrefsExportSchema,
+  WorkspaceExportSchema,
 } from '@relay/shared';
 import type { ConfigStore } from '../config/store';
 import { ActionError } from './actionError';
@@ -27,6 +31,18 @@ import {
   CALENDAR_CONFIG_KEY,
   CALENDAR_MARKS_KEY,
 } from './calendar/calendarService';
+import {
+  applyExtraSecrets,
+  applyScriptValues,
+  checkExtraSecrets,
+  collectExtraSecrets,
+  EXTRA_SECRET_FIELDS,
+  extraSecretValues,
+  parseScriptValues,
+  readScriptValues,
+  scriptValuesChanged,
+  type WorkspacePlan,
+} from './configBackupExtras';
 
 /**
  * Config export and import. The passphrase lives only in this module's local variables: it is never
@@ -57,6 +73,7 @@ const SecretsPayloadSchema = z.strictObject({
       webhookSecret: SecretSchema.optional(),
     }),
   ),
+  ...EXTRA_SECRET_FIELDS,
 });
 type SecretsPayload = z.infer<typeof SecretsPayloadSchema>;
 
@@ -150,6 +167,7 @@ function assertNoPlaintext(doc: ConfigExportFile, secrets: SecretsPayload): void
     secrets.notionToken,
     secrets.calendarClientSecret,
     ...Object.values(secrets.repos).flatMap((r) => [r.token, r.webhookSecret]),
+    ...extraSecretValues(secrets),
   ];
   for (const value of values) {
     if (value && value.length >= LEAK_CHECK_MIN_LEN && text.includes(value)) {
@@ -182,6 +200,7 @@ function collectPastedSecrets(store: ConfigStore): SecretsPayload {
     ...(notionToken ? { notionToken } : {}),
     ...(calendarClientSecret ? { calendarClientSecret } : {}),
     repos,
+    ...collectExtraSecrets(store),
   };
 }
 
@@ -199,11 +218,15 @@ function readCalendar(store: ConfigStore): CalendarConfig | undefined {
   return parsed.success ? parsed.data : undefined;
 }
 
-/** Builds the file. With no passphrase, `secrets` is null and the file holds no secret, encrypted or not. */
+/**
+ * Builds the file. With no passphrase, `secrets` is null and the file holds no secret, encrypted or not.
+ * `workspaces` are the registered folders (no worktrees), when the Cockpit runs here.
+ */
 export async function buildConfigExport(
   store: ConfigStore,
   passphrase: string | undefined,
   nowMs: number,
+  workspaces?: WorkspaceExport[],
 ): Promise<ConfigExportFile> {
   const held = collectSecrets(store);
   const doc: ConfigExportFile = {
@@ -221,6 +244,9 @@ export async function buildConfigExport(
   if (calendar) doc.calendar = calendar;
   const marks = readMarks(store);
   if (Object.keys(marks).length > 0) doc.calendarMarks = marks;
+  const scripts = readScriptValues(store);
+  if (Object.keys(scripts).length > 0) doc.scripts = scripts;
+  if (workspaces && workspaces.length > 0) doc.workspaces = workspaces;
   assertNoPlaintext(doc, held);
   if (passphrase !== undefined) doc.secrets = await seal(held, passphrase);
   return doc;
@@ -295,6 +321,12 @@ export interface ParsedConfigFile {
   calendar: CalendarConfig | undefined;
   /** Absent in older files: the marks here are then left alone. */
   calendarMarks: PriorityMarks | undefined;
+  /** Absent in older files: the Release script values here are then left alone. */
+  scripts: ScriptValuesExport | undefined;
+  /** Absent in older files, or when the exporting machine had none. */
+  workspaces: WorkspaceExport[] | undefined;
+  /** The file carries browser preferences (applied by the browser, never by the server). */
+  hasUi: boolean;
   sealed: SealedSecrets | null;
 }
 
@@ -335,6 +367,11 @@ export function parseConfigFile(raw: unknown): ParsedConfigFile {
     file.calendarMarks === undefined
       ? undefined
       : parseSection(PriorityMarksSchema, file.calendarMarks, ['calendarMarks'], defaulted);
+  const scripts = file.scripts === undefined ? undefined : parseScriptValues(file.scripts);
+  const workspaces = file.workspaces?.map((w, i) =>
+    parseSection(WorkspaceExportSchema, w, ['workspaces', i], defaulted),
+  );
+  if (file.ui !== undefined) parseSection(UiPrefsExportSchema, file.ui, ['ui'], defaulted);
   const ids = new Set<string>();
   for (const repo of repos) {
     if (ids.has(repo.id)) {
@@ -357,6 +394,9 @@ export function parseConfigFile(raw: unknown): ParsedConfigFile {
     repos,
     calendar,
     calendarMarks,
+    scripts,
+    workspaces,
+    hasUi: file.ui !== undefined,
     sealed: file.secrets,
   };
 }
@@ -366,16 +406,19 @@ export async function openSecrets(
   passphrase: string | undefined,
 ): Promise<SecretsPayload | null> {
   if (!parsed.sealed || passphrase === undefined) return null;
-  return unseal(parsed.sealed, passphrase, parsed.format);
+  const secrets = await unseal(parsed.sealed, passphrase, parsed.format);
+  checkExtraSecrets(secrets);
+  return secrets;
 }
 
 const sameJson = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b);
 
-/** What the import would do. Reads only. */
+/** What the import would do. Reads only. `workspaces` is the route's plan (it needs the host). */
 export function previewImport(
   store: ConfigStore,
   parsed: ParsedConfigFile,
   secrets: SecretsPayload | null,
+  workspaces: WorkspacePlan = { added: [], skipped: [] },
 ): ConfigImportPreview {
   const current = store.getGlobalStored();
   const settingsChanged = Object.keys(parsed.settings).filter(
@@ -399,8 +442,14 @@ export function previewImport(
     secrets: !parsed.sealed ? 'none' : secrets ? 'restored' : 'ignored',
     secretCount: 0,
     defaulted: parsed.defaulted,
+    workspacesAdded: workspaces.added,
+    workspacesSkipped: workspaces.skipped,
+    uiPrefs: parsed.hasUi,
   };
   if (secrets?.notionToken) preview.secretCount++;
+  preview.secretCount += extraSecretValues(secrets).length;
+  if (parsed.scripts && scriptValuesChanged(store, parsed.scripts))
+    preview.settingsChanged.push('scripts');
   if (secrets?.calendarClientSecret) preview.secretCount++;
   if (calendarChanges(store, parsed, secrets)) preview.settingsChanged.push('calendar');
   if (marksChanges(store, parsed)) preview.settingsChanged.push('calendarMarks');
@@ -436,6 +485,8 @@ export function applyImport(
       webhookSecret: secrets?.repos[stored.id]?.webhookSecret,
     })),
   });
+  applyExtraSecrets(store, secrets);
+  applyScriptValues(store, parsed.scripts);
 }
 
 /**

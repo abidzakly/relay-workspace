@@ -17,6 +17,11 @@ import {
   parseConfigFile,
   previewImport,
 } from '../../services/configBackup';
+import {
+  exportableWorkspaces,
+  planWorkspaces,
+  type WorkspaceRegistry,
+} from '../../services/configBackupExtras';
 import { createDbBackup, sweepBackupLeftovers } from '../../services/dbBackup';
 import { HttpError, parseWith, wrapAction } from '../errors';
 
@@ -26,6 +31,8 @@ export interface BackupRouteDeps {
   cache: AppDb;
   /** Applies the Google Calendar part of an import (a new OAuth client disconnects the old sign-in). */
   calendar?: Pick<CalendarService, 'saveConfig' | 'replaceMarks'>;
+  /** Settings > Workspaces (the Cockpit). Absent = workspaces are neither exported nor imported. */
+  workspaces?: WorkspaceRegistry;
   now?: () => number;
 }
 
@@ -46,7 +53,7 @@ const stamp = (ms: number) =>
  */
 export function registerBackupRoutes(
   app: FastifyInstance,
-  { store, audit, cache, calendar, now }: BackupRouteDeps,
+  { store, audit, cache, calendar, workspaces, now }: BackupRouteDeps,
 ): void {
   const clock = now ?? Date.now;
   sweepBackupLeftovers(cache.sqlite);
@@ -55,7 +62,12 @@ export function registerBackupRoutes(
   app.post('/api/backup/config/export', async (req) => {
     const body = parseWith(ConfigExportBodySchema, req.body);
     const file = await wrapAction(() =>
-      buildConfigExport(store, body.includeSecrets ? body.passphrase : undefined, clock()),
+      buildConfigExport(
+        store,
+        body.includeSecrets ? body.passphrase : undefined,
+        clock(),
+        workspaces ? exportableWorkspaces(workspaces.list()) : undefined,
+      ),
     );
     audit.write({
       actor: 'user',
@@ -63,7 +75,11 @@ export function registerBackupRoutes(
       targetType: 'settings',
       targetId: 'global',
       before: null,
-      after: { includeSecrets: body.includeSecrets, repos: file.repos.length },
+      after: {
+        includeSecrets: body.includeSecrets,
+        repos: file.repos.length,
+        workspaces: file.workspaces?.length ?? 0,
+      },
     });
     return file;
   });
@@ -72,7 +88,9 @@ export function registerBackupRoutes(
     const body = parseWith(ConfigImportPreviewBodySchema, req.body);
     return wrapAction(async () => {
       const parsed = parseConfigFile(body.file);
-      return { preview: previewImport(store, parsed, await openSecrets(parsed, body.passphrase)) };
+      const secrets = await openSecrets(parsed, body.passphrase);
+      const plan = await planWorkspaces(workspaces, store, parsed.workspaces, false);
+      return { preview: previewImport(store, parsed, secrets, plan) };
     });
   });
 
@@ -89,6 +107,10 @@ export function registerBackupRoutes(
       applyImport(store, parsed, secrets);
       if (calendarUpdate && calendar) await calendar.saveConfig(calendarUpdate);
       if (marks && calendar) calendar.replaceMarks(marks);
+      // After the repos, so a workspace can link to a repo the same file adds.
+      const plan = await planWorkspaces(workspaces, store, parsed.workspaces, true);
+      preview.workspacesAdded = plan.added;
+      preview.workspacesSkipped = plan.skipped;
       audit.write({
         actor: 'user',
         action: 'settings.import',
@@ -101,6 +123,7 @@ export function registerBackupRoutes(
           restoredCredentials: preview.secretCount,
           calendarUpdated: calendarUpdate !== null,
           meetingMarksUpdated: marks !== null,
+          workspacesAdded: plan.added.length,
         },
       });
       return { preview };

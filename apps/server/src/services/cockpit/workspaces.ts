@@ -75,6 +75,15 @@ export class WorkspaceService {
     return { path: w.absPath, wsId: w.id };
   }
 
+  /** A config import's check: the folder's real path when the host accepts it as a workspace, else null. */
+  async checkPath(absPath: string, name: string): Promise<string | null> {
+    try {
+      return (await this.d.host.wsValidate({ path: absPath, wsId: slugify(name) })).realPath;
+    } catch {
+      return null;
+    }
+  }
+
   async add(input: WorkspaceCreate): Promise<Workspace> {
     if (input.repoId && !this.d.config.getRepo(input.repoId)) {
       throw new WorkspaceError(404, 'repo_not_found', 'Unknown repository');

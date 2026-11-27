@@ -25,6 +25,7 @@ export * from './sla';
 export * from './kpi';
 export * from './gamification';
 export * from './backup';
+export * from './backupSections';
 export * from './domain';
 export * from './point';
 export * from './statusGroups';

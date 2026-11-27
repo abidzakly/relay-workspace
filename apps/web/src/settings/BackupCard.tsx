@@ -29,6 +29,7 @@ import { ErrorAlert, SectionCard } from './SectionCard';
 import { SetupChecklist } from './SetupChecklist';
 
 function ExportSection() {
+  const { t } = useTranslation();
   const exporter = useExportConfig();
   const [withSecrets, setWithSecrets] = useState(false);
   const [passphrase, setPassphrase] = useState('');
@@ -44,11 +45,7 @@ function ExportSection() {
       <div className="flex items-center justify-between gap-4">
         <div className="grid gap-1">
           <Label htmlFor="export-secrets">Include secrets, encrypted with a passphrase</Label>
-          <p className="text-xs text-muted-foreground">
-            Off: tokens, webhook secrets and the Google Calendar client secret are left out, and you
-            enter them again after a restore. Google Calendar always needs Connect again. On: they
-            are sealed in the file, and only this passphrase opens them. It cannot be recovered.
-          </p>
+          <p className="text-xs text-muted-foreground">{t('settings.backupCard.secretsHint')}</p>
         </div>
         <Switch
           id="export-secrets"
@@ -60,6 +57,7 @@ function ExportSection() {
           }}
         />
       </div>
+      <p className="text-xs text-muted-foreground">{t('settings.backupCard.alsoIncluded')}</p>
       {withSecrets && (
         <div className="grid gap-3 sm:grid-cols-2">
           <div className="grid gap-1.5">
@@ -111,6 +109,7 @@ function ExportSection() {
 }
 
 function ImportSummary({ preview }: { preview: ConfigImportPreview }) {
+  const { t } = useTranslation();
   const names = (rows: { name: string }[]) => rows.map((r) => r.name).join(', ');
   return (
     <div className="grid gap-3 text-sm">
@@ -144,7 +143,28 @@ function ImportSummary({ preview }: { preview: ConfigImportPreview }) {
               ? 'in the file, but left out as no passphrase was given. The ones here stay'
               : 'none in the file. The ones here stay'}
         </li>
+        {(preview.workspacesAdded.length > 0 || preview.workspacesSkipped.length > 0) && (
+          <li>
+            {t('settings.backupCard.workspacesAdded', {
+              names:
+                preview.workspacesAdded.length > 0
+                  ? preview.workspacesAdded.join(', ')
+                  : t('settings.backupCard.none'),
+            })}
+          </li>
+        )}
+        {preview.uiPrefs && <li>{t('settings.backupCard.uiPrefs')}</li>}
       </ul>
+      {preview.workspacesSkipped.length > 0 && (
+        <Alert variant="warning">
+          <AlertTitle>{t('settings.backupCard.workspacesSkippedTitle')}</AlertTitle>
+          <AlertDescription>
+            {t('settings.backupCard.workspacesSkipped', {
+              list: preview.workspacesSkipped.map((w) => `${w.name} (${w.absPath})`).join(', '),
+            })}
+          </AlertDescription>
+        </Alert>
+      )}
       {preview.defaulted.length > 0 && (
         <Alert variant="warning">
           <AlertTitle>Made by an older version</AlertTitle>
@@ -167,6 +187,7 @@ function ImportSummary({ preview }: { preview: ConfigImportPreview }) {
 }
 
 function ImportSection() {
+  const { t } = useTranslation();
   const previewer = usePreviewImport();
   const applier = useApplyImport();
   const input = useRef<HTMLInputElement>(null);
@@ -269,11 +290,7 @@ function ImportSection() {
       {done && (
         <>
           <Alert variant="success">
-            <AlertDescription>
-              Config imported. Some things never travel in the file (repo tokens without a
-              passphrase, the Drive key, workspaces, this browser&apos;s notifications); the list
-              below shows what is still missing here.
-            </AlertDescription>
+            <AlertDescription>{t('settings.backupCard.imported')}</AlertDescription>
           </Alert>
           <SetupChecklist />
         </>
