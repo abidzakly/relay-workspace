@@ -19,9 +19,10 @@
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^1.4.0",
-    "@relay/shared": "workspace:*",
     "@fastify/rate-limit": "^11.2.1",
     "@modelcontextprotocol/sdk": "1.32.1",
+    "@playwright/mcp": "0.0.86",
+    "@relay/shared": "workspace:*",
     "@yume-chan/adb": "^2.6.4",
     "@yume-chan/adb-scrcpy": "^2.3.2",
     "@yume-chan/adb-server-node-tcp": "^2.5.2",

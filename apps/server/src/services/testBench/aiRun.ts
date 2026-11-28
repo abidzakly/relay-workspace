@@ -24,7 +24,7 @@ import { nodeCenter, nodeLabel, treeSignature } from '../device/uiTree';
 import type { FigmaService } from '../figma/figmaService';
 import type { Notifier } from '../notifier';
 import { branchHints, diffScreens, findText, flutterErrorLines, formatScreen } from './aiObserve';
-import { aiTestPrompt } from './aiPrompt';
+import { aiTestPrompt, aiWebTestPrompt } from './aiPrompt';
 import type { TestBenchService } from './testBench';
 
 /**
@@ -57,6 +57,8 @@ interface Current {
   asserts: number;
   /** The tester looked at the screen (observe, an action or an assert) since this item was handed out. */
   looked: boolean;
+  /** When it was handed out (a web test's screenshot must be newer). */
+  servedAt: number;
 }
 
 interface BenchItem {
@@ -96,12 +98,23 @@ interface Live {
   served: Set<string>;
   marked: Set<string>;
   hints: ReturnType<typeof branchHints> | null;
+  /** A web app under test (the dev server's address) instead of a phone. */
+  web: { url: string } | null;
 }
+
+/** What a run tests: the phone with this adb serial, or the workspace's running web dev server. */
+export type AiRunTarget = { serial: string } | { web: true };
+
+const WEB_ONLY =
+  'This run tests a web app in a browser: use the browser tools (browser_navigate, browser_snapshot, browser_click, browser_type, browser_take_screenshot). The phone tools do not apply.';
 
 export interface AiRunDeps {
   bench: TestBenchService;
   config: ConfigStore;
-  host: Pick<CockpitHost, 'sessionAttach' | 'sessions' | 'sessionInput' | 'wsDiff'>;
+  host: Pick<
+    CockpitHost,
+    'sessionAttach' | 'sessions' | 'sessionInput' | 'wsDiff' | 'benchWebShot'
+  >;
   workspaces: Pick<WorkspaceService, 'ref'>;
   sessions: Pick<CockpitSessionService, 'start' | 'startTestRun' | 'prompt' | 'kill'>;
   devices: DeviceHost;
@@ -131,7 +144,7 @@ export class AiRunService {
   async start(
     repoId: string,
     branch: string,
-    serial: string,
+    target: AiRunTarget,
     opts: { engine?: TestRunEngine; cursorModel?: CursorTestModel } = {},
   ): Promise<TestRun> {
     if (AI_TESTING_PAUSED) {
@@ -145,13 +158,16 @@ export class AiRunService {
       throw new ActionError(409, 'no_ac', 'The card has no Acceptance Criteria to test.');
     if (!st.headSha)
       throw new ActionError(409, 'no_head', 'The branch HEAD is unknown: open its workspace.');
-    const phones = await this.d.devices.list();
-    if (!phones.devices.some((p) => p.serial === serial && p.state === 'device')) {
-      throw new ActionError(
-        409,
-        'device_unavailable',
-        'That phone is not connected (or USB debugging is not allowed).',
-      );
+    const serial = 'serial' in target ? target.serial : null;
+    if (serial !== null) {
+      const phones = await this.d.devices.list();
+      if (!phones.devices.some((p) => p.serial === serial && p.state === 'device')) {
+        throw new ActionError(
+          409,
+          'device_unavailable',
+          'That phone is not connected (or USB debugging is not allowed).',
+        );
+      }
     }
     for (const l of this.live.values()) {
       if (l.run.repoId === repoId && l.run.branch === branch) {
@@ -162,6 +178,21 @@ export class AiRunService {
     const ws = await this.d.prepareBranch(repoId, branch, base);
     if (!ws)
       throw new ActionError(409, 'no_workspace', 'Add a cockpit workspace for this repo first.');
+    // A web app is tested on the dev server the user already runs: its address is the only page the browser may open.
+    let web: { url: string } | null = null;
+    if (serial === null) {
+      const dev = (await this.d.host.sessions()).find(
+        (s) => s.workspaceId === ws.workspaceId && s.kind === 'web' && s.state !== 'exited',
+      );
+      if (!dev?.preview) {
+        throw new ActionError(
+          409,
+          'no_dev_server',
+          'Run the dev server first: the AI tests the page it serves.',
+        );
+      }
+      web = { url: dev.preview.url };
+    }
 
     const run = this.d.bench.startRun(repoId, branch, st.headSha, 'ai', serial);
     const token = randomBytes(32).toString('base64url');
@@ -189,57 +220,31 @@ export class AiRunService {
       served: new Set(),
       marked: new Set(),
       hints: null,
+      web,
     };
     live.timer.unref();
     this.live.set(run.id, live);
 
     try {
-      // The app: reuse a running `flutter run` of this workspace, else start one on the phone.
-      const existing = (await this.d.host.sessions()).find(
-        (s) => s.workspaceId === ws.workspaceId && s.kind === 'flutter' && s.state !== 'exited',
-      );
-      const startApp = (flavor?: string) =>
-        this.d.sessions.start({
-          workspaceId: ws.workspaceId,
-          kind: 'flutter',
-          deviceId: serial,
-          cols: 100,
-          rows: 30,
-          ...(flavor ? { flavor } : {}),
-        });
-      live.ownsFlutter = !existing;
-      live.flutterSessionId =
-        existing?.id ??
-        (
-          await startApp().catch((e: unknown) => {
-            // Several flavors and none configured: a test never ships, so take the least-production one.
-            const m = /^Choose a flavor: (.+)$/.exec((e as Error).message);
-            if (!m) throw e;
-            const flavors = m[1]!.split(',').map((f) => f.trim());
-            const pick =
-              ['development', 'staging', 'preprod'].find((f) => flavors.includes(f)) ?? flavors[0];
-            return startApp(pick);
-          })
-        ).id;
-      // Crashes logged before the run are not this run's: set the logcat mark now.
-      live.logSince =
-        (await this.d.devices.logErrors(serial, null).catch(() => null))?.last ?? null;
+      if (serial !== null) await this.startApp(live, ws.workspaceId, serial);
       const s = await this.d.sessions.startTestRun(ws.workspaceId, {
         benchUrl: this.d.benchUrl,
         token,
         runId: run.id,
         engine,
         cursorModel,
+        ...(web ? { web } : {}),
       });
       live.sessionId = s.id;
       const regressions = st.findings.filter((f) => f.status === 'fixed').length;
       await this.d.sessions.prompt(
         s.id,
-        aiTestPrompt({
+        (web ? aiWebTestPrompt : aiTestPrompt)({
           card: { title: st.card.title, url: st.card.url },
           branch,
           acCount: st.body.ac.length,
           regressionCount: regressions,
+          ...(web ? { url: web.url } : {}),
         }),
       );
     } catch (e) {
@@ -247,6 +252,38 @@ export class AiRunService {
       throw e;
     }
     return this.d.bench.getRun(run.id);
+  }
+
+  /** The phone's app: reuse a running `flutter run` of this workspace, else start one on the phone. */
+  private async startApp(live: Live, workspaceId: string, serial: string): Promise<void> {
+    const existing = (await this.d.host.sessions()).find(
+      (s) => s.workspaceId === workspaceId && s.kind === 'flutter' && s.state !== 'exited',
+    );
+    const run = (flavor?: string) =>
+      this.d.sessions.start({
+        workspaceId,
+        kind: 'flutter',
+        deviceId: serial,
+        cols: 100,
+        rows: 30,
+        ...(flavor ? { flavor } : {}),
+      });
+    live.ownsFlutter = !existing;
+    live.flutterSessionId =
+      existing?.id ??
+      (
+        await run().catch((e: unknown) => {
+          // Several flavors and none configured: a test never ships, so take the least-production one.
+          const m = /^Choose a flavor: (.+)$/.exec((e as Error).message);
+          if (!m) throw e;
+          const flavors = m[1]!.split(',').map((f) => f.trim());
+          const pick =
+            ['development', 'staging', 'preprod'].find((f) => flavors.includes(f)) ?? flavors[0];
+          return run(pick);
+        })
+      ).id;
+    // Crashes logged before the run are not this run's: set the logcat mark now.
+    live.logSince = (await this.d.devices.logErrors(serial, null).catch(() => null))?.last ?? null;
   }
 
   sessionOf(
@@ -307,7 +344,9 @@ export class AiRunService {
       card: st.card,
       branch: l.run.branch,
       device: l.run.deviceSerial,
-      vmServiceUri: await this.vmServiceUri(l).catch(() => null),
+      ...(l.web
+        ? { webApp: { url: l.web.url, note: 'The browser may only open pages on this origin.' } }
+        : { vmServiceUri: await this.vmServiceUri(l).catch(() => null) }),
       toTest: {
         acceptanceCriteria: items.filter((i) => i.kind === 'acceptance criterion').length,
         regressionChecks: items.filter((i) => i.kind === 'regression check').length,
@@ -381,7 +420,13 @@ export class AiRunService {
     }
     const next = items.find((i) => !l.marked.has(i.target));
     if (!next) return { done: true, message: 'Every item has a result. Call finish.' };
-    l.current = { target: next.target, actions: 0, asserts: 0, looked: false };
+    l.current = {
+      target: next.target,
+      actions: 0,
+      asserts: 0,
+      looked: false,
+      servedAt: Date.now(),
+    };
     l.served.add(next.target);
     return {
       ...next,
@@ -471,7 +516,13 @@ export class AiRunService {
   }
 
   /** The screen as text and image. Element numbers in the text are what tap_element and type_into take. */
+  /** The phone tools on a web run: refused, with what to use instead. */
+  private phoneOnly(l: Live): void {
+    if (l.web) throw new ActionError(409, 'web_run', WEB_ONLY);
+  }
+
   async observe(l: Live): Promise<{ text: string; png: string }> {
+    this.phoneOnly(l);
     const [read, png] = await Promise.all([
       this.readTree(l).catch((e: unknown) => e as Error),
       this.d.devices.screenshot(l.run.deviceSerial!),
@@ -494,6 +545,7 @@ export class AiRunService {
   }
 
   async screenshot(l: Live): Promise<Buffer> {
+    this.phoneOnly(l);
     if (l.current) l.current.looked = true;
     return this.d.devices.screenshot(l.run.deviceSerial!);
   }
@@ -528,6 +580,7 @@ export class AiRunService {
    * budget; when the budget is spent the item is marked blocked and the action refused.
    */
   async act(l: Live, a: BenchAct): Promise<{ text: string; png: string | null }> {
+    this.phoneOnly(l);
     const cur = l.current && !l.marked.has(l.current.target) ? l.current : null;
     if (cur) {
       if (cur.actions >= AC_BUDGET) {
@@ -701,6 +754,7 @@ export class AiRunService {
 
   /** A check the server makes against the screen's elements, not the model's reading of a picture. */
   async assertText(l: Live, text: string, visible: boolean) {
+    this.phoneOnly(l);
     const r = await this.readTree(l);
     // Keep the element numbers the tester was given unless the screen is the same anyway.
     if (r.sig === l.sig) this.remember(l, r);
@@ -794,9 +848,15 @@ export class AiRunService {
   }
 
   /** Saves the screen as evidence; returns the path served by `/api/test-bench/evidence/…`. */
-  private async evidence(l: Live): Promise<string | null> {
+  private async evidence(l: Live, shot?: Buffer | null): Promise<string | null> {
     try {
-      const png = await this.d.devices.screenshot(l.run.deviceSerial!);
+      // A web run: the newest screenshot its browser saved (the tester takes them), if any.
+      const png =
+        shot ??
+        (l.web
+          ? await this.d.host.benchWebShot(l.run.id, 0)
+          : await this.d.devices.screenshot(l.run.deviceSerial!));
+      if (!png) return null;
       const name = `${String(++l.shots).padStart(3, '0')}.png`;
       await mkdir(join(this.d.evidenceDir, l.run.id), { recursive: true });
       await writeFile(join(this.d.evidenceDir, l.run.id, name), png);
@@ -826,7 +886,7 @@ export class AiRunService {
           `Get ${target} with next_ac and check it before passing it.`,
         );
       }
-      if (cur && !cur.looked) {
+      if (cur && !cur.looked && !l.web) {
         throw new ActionError(
           409,
           'not_looked',
@@ -834,7 +894,19 @@ export class AiRunService {
         );
       }
     }
-    const evidencePath = await this.evidence(l);
+    // A web pass needs a screenshot taken for this item: it is the evidence, and proof the tester looked.
+    let shot: Buffer | null = null;
+    if (l.web && state === 'pass') {
+      shot = await this.d.host.benchWebShot(l.run.id, cur?.servedAt ?? 0).catch(() => null);
+      if (!shot) {
+        throw new ActionError(
+          409,
+          'not_looked',
+          'A pass needs a screenshot of what you saw: call browser_take_screenshot (PNG, no filename) first.',
+        );
+      }
+    }
+    const evidencePath = await this.evidence(l, shot);
     const check = await this.d.bench.setCheck(l.run.repoId, l.run.branch, {
       target,
       state,

@@ -216,5 +216,7 @@ export interface CockpitHost {
   ): Promise<CleanupApplyResult>;
   /** Cockpit leftovers in the host's OS temp dir. */
   tmpCleanupFacts(): Promise<TmpCleanupFacts>;
+  /** An AI web test: the newest screenshot its browser saved after `since` (epoch ms on the host), or null. */
+  benchWebShot(runId: string, since: number): Promise<Buffer | null>;
   tmpCleanupApply(names: readonly string[]): Promise<CleanupApplyResult>;
 }

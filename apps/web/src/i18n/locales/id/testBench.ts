@@ -16,6 +16,13 @@ export const testBench: Messages<typeof en> = {
     preview: 'Pratinjau',
     design: 'Desain',
   },
+  ai: {
+    startWeb: 'Tes dengan AI di browser',
+    runServerFirst: 'Jalankan dev server dulu',
+    webHint:
+      'AI membuka dev server di browser headless miliknya sendiri (hanya boleh mengunjungi aplikasi ini), memeriksa setiap AC terhadap halaman dan Figma, lalu mencatat temuan tanpa berhenti. Centang Anda sejauh ini tetap; yang ia periksa ulang akan ditimpa.',
+    testingWeb: 'AI sedang mengetes aplikasi web…',
+  },
   web: {
     noWorkspace:
       'Belum ada workspace cockpit untuk repo ini, jadi dev server tidak bisa dijalankan dari sini.',

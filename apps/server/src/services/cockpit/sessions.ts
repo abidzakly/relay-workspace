@@ -32,6 +32,12 @@ import { CURSOR_BIN, CURSOR_MODEL } from './cursorCli';
 import { CockpitHostError } from './host';
 import type { PersistedSpec, SessionStore } from './sessionStore';
 import {
+  PLAYWRIGHT_MCP_NAME,
+  playwrightServer,
+  WEB_TEST_DENIED_TOOLS,
+  webRunDir,
+} from './webTestBrowser';
+import {
   ChainedPty,
   DevUrlWatcher,
   listeningUrl,
@@ -233,8 +239,15 @@ export function flutterRunCommand(
     : { file: 'flutter', args, title };
 }
 
-/** MCP tools an AI device test may use; nothing that edits files or runs a shell. */
-export const TEST_RUN_ALLOWED_TOOLS = ['mcp__bench', 'mcp__marionette', 'Read', 'Glob', 'Grep'];
+/** MCP tools an AI device test may use; nothing that edits files or runs a shell. A web test adds the browser. */
+export const TEST_RUN_ALLOWED_TOOLS = [
+  'mcp__bench',
+  'mcp__marionette',
+  `mcp__${PLAYWRIGHT_MCP_NAME}`,
+  'Read',
+  'Glob',
+  'Grep',
+];
 export const TEST_RUN_DENIED_TOOLS = [
   'Bash',
   'Edit',
@@ -243,6 +256,7 @@ export const TEST_RUN_DENIED_TOOLS = [
   'WebFetch',
   'WebSearch',
   'Task',
+  ...WEB_TEST_DENIED_TOOLS,
 ];
 
 /**
@@ -279,6 +293,16 @@ function testRunMcpServers(t: TestRunProfile): Record<string, unknown> {
       env: { BENCH_URL: t.benchUrl, BENCH_TOKEN: t.token, BENCH_RUN: t.runId },
     },
   };
+  // A web app: the browser instead of the Flutter widget tree.
+  if (t.web) {
+    servers[PLAYWRIGHT_MCP_NAME] = playwrightServer(
+      t.runId,
+      t.web.url,
+      (s) => tsxServer(serverRoot, s),
+      serverRoot,
+    );
+    return servers;
+  }
   const marionette = whichSync('marionette_mcp');
   // On Windows the pub launcher is a `.bat`, which an MCP client cannot start without cmd.exe.
   if (marionette) {
@@ -725,6 +749,7 @@ export class SessionManager {
       if (cursorTest) rmSync(cwd, { recursive: true, force: true });
       if (mcpConfig) rmSync(mcpConfig, { force: true });
       if (figmaConfig) rmSync(figmaConfig, { force: true });
+      if (i.testRun?.web) rmSync(webRunDir(i.testRun.runId), { recursive: true, force: true });
       throw new CockpitHostError(
         'spawn_failed',
         `${cmd.file} could not start: ${(e as Error).message}`,
@@ -740,6 +765,8 @@ export class SessionManager {
         // So does the Claude one's MCP config.
         if (mcpConfig) rmSync(mcpConfig, { force: true });
         if (figmaConfig) rmSync(figmaConfig, { force: true });
+        // The web test's browser folder: its guard and screenshots (evidence was copied on each mark).
+        if (i.testRun?.web) rmSync(webRunDir(i.testRun.runId), { recursive: true, force: true });
       },
     };
   }

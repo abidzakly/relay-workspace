@@ -295,6 +295,15 @@ export function registerCockpitAgentRoutes(app: FastifyInstance, host: LocalCock
   // Sessions: persistent PTYs; attach = NDJSON replay from `since`, then live, with a heartbeat.
   // Storage cleanup: cockpit leftovers in the agent's temp dir (fixed name patterns only).
   app.post('/v1/cockpit/tmp-cleanup/facts', async () => host.tmpCleanupFacts());
+  // An AI web test's newest screenshot (evidence for a mark or a finding). The run id names its temp folder.
+  app.post('/v1/cockpit/bench-web-shot', async (req, reply) => {
+    const p = z
+      .object({ runId: z.string().uuid(), since: z.number().nonnegative() })
+      .safeParse(req.body);
+    if (!p.success) return reply.code(422).send({ error: 'invalid request', code: 'validation' });
+    const png = await host.benchWebShot(p.data.runId, p.data.since);
+    return { png: png ? png.toString('base64') : null };
+  });
   app.post('/v1/cockpit/tmp-cleanup/apply', async (req, reply) => {
     const p = z.object({ names: z.array(z.string().min(1).max(120)).max(500) }).safeParse(req.body);
     if (!p.success) return reply.code(422).send({ error: 'invalid request', code: 'validation' });

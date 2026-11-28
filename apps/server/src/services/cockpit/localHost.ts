@@ -29,6 +29,7 @@ import {
   wsCleanupFacts,
   type WsCleanupItem,
 } from './wsCleanup';
+import { latestWebShot } from './webTestBrowser';
 import {
   chooseRunFlavor,
   flutterDevices,
@@ -346,6 +347,10 @@ export class LocalCockpitHost implements CockpitHost {
 
   async wsCleanupApply(ref: WsRef, base: string, items: readonly WsCleanupItem[]) {
     return wsCleanupApply(await this.cwd(ref), base, items);
+  }
+
+  benchWebShot(runId: string, since: number): Promise<Buffer | null> {
+    return latestWebShot(runId, since);
   }
 
   tmpCleanupFacts() {
