@@ -321,6 +321,13 @@ export function tmpCandidates(
         }
         break;
       }
+      case 'bench-web-dir': {
+        const runId = e.name.slice('cockpit-bench-web-'.length);
+        if (!runActive(runId) && now - e.mtimeMs >= GRACE.tmpLeftover) {
+          reason = 'Browser folder (screenshots) of an AI web test that is over';
+        }
+        break;
+      }
       case 'bench-cursor-dir':
       case 'agent-shim':
         if (e.mtimeMs < t.startedAt - 60_000) reason = 'Left by an earlier run of the host agent';

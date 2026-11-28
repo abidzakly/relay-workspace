@@ -283,6 +283,17 @@ export class RemoteCockpitHost implements CockpitHost {
     // A prune fetches and may run `git gc`.
     return this.ws('cleanup-apply', { ref, base, items }, 7 * 60_000);
   }
+  async benchWebShot(runId: string, since: number): Promise<Buffer | null> {
+    const r = await viaAgent(() =>
+      this.agent.json<{ png: string | null }>(
+        'POST',
+        '/v1/cockpit/bench-web-shot',
+        { runId, since },
+        30_000,
+      ),
+    );
+    return r.png ? Buffer.from(r.png, 'base64') : null;
+  }
   tmpCleanupFacts(): Promise<TmpCleanupFacts> {
     return viaAgent(() =>
       this.agent.json<TmpCleanupFacts>('POST', '/v1/cockpit/tmp-cleanup/facts', {}, 60_000),

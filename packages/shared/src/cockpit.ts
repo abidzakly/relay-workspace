@@ -224,6 +224,14 @@ export const TestRunProfileSchema = z
     engine: TestRunEngineSchema.default('claude'),
     /** `cursor` only. */
     cursorModel: CursorTestModelSchema.default('auto'),
+    /**
+     * A web app instead of a phone: the dev server's address on the Mac. The tester gets a browser (Playwright MCP)
+     * that may only navigate on this origin.
+     */
+    web: z
+      .object({ url: z.string().regex(/^https?:\/\/localhost:\d{2,5}\/[^\s]*$/) })
+      .strict()
+      .optional(),
   })
   .strict();
 export type TestRunProfile = z.infer<typeof TestRunProfileSchema>;

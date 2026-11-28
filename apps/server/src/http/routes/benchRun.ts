@@ -39,15 +39,23 @@ export function registerBenchRunRoutes(
         .object({
           repo: RepoIdSchema,
           branch: BranchNameSchema,
-          serial: DeviceSerialSchema,
+          /** The phone to test on, or `web: true` for the workspace's running web dev server. */
+          serial: DeviceSerialSchema.optional(),
+          web: z.literal(true).optional(),
           engine: TestRunEngineSchema.default('claude'),
           cursorModel: CursorTestModelSchema.default('auto'),
         })
-        .strict(),
+        .strict()
+        .refine((v) => (v.serial === undefined) !== (v.web === undefined), {
+          message: 'Give either serial or web',
+        }),
       req.body,
     );
     return wrapAction(() =>
-      ai.start(b.repo, b.branch, b.serial, { engine: b.engine, cursorModel: b.cursorModel }),
+      ai.start(b.repo, b.branch, b.serial !== undefined ? { serial: b.serial } : { web: true }, {
+        engine: b.engine,
+        cursorModel: b.cursorModel,
+      }),
     );
   });
   app.post('/api/test-bench/ai-run/:runId/resume', async (req) => {

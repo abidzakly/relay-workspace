@@ -14,6 +14,13 @@ export const testBench = {
     preview: 'Preview',
     design: 'Design',
   },
+  ai: {
+    startWeb: 'Test with AI in the browser',
+    runServerFirst: 'Run the dev server first',
+    webHint:
+      'The AI opens the dev server in its own headless browser (it may only visit this app), checks every AC against the page and Figma, and logs findings without stopping. Your ticks so far stay; it overwrites the ones it re-checks.',
+    testingWeb: 'AI is testing the web app…',
+  },
   web: {
     noWorkspace:
       'No cockpit workspace holds this repo, so the dev server cannot be started from here.',

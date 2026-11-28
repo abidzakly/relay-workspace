@@ -1,5 +1,6 @@
 import { Bot, Hand, Loader2, Square, TerminalSquare } from 'lucide-react';
 import { useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import {
   CURSOR_TEST_MODELS,
   type CursorTestModel,
@@ -42,14 +43,19 @@ export function AiRunPanel({
   branch,
   st,
   serial,
+  web,
   onOpenLog,
 }: {
   repo: string;
   branch: string;
   st: TestBenchState;
   serial: string | null;
+  /** A web project: test the running dev server in a browser instead of a phone. `ready` = it has an address. */
+  web?: { ready: boolean } | undefined;
   onOpenLog: () => void;
 }) {
+  const { t } = useTranslation();
+  const canStart = web ? web.ready : !!serial;
   const start = useStartAiRun(repo, branch);
   const resume = useResumeAiRun(repo, branch);
   const stop = useStopAiRun(repo, branch);
@@ -100,22 +106,27 @@ export function AiRunPanel({
         <Button
           variant="secondary"
           className="h-auto min-h-9 max-w-full whitespace-normal text-center"
-          disabled={!serial || start.isPending}
-          title={serial ? undefined : 'Connect a phone first'}
-          onClick={() =>
-            serial && start.mutate({ serial, engine: prefs.engine, cursorModel: prefs.model })
+          disabled={!canStart || start.isPending}
+          title={
+            canStart ? undefined : web ? t('testBench.ai.runServerFirst') : 'Connect a phone first'
           }
+          onClick={() => {
+            const opts = { engine: prefs.engine, cursorModel: prefs.model };
+            if (web) start.mutate({ web: true, ...opts });
+            else if (serial) start.mutate({ serial, ...opts });
+          }}
         >
           {start.isPending ? (
             <Loader2 className="size-4 motion-safe:animate-spin" />
           ) : (
             <Bot className="size-4" />
           )}
-          Test with AI on this phone
+          {web ? t('testBench.ai.startWeb') : 'Test with AI on this phone'}
         </Button>
         <p className="text-xs text-muted-foreground">
-          The AI runs the app, checks every AC against the screen and Figma, and logs findings
-          without stopping. Your ticks so far stay; it overwrites the ones it re-checks.
+          {web
+            ? t('testBench.ai.webHint')
+            : 'The AI runs the app, checks every AC against the screen and Figma, and logs findings without stopping. Your ticks so far stay; it overwrites the ones it re-checks.'}
         </p>
         {run?.mode === 'ai' && run.status === 'aborted' && run.summary && (
           <p className="text-xs text-muted-foreground">Last AI run: {run.summary}</p>
@@ -135,7 +146,11 @@ export function AiRunPanel({
     <section aria-label="AI test run" className="grid gap-2 rounded-surface border bg-card p-3">
       <p className="flex items-center gap-2 text-sm font-medium">
         <Bot aria-hidden className="size-4 text-primary-ink" />
-        {live.status === 'paused' ? 'AI tester is waiting for you' : 'AI is testing this phone…'}
+        {live.status === 'paused'
+          ? 'AI tester is waiting for you'
+          : web
+            ? t('testBench.ai.testingWeb')
+            : 'AI is testing this phone…'}
         <span className="ml-auto font-mono text-xs text-muted-foreground">
           {marked}/{total} checked
         </span>

@@ -75,11 +75,13 @@ export interface TmpCleanupFacts {
   entries: { name: string; kind: TmpKind; bytes: number; mtimeMs: number }[];
 }
 
-export type TmpKind = 'bench-config' | 'bench-cursor-dir' | 'agent-shim' | 'git-index' | 'squash';
+export type TmpKind =
+  'bench-config' | 'bench-cursor-dir' | 'bench-web-dir' | 'agent-shim' | 'git-index' | 'squash';
 
 const TMP_PATTERNS: readonly [RegExp, TmpKind][] = [
   [/^cockpit-bench-[0-9a-f-]{36}\.json$/, 'bench-config'],
   [/^cockpit-bench-cursor-[0-9a-f]{8}-[A-Za-z0-9]{6}$/, 'bench-cursor-dir'],
+  [/^cockpit-bench-web-[0-9a-f-]{36}$/, 'bench-web-dir'],
   [/^(?:relay|core-dashboard)-agent-[A-Za-z0-9]{6}$/, 'agent-shim'],
   [/^cockpit-idx-[A-Za-z0-9]{6}$/, 'git-index'],
   [/^cockpit-squash-[A-Za-z0-9]{6}$/, 'squash'],

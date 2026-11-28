@@ -463,6 +463,18 @@ export function TestBench() {
                 onAutoPrepared={clearAutoRun}
                 onOpenLog={() => setLogTab('app')}
               />
+              {!quick && (
+                <AiRunPanel
+                  repo={repo}
+                  branch={branch}
+                  st={st}
+                  serial={null}
+                  web={{
+                    ready: !!webSession?.preview && webSession.state !== 'exited',
+                  }}
+                  onOpenLog={() => setLogTab('agent')}
+                />
+              )}
               <WebPreview session={webSession} />
             </>
           ) : (

@@ -165,8 +165,12 @@ export function useStartAiRun(repo: string, branch: string) {
   return useBenchMutation(
     repo,
     branch,
-    (v: { serial: string; engine: TestRunEngine; cursorModel: CursorTestModel }) =>
-      post<TestRun>('/api/test-bench/ai-run', { repo, branch, ...v }),
+    (
+      v: ({ serial: string } | { web: true }) & {
+        engine: TestRunEngine;
+        cursorModel: CursorTestModel;
+      },
+    ) => post<TestRun>('/api/test-bench/ai-run', { repo, branch, ...v }),
   );
 }
 export function useResumeAiRun(repo: string, branch: string) {
