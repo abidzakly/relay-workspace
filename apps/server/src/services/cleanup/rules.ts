@@ -257,8 +257,11 @@ export function buildCandidates(w: WorkspaceFacts, now: number): PlannedCandidat
       id: `ws:${ws.id}:build:${b.rel}:${Math.floor(b.mtimeMs)}`,
       category: 'run-builds' as const,
       tier: 'confirm' as const,
-      label: `Flutter ${b.rel}/ folder`,
-      reason: `Last built ${ago(now, b.mtimeMs)}; the next run rebuilds it (debug APK included)`,
+      label: b.rel === 'build' ? `Flutter ${b.rel}/ folder` : `Web ${b.rel}/ folder`,
+      reason:
+        b.rel === 'build'
+          ? `Last built ${ago(now, b.mtimeMs)}; the next run rebuilds it (debug APK included)`
+          : `Last written ${ago(now, b.mtimeMs)}; the next dev server or build makes it again`,
       bytes: b.bytes,
       where: ws.name,
       action: { on: 'ws', workspaceId: ws.id, base: ws.base, item: { kind: 'build', rel: b.rel } },

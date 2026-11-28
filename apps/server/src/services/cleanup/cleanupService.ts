@@ -281,7 +281,13 @@ export class CleanupService {
         skipped.push({ where: w.name, reason: 'A session is running in it' });
         // An agent idle after its turn (a finished device test keeps its chat open) builds nothing: its `build/` may go.
         const buildInUse =
-          open.some((s) => s.state === 'running' || s.kind === 'flutter' || s.kind === 'shell') ||
+          open.some(
+            (s) =>
+              s.state === 'running' ||
+              s.kind === 'flutter' ||
+              s.kind === 'web' ||
+              s.kind === 'shell',
+          ) ||
           (w.repoId !== null && runningRepos.has(w.repoId));
         if (!buildInUse) {
           const facts = await this.d.host

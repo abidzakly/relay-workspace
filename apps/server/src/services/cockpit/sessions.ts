@@ -32,6 +32,14 @@ import { CURSOR_BIN, CURSOR_MODEL } from './cursorCli';
 import { CockpitHostError } from './host';
 import type { PersistedSpec, SessionStore } from './sessionStore';
 import {
+  ChainedPty,
+  DevUrlWatcher,
+  listeningUrl,
+  probeFrameBlocked,
+  webEnv,
+  type WebRunStep,
+} from './webRun';
+import {
   defaultShell,
   IS_WINDOWS,
   launchSpec,
@@ -141,6 +149,8 @@ export interface StartInput {
   figma?: FigmaToolsProfile | undefined;
   /** Resolved `flutter` target. Required for that kind; the host fills it before `start`. */
   flutter?: { flavor: string | null; mode: FlutterRunMode; ios: boolean } | undefined;
+  /** Resolved `web` run (install when needed, then `run <script>`) and its port. Required for that kind. */
+  web?: { steps: WebRunStep[]; port: number; script: string } | undefined;
   /** Model the session starts on (planning). Unset = `CLAUDE_SESSION_MODEL` / `CURSOR_MODEL`. */
   model?: string | undefined;
   /** `claude`: switched to (with effort) when a plan is approved. */
@@ -379,8 +389,14 @@ export function commandFor(
   agentModel?: string,
   /** A plain Claude session with the Figma tools: its MCP config file and whether edits are allowed. */
   figma?: { config: string; write: boolean },
+  web?: { steps: WebRunStep[]; script: string },
 ): { file: string; args: string[]; title: string } {
   switch (kind) {
+    case 'web': {
+      const last = web?.steps.at(-1);
+      if (!web || !last) throw new CockpitHostError('validation', 'A web run needs a script', 422);
+      return { file: last.file, args: last.args, title: `Web · ${web.script}` };
+    }
     case 'claude':
       if (testRunMcpConfig) {
         return {
@@ -461,6 +477,12 @@ export function commandFor(
   }
 }
 
+/** A dev server's environment: the session's, without Relay's own `NODE_ENV` (production in a release), plus its port. */
+function devServerEnv(port: number): Record<string, string> {
+  const { NODE_ENV: _drop, ...env } = sessionEnv();
+  return { ...env, ...webEnv(port) };
+}
+
 type Conversation = ClaudeConversation | CursorConversation;
 const isConversation = (p: NodePtyProcess | null): p is Conversation =>
   p instanceof ClaudeConversation || p instanceof CursorConversation;
@@ -470,6 +492,7 @@ function stopProcess(proc: NodePtyProcess): void {
     proc.kill();
     return;
   }
+  if (proc instanceof ChainedPty) proc.stop();
   signalTree(proc.pid, 'SIGTERM', () => ptyKill(proc, 'SIGTERM'));
 }
 
@@ -636,6 +659,7 @@ export class SessionManager {
       cursorTest?.cursorModel,
       i.model,
       figmaConfig && i.figma ? { config: figmaConfig, write: i.figma.write } : undefined,
+      i.web,
     );
     if (resume && i.kind === 'claude') {
       const at = cmd.args.indexOf('--permission-mode');
@@ -663,25 +687,40 @@ export class SessionManager {
                     ...(resume?.id ? { resumeId: resume.id } : {}),
                   }),
             })
-          : i.kind === 'claude'
-            ? new ClaudeConversation({
-                file: cmd.file,
-                args: cmd.args,
-                cwd: i.cwd,
-                env: sessionEnv(),
-                ...(i.model ? { model: i.model } : {}),
-                ...(i.execModel ? { execModel: i.execModel } : {}),
-                ...(i.execEffort ? { execEffort: i.execEffort } : {}),
-                ...(i.execSwitch ? { execSwitch: i.execSwitch } : {}),
-                ...(resume?.mode ? { startMode: resume.mode } : {}),
-              })
-            : this.pty!.spawn(ptyCmd.file, ptyCmd.args, {
-                name: 'xterm-256color',
-                cols: i.cols,
-                rows: i.rows,
-                cwd,
-                env: sessionEnv(),
-              });
+          : i.kind === 'web' && i.web
+            ? new ChainedPty(
+                i.web.steps,
+                (step, cols, rows) => {
+                  const spec = ptySpec(step.file, step.args);
+                  return this.pty!.spawn(spec.file, spec.args, {
+                    name: 'xterm-256color',
+                    cols,
+                    rows,
+                    cwd,
+                    env: devServerEnv(i.web!.port),
+                  });
+                },
+                { cols: i.cols, rows: i.rows },
+              )
+            : i.kind === 'claude'
+              ? new ClaudeConversation({
+                  file: cmd.file,
+                  args: cmd.args,
+                  cwd: i.cwd,
+                  env: sessionEnv(),
+                  ...(i.model ? { model: i.model } : {}),
+                  ...(i.execModel ? { execModel: i.execModel } : {}),
+                  ...(i.execEffort ? { execEffort: i.execEffort } : {}),
+                  ...(i.execSwitch ? { execSwitch: i.execSwitch } : {}),
+                  ...(resume?.mode ? { startMode: resume.mode } : {}),
+                })
+              : this.pty!.spawn(ptyCmd.file, ptyCmd.args, {
+                  name: 'xterm-256color',
+                  cols: i.cols,
+                  rows: i.rows,
+                  cwd,
+                  env: sessionEnv(),
+                });
     } catch (e) {
       if (cursorTest) rmSync(cwd, { recursive: true, force: true });
       if (mcpConfig) rmSync(mcpConfig, { force: true });
@@ -725,9 +764,11 @@ export class SessionManager {
         });
       }
     }
+    const watchUrl = s.info.kind === 'web' ? this.watchPreview(s, proc) : null;
     proc.onData((data) => {
       // Ignore a process that was replaced (a restart of a kept session).
       if (s.proc !== proc) return;
+      watchUrl?.(data);
       const offset = s.ring.append(data);
       if (s.spec && !s.ended) this.store?.appendEvents(s.info.id, data);
       s.bytesSinceInput += data.length;
@@ -752,6 +793,48 @@ export class SessionManager {
       // A kept session only pauses: its viewers stay attached for when it resumes.
       if (!s.info.restorable) this.emit(s, { t: 'exit', exitCode });
     });
+  }
+
+  /**
+   * A web session's preview: the address its output names, else (every 10 s, for 5 minutes) the port its process group
+   * listens on. Shown at once, then marked `frameBlocked` when the page's headers refuse an iframe.
+   */
+  private watchPreview(s: Live, proc: NodePtyProcess): (data: string) => void {
+    const watcher = new DevUrlWatcher();
+    let found = false;
+    let tries = 0;
+    const poll = setInterval(() => {
+      if (found || s.proc !== proc || ++tries > 30) {
+        clearInterval(poll);
+        return;
+      }
+      void listeningUrl(proc.pid).then((u) => u && settle(u));
+    }, 10_000);
+    poll.unref();
+    const settle = (url: string) => {
+      if (found || s.proc !== proc) return;
+      found = true;
+      clearInterval(poll);
+      this.setState(s, { preview: { url, frameBlocked: false } });
+      // Until the page answers for real (every 5 s, for 3 minutes): a cold Nuxt/Next compile takes a while.
+      const probe = async () => {
+        for (let i = 0; i < 36 && s.proc === proc; i++) {
+          const frameBlocked = await probeFrameBlocked(url);
+          if (frameBlocked !== null) {
+            if (frameBlocked && s.proc === proc)
+              this.setState(s, { preview: { url, frameBlocked } });
+            return;
+          }
+          await new Promise((r) => setTimeout(r, 5_000).unref());
+        }
+      };
+      void probe();
+    };
+    return (data) => {
+      if (found) return;
+      const url = watcher.feed(data);
+      if (url) settle(url);
+    };
   }
 
   /** Starts the agent of a kept session again, continuing its conversation. */

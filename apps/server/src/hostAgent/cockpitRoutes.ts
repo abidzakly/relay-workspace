@@ -3,10 +3,12 @@ import {
   FlavorSchema,
   FlutterRunModeSchema,
   TestRunProfileSchema,
+  WebScriptSchema,
 } from '@relay/shared';
 import type { FastifyInstance, FastifyReply } from 'fastify';
 import { z } from 'zod';
 import { CockpitHostError } from '../services/cockpit/host';
+import { BUILD_DIRS } from '../services/cockpit/wsCleanup';
 import type { LocalCockpitHost } from '../services/cockpit/localHost';
 
 /**
@@ -109,7 +111,7 @@ const WsSchemas = {
             tip: z.string().regex(/^[0-9a-f]{40,64}$/),
             force: z.boolean(),
           }),
-          z.object({ kind: z.literal('build'), rel: z.literal('build') }),
+          z.object({ kind: z.literal('build'), rel: z.enum(BUILD_DIRS) }),
           z.object({ kind: z.literal('prune') }),
         ]),
       )
@@ -135,7 +137,8 @@ const SessionStart = z.object({
   testRun: TestRunProfileSchema.optional(),
   figma: FigmaToolsProfileSchema.optional(),
   ref: RefSchema,
-  kind: z.enum(['claude', 'cursor', 'shell', 'flutter']),
+  kind: z.enum(['claude', 'cursor', 'shell', 'web', 'flutter']),
+  script: WebScriptSchema.optional(),
   deviceId: z
     .string()
     .regex(/^[A-Za-z0-9._:-]{1,120}$/)

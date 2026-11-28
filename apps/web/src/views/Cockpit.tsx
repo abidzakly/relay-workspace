@@ -148,7 +148,8 @@ export function Cockpit() {
   const wsId = fromSession?.workspaceId ?? params.get('ws') ?? workspaces[0]?.id ?? null;
   const ws = workspaces.find((w) => w.id === wsId) ?? null;
   const tab =
-    (params.get('tab') as TabId | null) ?? (fromSession?.kind === 'shell' ? 'terminal' : 'agent');
+    (params.get('tab') as TabId | null) ??
+    (fromSession?.kind === 'shell' || fromSession?.kind === 'web' ? 'terminal' : 'agent');
   const set = (patch: Record<string, string | null>) =>
     setParams(
       (prev) => {
@@ -169,7 +170,8 @@ export function Cockpit() {
         tab === 'agent'
           ? s.kind === 'claude' || s.kind === 'cursor'
           : tab === 'terminal'
-            ? s.kind === 'shell'
+            ? // A web dev server is a terminal too: its log, with input.
+              s.kind === 'shell' || s.kind === 'web'
             : false,
       ),
     [inWs, tab],
@@ -197,7 +199,12 @@ export function Cockpit() {
     set({
       ws: s.workspaceId,
       session: s.id,
-      tab: s.kind === 'shell' ? 'terminal' : s.kind === 'flutter' ? 'run' : 'agent',
+      tab:
+        s.kind === 'shell' || s.kind === 'web'
+          ? 'terminal'
+          : s.kind === 'flutter'
+            ? 'run'
+            : 'agent',
     });
   const liveIn = (id: string) => sessions.some((x) => x.workspaceId === id && x.state !== 'exited');
   const waitingCount = (id: string) =>
