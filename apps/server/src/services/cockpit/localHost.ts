@@ -38,6 +38,14 @@ import {
   type SessionEvent,
 } from './sessions';
 import { SessionStore } from './sessionStore';
+import {
+  chooseWebScript,
+  freePort,
+  needsInstall,
+  projectKind,
+  readWebTargets,
+  webRunSteps,
+} from './webRun';
 import type { Logger } from '../../util/logger';
 import { hostAgentModels, type HostAgentModels } from './agentAccount';
 import { claudeAvailability, runClaudeCli } from './claudeCli';
@@ -189,6 +197,19 @@ export class LocalCockpitHost implements CockpitHost {
             ios: opts.ios ?? false,
           }
         : undefined;
+    let web: { steps: ReturnType<typeof webRunSteps>; port: number; script: string } | undefined;
+    if (opts.kind === 'web') {
+      const targets = readWebTargets(cwd);
+      if (!targets) {
+        throw new CockpitHostError('not_web', 'No readable package.json in this workspace', 422);
+      }
+      const script = chooseWebScript(targets, opts.script);
+      web = {
+        steps: webRunSteps(targets.pm, script, needsInstall(cwd, targets.pm)),
+        port: await freePort(),
+        script,
+      };
+    }
     return this.manager.start({
       cwd,
       wsId: ref.wsId,
@@ -199,6 +220,7 @@ export class LocalCockpitHost implements CockpitHost {
       testRun: opts.testRun,
       figma: opts.figma,
       flutter,
+      web,
       model: opts.model,
       execModel: opts.execModel,
       execEffort: opts.execEffort,
@@ -260,7 +282,10 @@ export class LocalCockpitHost implements CockpitHost {
   }
 
   async flutterRunTargets(ref: WsRef): Promise<RunTargets> {
-    return readRunTargets(await this.cwd(ref));
+    const cwd = await this.cwd(ref);
+    const kind = projectKind(cwd);
+    const web = kind === 'web' ? readWebTargets(cwd) : null;
+    return { ...(await readRunTargets(cwd)), kind, ...(web ? { web } : {}) };
   }
 
   async flutterLaunchEmulator(ref: WsRef, emulatorId: string): Promise<void> {

@@ -150,6 +150,7 @@ export class CockpitSessionService {
         flavor: parsed.flavor,
         mode: parsed.mode,
         ios: parsed.ios,
+        script: parsed.script,
         model: parsed.model,
         execModel: parsed.execModel,
         execEffort: parsed.execEffort,
@@ -305,6 +306,8 @@ export class CockpitSessionService {
 
   /** Where "back" goes when an agent sent from another page finishes (session id → app path). */
   private readonly returnTo = new Map<string, string>();
+  /** A web session's preview as last seen: the list refreshes when its address shows up or turns out unframeable. */
+  private readonly previews = new Map<string, string>();
 
   // ───────────────────────────── turn-done watcher ─────────────────────────────
 
@@ -333,6 +336,13 @@ export class CockpitSessionService {
       this.waiting.set(s.id, s.waiting);
       if (s.waiting && !was && AGENT_KINDS.has(s.kind)) await this.turnDone(s);
       if (s.state === 'exited' && was) this.changed(s.id);
+      if (s.kind === 'web') {
+        const preview = s.preview ? `${s.preview.url} ${s.preview.frameBlocked}` : '';
+        if (preview !== (this.previews.get(s.id) ?? '')) {
+          this.previews.set(s.id, preview);
+          this.changed(s.id);
+        }
+      }
     }
     if (!items.some((s) => s.state !== 'exited') && this.timer) {
       clearTimeout(this.timer);

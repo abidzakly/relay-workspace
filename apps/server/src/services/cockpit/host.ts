@@ -85,6 +85,8 @@ export interface SessionStartOpts {
   mode?: FlutterRunMode | undefined;
   /** `flutter`: iOS keeps `-t` and drops `--flavor`. */
   ios?: boolean | undefined;
+  /** `web`: the `package.json` script. Omitted = the workspace's default. */
+  script?: string | undefined;
   /** `claude` / `cursor`: model the session starts on. Unset = the built-in default. */
   model?: string | undefined;
   /** `claude`: model + effort the session switches to once the user approves a plan. */

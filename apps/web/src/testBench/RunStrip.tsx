@@ -16,7 +16,6 @@ import { Select } from '@/components/ui/select';
 import { BranchPrepStatus } from '@/components/runBranch/BranchPrepStatus';
 import { useRunBranch } from '@/components/runBranch/useRunBranch';
 import { describeError } from '@/lib/api';
-import { useWorkspaces, useWsStatuses } from '@/lib/cockpitApi';
 import {
   pickedFlavor,
   readRunPrefs,
@@ -27,6 +26,7 @@ import {
   useSessions,
   useStartSession,
 } from '@/lib/sessionApi';
+import { useRunWorkspace } from './useRunWorkspace';
 
 /**
  * Run the branch on the chosen phone: the cockpit's `flutter run` session in the repo's
@@ -52,21 +52,7 @@ export function RunStrip({
   onAutoPrepared?: () => void;
   onOpenLog: () => void;
 }) {
-  const workspaces = useWorkspaces();
-  // The repo's workspaces, worktrees included. Run in the one that already has the branch (git keeps a branch in one
-  // worktree only), else in the repo workspace.
-  const candidates = (workspaces.data ?? []).filter((w) => w.repoId === repo);
-  const statuses = useWsStatuses(candidates.map((w) => w.id));
-  const onBranch = candidates.findIndex((_w, i) => statuses[i]?.data?.branch === branch);
-  const wsIndex =
-    onBranch >= 0
-      ? onBranch
-      : Math.max(
-          0,
-          candidates.findIndex((w) => w.kind === 'repo'),
-        );
-  const ws = candidates[wsIndex] ?? null;
-  const status = statuses[wsIndex] ?? { data: undefined };
+  const { workspaces, ws, wrongBranch } = useRunWorkspace(repo, branch);
   const sessions = useSessions();
   const targets = useRunTargets(ws?.id ?? null);
   const start = useStartSession();
@@ -83,8 +69,6 @@ export function RunStrip({
   const run = (sessions.data ?? []).find(
     (s) => s.workspaceId === ws?.id && s.kind === 'flutter' && s.state !== 'exited',
   );
-  const wrongBranch =
-    status.data?.branch && status.data.branch !== branch ? status.data.branch : null;
   const doCheckout = () => rb.ensure();
   const flavors = targets.data?.flavors ?? [];
   const chosen = pickedFlavor(flavors, flavor);

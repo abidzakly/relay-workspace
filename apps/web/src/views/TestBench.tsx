@@ -10,6 +10,7 @@ import {
   ExternalLink,
   ListChecks,
   Loader2,
+  Globe,
   PenTool,
   RefreshCw,
   Sparkles,
@@ -18,6 +19,7 @@ import {
   XCircle,
 } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { Link, useLocation, useNavigate, useParams, useSearchParams } from 'react-router';
 import type { Finding, TestBenchState } from '@relay/shared';
 import { Badge } from '@/components/Badge';
@@ -27,7 +29,7 @@ import { Button } from '@/components/ui/button';
 import { describeError } from '@/lib/api';
 import { useWorkspaces } from '@/lib/cockpitApi';
 import { benchPath, benchSessionsFor, rememberBenchReturn } from '@/lib/benchReturn';
-import { launchEmulator, useDevices, useSessions } from '@/lib/sessionApi';
+import { launchEmulator, useDevices, useRunTargets, useSessions } from '@/lib/sessionApi';
 import { emit } from '@/lib/reward/engine';
 import {
   refreshBody,
@@ -46,6 +48,8 @@ import { FigmaPanel, figmaImageUrl, frameFor, type CompareMode } from '@/testBen
 import { FindingDialog } from '@/testBench/FindingDialog';
 import { MrSteps } from '@/testBench/MrSteps';
 import { RunStrip } from '@/testBench/RunStrip';
+import { WebPreview } from '@/testBench/WebPreview';
+import { WebRunStrip } from '@/testBench/WebRunStrip';
 import { PageTitle } from '@/components/PageTitle';
 
 /**
@@ -71,10 +75,10 @@ const saveDevice = (serial: string) => {
 };
 
 type Pane = 'checks' | 'phone' | 'design';
-const PANES: { id: Pane; label: string; icon: typeof ListChecks }[] = [
-  { id: 'checks', label: 'Checks', icon: ListChecks },
-  { id: 'phone', label: 'Phone', icon: Smartphone },
-  { id: 'design', label: 'Design', icon: PenTool },
+const PANES: { id: Pane; icon: typeof ListChecks }[] = [
+  { id: 'checks', icon: ListChecks },
+  { id: 'phone', icon: Smartphone },
+  { id: 'design', icon: PenTool },
 ];
 
 function Readiness({ st }: { st: TestBenchState }) {
@@ -153,7 +157,18 @@ export function TestBench() {
   const devices = useDeviceList();
   const workspaces = useWorkspaces();
   const ws = (workspaces.data ?? []).find((w) => w.repoId === repo) ?? null;
-  const flutter = useDevices(ws?.id ?? null);
+  // A web workspace (package.json, no pubspec.yaml) runs a dev server and shows its preview instead of a phone.
+  const targets = useRunTargets(ws?.id ?? null);
+  const web = targets.data?.kind === 'web' ? (targets.data.web ?? null) : null;
+  const flutter = useDevices(ws && targets.data && !web ? ws.id : null);
+  const { t } = useTranslation();
+  const webSessions = (sessions.data ?? []).filter(
+    (s) => s.workspaceId === ws?.id && s.kind === 'web',
+  );
+  const webSession =
+    webSessions.find((s) => s.state !== 'exited') ??
+    webSessions.sort((a, b) => b.startedAt - a.startedAt)[0] ??
+    null;
   const finish = useFinish(repo, branch);
   const fix = useFixWithAi(repo, branch);
   const mirror = useRef<DeviceMirrorHandle>(null);
@@ -310,7 +325,7 @@ export function TestBench() {
       <header className="flex min-w-0 flex-wrap items-end gap-2">
         {back}
         <div className="min-w-0 flex-1">
-          <PageTitle>Test on device</PageTitle>
+          <PageTitle>{web ? t('testBench.title.web') : t('testBench.title.device')}</PageTitle>
           <p className="truncate font-mono text-xs text-muted-foreground">{branch}</p>
         </div>
         <BranchSwitcher repo={repo} branch={branch} />
@@ -385,7 +400,7 @@ export function TestBench() {
           aria-label="Test Bench panes"
           className="flex rounded-control border p-0.5 xl:hidden"
         >
-          {PANES.map(({ id, label, icon: Icon }) => (
+          {PANES.map(({ id, icon: Icon }) => (
             <button
               key={id}
               role="tab"
@@ -397,7 +412,12 @@ export function TestBench() {
                 pane === id ? 'bg-accent font-medium' : 'text-muted-foreground',
               )}
             >
-              <Icon aria-hidden className="size-4" /> {label}
+              {id === 'phone' && web ? (
+                <Globe aria-hidden className="size-4" />
+              ) : (
+                <Icon aria-hidden className="size-4" />
+              )}{' '}
+              {t(`testBench.panes.${id === 'phone' && web ? 'preview' : id}`)}
             </button>
           ))}
         </div>
@@ -407,8 +427,10 @@ export function TestBench() {
         className={cn(
           'grid min-w-0 gap-6',
           quick
-            ? 'mx-auto w-full max-w-xl'
-            : 'xl:grid-cols-[minmax(0,1fr)_minmax(18rem,22rem)_minmax(0,1fr)] xl:items-start',
+            ? cn('mx-auto w-full', web ? 'max-w-6xl' : 'max-w-xl')
+            : web
+              ? 'xl:grid-cols-[minmax(16rem,1fr)_minmax(0,2fr)_minmax(16rem,1fr)] xl:items-start'
+              : 'xl:grid-cols-[minmax(0,1fr)_minmax(18rem,22rem)_minmax(0,1fr)] xl:items-start',
         )}
       >
         {!quick && (
@@ -431,103 +453,122 @@ export function TestBench() {
             pane !== 'phone' && !quick && 'hidden xl:grid',
           )}
         >
-          <Dropdown
-            label="Phone"
-            icon={Smartphone}
-            width="full"
-            placeholder={
-              booting
-                ? `Booting ${booting}…`
-                : devices.isPending || flutter.isFetching
-                  ? 'Looking for devices…'
-                  : 'Plug in a phone or boot an emulator'
-            }
-            value={serial}
-            onChange={(s) => {
-              if (s.startsWith('boot:')) {
-                boot(s.slice(5));
-                return;
-              }
-              setSerial(s);
-              saveDevice(s);
-            }}
-            options={[
-              ...ready.map((d) => ({
-                value: d.serial,
-                label: d.model ?? flutterRunning.find((f) => f.id === d.serial)?.name ?? d.serial,
-                hint: d.serial,
-              })),
-              ...flutterOnly.map((d) => ({
-                value: d.id,
-                label: d.name,
-                hint: `${d.platform} · run only, no mirror`,
-              })),
-              ...bootable.map((d) => ({
-                value: `boot:${d.id}`,
-                label: `Boot ${d.name}`,
-                hint: `${d.platform} emulator · off`,
-                disabled: booting !== null,
-              })),
-            ]}
-            footer={
-              runnable.length === 0 && bootable.length === 0
-                ? flutter.isFetching
-                  ? 'Running flutter devices…'
-                  : 'No device found. Plug a phone in with USB debugging on, or add an emulator.'
-                : undefined
-            }
-          />
-          {devices.data?.error && <p className="text-xs text-destructive">{devices.data.error}</p>}
-          {flutter.error && (
-            <p className="text-xs text-destructive">{describeError(flutter.error)}</p>
-          )}
-          {booting && (
-            <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
-              <Loader2 aria-hidden className="size-3.5 motion-safe:animate-spin" /> Waiting for
-              emulator {booting} to boot…
-            </p>
-          )}
-          {bootError && <p className="text-xs text-destructive">{bootError}</p>}
-          {serial && picked && !pickedIsAdb && (
-            <p className="text-xs text-muted-foreground">
-              {picked.name} can run the app, but the screen mirror and AI test need an Android
-              device over adb.
-            </p>
-          )}
-          {unauthorized.length > 0 && (
-            <p className="text-xs text-warning">
-              Allow USB debugging on the phone ({unauthorized[0]!.serial}).
-            </p>
-          )}
-          <RunStrip
-            repo={repo}
-            branch={branch}
-            serial={serial}
-            ios={pickedIos}
-            autoPrepare={autoRun}
-            onAutoPrepared={clearAutoRun}
-            onOpenLog={() => setLogTab('app')}
-          />
-          {!quick && (
-            <AiRunPanel
-              repo={repo}
-              branch={branch}
-              st={st}
-              serial={pickedIsAdb ? serial : null}
-              onOpenLog={() => setLogTab('agent')}
-            />
-          )}
-          {pickedIsAdb ? (
-            <DeviceMirror
-              key={serial}
-              ref={mirror}
-              serial={serial}
-              overlay={overlaySrc ? { src: overlaySrc, opacity } : null}
-            />
+          {web ? (
+            <>
+              <WebRunStrip
+                repo={repo}
+                branch={branch}
+                targets={web}
+                autoPrepare={autoRun}
+                onAutoPrepared={clearAutoRun}
+                onOpenLog={() => setLogTab('app')}
+              />
+              <WebPreview session={webSession} />
+            </>
           ) : (
-            <div className="grid aspect-[9/19] h-[min(64vh,44rem)] max-w-full place-items-center justify-self-center rounded-sheet border border-dashed p-6 text-center text-sm text-muted-foreground">
-              Pick a plugged-in phone to see its screen here.
-            </div>
+            <>
+              <Dropdown
+                label="Phone"
+                icon={Smartphone}
+                width="full"
+                placeholder={
+                  booting
+                    ? `Booting ${booting}…`
+                    : devices.isPending || flutter.isFetching
+                      ? 'Looking for devices…'
+                      : 'Plug in a phone or boot an emulator'
+                }
+                value={serial}
+                onChange={(s) => {
+                  if (s.startsWith('boot:')) {
+                    boot(s.slice(5));
+                    return;
+                  }
+                  setSerial(s);
+                  saveDevice(s);
+                }}
+                options={[
+                  ...ready.map((d) => ({
+                    value: d.serial,
+                    label:
+                      d.model ?? flutterRunning.find((f) => f.id === d.serial)?.name ?? d.serial,
+                    hint: d.serial,
+                  })),
+                  ...flutterOnly.map((d) => ({
+                    value: d.id,
+                    label: d.name,
+                    hint: `${d.platform} · run only, no mirror`,
+                  })),
+                  ...bootable.map((d) => ({
+                    value: `boot:${d.id}`,
+                    label: `Boot ${d.name}`,
+                    hint: `${d.platform} emulator · off`,
+                    disabled: booting !== null,
+                  })),
+                ]}
+                footer={
+                  runnable.length === 0 && bootable.length === 0
+                    ? flutter.isFetching
+                      ? 'Running flutter devices…'
+                      : 'No device found. Plug a phone in with USB debugging on, or add an emulator.'
+                    : undefined
+                }
+              />
+              {devices.data?.error && (
+                <p className="text-xs text-destructive">{devices.data.error}</p>
+              )}
+              {flutter.error && (
+                <p className="text-xs text-destructive">{describeError(flutter.error)}</p>
+              )}
+              {booting && (
+                <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                  <Loader2 aria-hidden className="size-3.5 motion-safe:animate-spin" /> Waiting for
+                  emulator {booting} to boot…
+                </p>
+              )}
+              {bootError && <p className="text-xs text-destructive">{bootError}</p>}
+              {serial && picked && !pickedIsAdb && (
+                <p className="text-xs text-muted-foreground">
+                  {picked.name} can run the app, but the screen mirror and AI test need an Android
+                  device over adb.
+                </p>
+              )}
+              {unauthorized.length > 0 && (
+                <p className="text-xs text-warning">
+                  Allow USB debugging on the phone ({unauthorized[0]!.serial}).
+                </p>
+              )}
+              <RunStrip
+                repo={repo}
+                branch={branch}
+                serial={serial}
+                ios={pickedIos}
+                autoPrepare={autoRun}
+                onAutoPrepared={clearAutoRun}
+                onOpenLog={() => setLogTab('app')}
+              />
+              {!quick && (
+                <AiRunPanel
+                  repo={repo}
+                  branch={branch}
+                  st={st}
+                  serial={pickedIsAdb ? serial : null}
+                  onOpenLog={() => setLogTab('agent')}
+                />
+              )}
+              {pickedIsAdb ? (
+                <DeviceMirror
+                  key={serial}
+                  ref={mirror}
+                  serial={serial}
+                  overlay={overlaySrc ? { src: overlaySrc, opacity } : null}
+                />
+              ) : (
+                <div className="grid aspect-[9/19] h-[min(64vh,44rem)] max-w-full place-items-center justify-self-center rounded-sheet border border-dashed p-6 text-center text-sm text-muted-foreground">
+                  Pick a plugged-in phone to see its screen here.
+                </div>
+              )}
+            </>
           )}
         </div>
 

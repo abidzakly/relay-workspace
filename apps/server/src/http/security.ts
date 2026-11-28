@@ -17,6 +17,8 @@ export const CSP = [
   "base-uri 'none'",
   "form-action 'self'",
   "frame-ancestors 'none'",
+  // Test Bench preview of a branch's web dev server, which runs on this Mac on some loopback port.
+  "frame-src 'self' http://localhost:* http://127.0.0.1:*",
 ].join('; ');
 
 const STATE_CHANGING = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);

@@ -90,7 +90,7 @@ export const WsFileWriteSchema = z
 
 // ───────────────────────────── sessions ─────────────────────────────
 
-export const SESSION_KINDS = ['claude', 'cursor', 'shell', 'flutter'] as const;
+export const SESSION_KINDS = ['claude', 'cursor', 'shell', 'web', 'flutter'] as const;
 export const SessionKindSchema = z.enum(SESSION_KINDS);
 export type SessionKind = z.infer<typeof SessionKindSchema>;
 
@@ -189,6 +189,8 @@ export const CockpitSessionSchema = z.object({
    * same conversation. Kept until the user ends the session.
    */
   restorable: z.boolean().optional(),
+  /** `web`: the dev server's address once its output named it. `frameBlocked` = its headers refuse an iframe. */
+  preview: z.object({ url: z.string(), frameBlocked: z.boolean() }).optional(),
 });
 export type CockpitSession = z.infer<typeof CockpitSessionSchema>;
 
@@ -231,11 +233,36 @@ export const FLUTTER_RUN_MODES = ['debug', 'profile', 'release'] as const;
 export const FlutterRunModeSchema = z.enum(FLUTTER_RUN_MODES);
 export type FlutterRunMode = z.infer<typeof FlutterRunModeSchema>;
 
-/** Entrypoints a workspace can run. `plainMain` is only true when no flavored file exists. */
+/** A `package.json` script name: what `web` runs as `<pm> run <script>`. Nothing else reaches the command line. */
+export const WEB_SCRIPT_RE = /^[A-Za-z0-9:._-]{1,64}$/;
+export const WebScriptSchema = z.string().regex(WEB_SCRIPT_RE);
+export const WEB_PACKAGE_MANAGERS = ['pnpm', 'npm', 'yarn', 'bun'] as const;
+export type WebPackageManager = (typeof WEB_PACKAGE_MANAGERS)[number];
+export const WEB_FRAMEWORKS = ['nuxt', 'next', 'astro', 'vite', 'react-scripts', 'other'] as const;
+export type WebFramework = (typeof WEB_FRAMEWORKS)[number];
+
+/** What a web workspace can run: its package manager (from the lockfile) and its `package.json` scripts. */
+export const WebRunTargetsSchema = z
+  .object({
+    pm: z.enum(WEB_PACKAGE_MANAGERS),
+    framework: z.enum(WEB_FRAMEWORKS),
+    scripts: z.array(WebScriptSchema),
+    /** `dev`, else `start`, `serve`, `preview`; null when none of them exists. */
+    defaultScript: WebScriptSchema.nullable(),
+  })
+  .strict();
+export type WebRunTargets = z.infer<typeof WebRunTargetsSchema>;
+
+/**
+ * Entrypoints a workspace can run. `plainMain` is only true when no flavored file exists. `kind`: `pubspec.yaml` =
+ * flutter, else `package.json` = web (with `web`). An older host agent sends no `kind`: read it as flutter.
+ */
 export const RunTargetsSchema = z
   .object({
     flavors: z.array(FlavorSchema),
     plainMain: z.boolean(),
+    kind: z.enum(['flutter', 'web', 'unknown']).optional(),
+    web: WebRunTargetsSchema.optional(),
   })
   .strict();
 export type RunTargets = z.infer<typeof RunTargetsSchema>;
@@ -260,6 +287,8 @@ export const SessionStartSchema = z
     mode: FlutterRunModeSchema.default('debug'),
     /** `flutter`: an iOS device keeps `-t` and drops `--flavor`. */
     ios: z.boolean().default(false),
+    /** `web`: the `package.json` script to run. Omitted = the workspace's default (`dev`, `start`, …). */
+    script: WebScriptSchema.optional(),
     cols: z.number().int().min(20).max(500).default(100),
     rows: z.number().int().min(5).max(200).default(30),
     /** `claude` / `cursor`: model the session starts on (planning). Unset = the built-in default. */

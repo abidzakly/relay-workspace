@@ -13,6 +13,7 @@ export const cockpit = {
     claude: 'Claude',
     cursor: 'Cursor',
     shell: 'Shell',
+    web: 'Web',
     flutter: 'Run',
   },
   workspace: {

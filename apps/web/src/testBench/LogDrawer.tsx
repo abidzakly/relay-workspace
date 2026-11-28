@@ -10,6 +10,7 @@ import { cn } from '@/lib/utils';
 import { AgentView } from '@/cockpit/AgentView';
 import { ConversationView } from '@/cockpit/ConversationView';
 import { RunSession } from '@/cockpit/RunView';
+import { WebSessionLog } from './WebSessionLog';
 
 export type LogTab = 'agent' | 'app';
 
@@ -45,11 +46,11 @@ export function LogDrawer({
     latest(inWs.filter((s) => s.kind === 'claude' || s.kind === 'cursor'));
   const app =
     inWs.find((s) => s.id === ai.data?.flutterSessionId) ??
-    latest(inWs.filter((s) => s.kind === 'flutter'));
+    latest(inWs.filter((s) => s.kind === 'flutter' || s.kind === 'web'));
   const cockpit = ws
     ? `/cockpit?ws=${encodeURIComponent(ws.id)}${
         tab === 'app'
-          ? `&tab=run${app ? `&session=${app.id}` : ''}`
+          ? `&tab=${app?.kind === 'web' ? 'terminal' : 'run'}${app ? `&session=${app.id}` : ''}`
           : `&tab=agent${agent ? `&session=${agent.id}` : ''}`
       }`
     : '/cockpit';
@@ -109,7 +110,11 @@ export function LogDrawer({
               <Empty>No AI tester session yet. Start one with “Test with AI on this phone”.</Empty>
             )
           ) : app ? (
-            <RunSession key={app.id} s={app} />
+            app.kind === 'web' ? (
+              <WebSessionLog key={app.id} s={app} />
+            ) : (
+              <RunSession key={app.id} s={app} />
+            )
           ) : (
             <Empty>The app is not running. Use “Run on this phone” first.</Empty>
           )}

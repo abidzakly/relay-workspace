@@ -15,6 +15,7 @@ export const cockpit: Messages<typeof en> = {
     claude: 'Claude',
     cursor: 'Cursor',
     shell: 'Shell',
+    web: 'Web',
     flutter: 'Jalankan',
   },
   workspace: {
